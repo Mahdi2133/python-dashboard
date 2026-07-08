@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Flask / instance
+instance/
+*.db
+*.sqlite3
+
+# Env
+.env
+
+# Logs
+*.log
+server.log
+
+# Scratch / data dumps
+docs/_*.txt
+
+# Source input data (bulky binary spreadsheets) — kept out of the code repo.
+# Remove this line if you want the raw data versioned.
+current data/
+
+# Generated reports
+well_discrepancies.xlsx
+
+# OS / editor
+.vscode/
+.idea/
+Thumbs.db
+/production_unmatched_wells.xlsx
+/aid_reconciliation.xlsx
+/remaining_duplicates.xlsx

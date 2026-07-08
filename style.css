@@ -1,0 +1,2047 @@
+
+
+@font-face {
+    font-family: 'BNazanin';
+    src: url('webfonts/BNazanin.ttf') format('truetype');
+}
+
+@font-face {
+    font-family: 'TimesNewRoman';
+    src: url('webfonts/times.ttf') format('truetype');
+}
+
+/* اصلاح نمایش آیکون‌ها */
+.fa, .fas, .far, .fab, .fa-solid, .fa-brands {
+    font-family: "Font Awesome 6 Free", "Font Awesome 6 Brands" !important;
+    font-weight: 900;
+    display: inline-block;
+    font-style: normal;
+    text-rendering: auto;
+    -webkit-font-smoothing: antialiased;
+}
+
+body {
+    font-family: 'BNazanin', Tahoma, Arial;
+    direction: rtl;
+}
+
+
+/* جلوگیری از تغییر فونت آیکون‌ها توسط فونت نازنین */
+.fa, .fas, .far, .fab, .fa-solid {
+    font-family: "Font Awesome 6 Free" !important; /* یا نسخه‌ای که دانلود کردید */
+    font-weight: 900;
+}
+
+
+
+/* ---------------- صفحه لندینگ ------------------- */
+.landing-body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: radial-gradient(circle at top, #e0f7ff, #f4f6fa);
+}
+
+.landing-container {
+    width: 100%;
+    max-width: 420px;
+    padding: 15px;
+}
+
+.landing-card {
+    background: #fff;
+    border-radius: 18px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    padding: 28px 24px 26px;
+    text-align: center;
+}
+
+.landing-card h1 {
+    margin: 0 0 10px;
+    font-size: 1.6rem;
+    color: #0a3d91;
+}
+
+.landing-subtitle {
+    margin: 0 0 20px;
+    color: #555;
+    font-size: 0.95rem;
+}
+
+.file-input-wrapper {
+    margin: 18px 0 10px;
+}
+
+.file-label {
+    display: inline-block;
+    padding: 10px 18px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #0d6efd, #00a8c6);
+    color: #fff;
+    cursor: pointer;
+    font-size: 0.95rem;
+    border: none;
+}
+
+#excelFile {
+    display: none;
+}
+
+.landing-hint {
+    margin-top: 10px;
+    font-size: 0.85rem;
+    color: #777;
+}
+
+/* ---------------- داشبورد ------------------- */
+
+.dashboard-body {
+    background-color: #f4f6fa;
+}
+
+.dashboard-header {
+    background: linear-gradient(135deg, #00c6ff 0%, #00a8c6 45%, #0d6efd 100%);
+    color: #fff;
+    padding: 18px 30px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.08);
+}
+
+.dashboard-header-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.dashboard-header h1 {
+    margin: 0;
+    font-size: 1.6rem;
+}
+
+.dashboard-header p {
+    margin: 6px 0 0;
+    opacity: 0.95;
+}
+
+.header-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255,255,255,0.16);
+    border: 1px solid rgba(255,255,255,0.22);
+    padding: 10px 16px;
+    border-radius: 999px;
+    backdrop-filter: blur(6px);
+    font-size: 0.9rem;
+}
+
+.header-badge i {
+    font-size: 1.2rem;
+}
+
+.dashboard-container {
+    max-width: 1600px;
+    width: 96%;
+    margin: 18px auto;
+    padding: 0 12px 30px;
+}
+
+/* ---------------- تب‌ها ------------------- */
+.tabs-container {
+    margin-top: 5px;
+}
+
+.tabs {
+    display: flex;
+    list-style: none;
+    padding: 0;
+    margin: 0 0 0 0;
+    border-bottom: 2px solid #dee2e6;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.tab {
+    padding: 10px 16px;
+    cursor: pointer;
+    background: #e9ecef;
+    border-radius: 10px 10px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: 0.25s;
+    font-size: 0.92rem;
+    color: #495057;
+}
+
+.tab i {
+    color: #0d6efd;
+}
+
+.tab.active {
+    background: #fff;
+    border: 2px solid #dee2e6;
+    border-bottom: 2px solid #fff;
+    margin-bottom: -2px;
+    font-weight: bold;
+    color: #0a3d91;
+}
+
+.tab-panel {
+    min-height: 950px;
+    display: none;
+    background: #fff;
+    padding: 24px;
+    border: 1px solid #dee2e6;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+}
+
+.tab-panel.active {
+    display: block;
+}
+
+/* ---------------- فیلترها ------------------- */
+.filters-container {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 10px;
+    flex-wrap: wrap;
+}
+
+.filter-item {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.9rem;
+}
+
+.filter-item label {
+    margin-bottom: 4px;
+    color: #555;
+}
+
+.filter-item select {
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid #ced4da;
+    font-size: 0.9rem;
+    outline: none;
+}
+
+/* ---------------- کارت‌های آماری ------------------- */
+.stats-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 15px;
+}
+
+.stat-card {
+    display: flex;
+    align-items: center;
+    padding: 15px;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    border: 1px solid #eee;
+}
+
+.stat-icon {
+    width: 58px;
+    height: 58px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 15px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.stat-icon img {
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
+    filter: brightness(0) invert(1);
+}
+
+.pressure-icon {
+    background: linear-gradient(135deg, #ff6b6b, #ff8e53);
+}
+
+.production-icon {
+    background: linear-gradient(135deg, #20bf6b, #2ecc71);
+}
+
+.flowrate-icon {
+    background: linear-gradient(135deg, #00c6ff, #0072ff);
+}
+
+.runtime-icon {
+    background: linear-gradient(135deg, #f7b731, #ffb347);
+}
+
+.stat-content {
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-title {
+    font-size: 0.95rem;
+    color: #555;
+    margin-bottom: 6px;
+}
+
+.stat-value {
+    font-size: 1.4rem;
+    font-weight: bold;
+    color: #111;
+}
+
+/* ---------------- نمودار ------------------- */
+.chart-box {
+    margin-top: 20px;
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid #e8e5e1;
+    padding: 16px;
+}
+
+/* ریسپانسیو */
+@media (max-width: 600px) {
+    .dashboard-header-content {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+/* drop zone */
+
+.drop-zone{
+border:6px dashed #00f715;
+border-radius:16px;
+padding:30px;
+cursor:pointer;
+transition:0.25s;
+background:#f8ffff;
+}
+
+.drop-zone:hover{
+background:#eef6ff;
+}
+
+.drop-zone i{
+font-size:28px;
+color:#0d6efd;
+margin-bottom:10px;
+display:block;
+}
+
+.drop-zone input{
+display:none;
+}
+
+/* گرادیانت صفحه ورود */
+
+.landing-body{
+background:linear-gradient(135deg,#00c6ff,#00a8c6,#0d6efd);
+}
+.chart-box{
+margin-top:20px;
+background:#16f002e3;
+border-radius:12px;
+border:1px solid #b709ec;
+padding:16px;
+height:260px;
+}
+
+.chart-box canvas{
+height:220px !important;
+}
+.charts-wrapper {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-top: 20px;
+}
+
+.chart-box {
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.chart-box canvas {
+    width: 100% !important;
+    height: 280px !important;
+}
+
+.charts-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+    margin-top: 24px;
+}
+
+.chart-card {
+    background: #ffffff;
+    border-radius: 14px;
+    padding: 18px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+}
+.kpi-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.kpi {
+    background: #f8fafc;
+    padding: 14px;
+    border-radius: 10px;
+    font-weight: 600;
+}
+.stats-box{
+background:white;
+padding:20px;
+border-radius:10px;
+margin-top:25px;
+box-shadow:0 2px 8px rgba(0,0,0,0.1);
+}
+
+#statsTable{
+width:100%;
+border-collapse:collapse;
+font-size:14px;
+}
+
+#statsTable th{
+background:#2c3e50;
+color:white;
+padding:8px;
+}
+
+#statsTable td{
+border:1px solid #ddd;
+padding:6px;
+text-align:center;
+}
+
+#statsTable tr:nth-child(even){
+background:#f5f5f5;
+}
+.excel-btn{
+background:#1d6f42;
+color:white;
+border:none;
+padding:10px 14px;
+border-radius:6px;
+cursor:pointer;
+font-size:15px;
+}
+.excel-btn:hover{
+background:#145d34;
+}
+.excel-cards-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    padding: 40px 20px;
+    justify-content: center;
+}
+
+.excel-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    width: 220px;
+    padding: 32px 20px;
+    border-radius: 18px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+    color: #fff;
+    user-select: none;
+}
+
+.excel-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 14px 32px rgba(0,0,0,0.22);
+}
+
+.excel-card:active {
+    transform: translateY(-2px);
+}
+
+.excel-card--green  { background: linear-gradient(135deg, #1a7f4b, #25a868); }
+.excel-card--blue   { background: linear-gradient(135deg, #1d4ed8, #3b82f6); }
+.excel-card--orange { background: linear-gradient(135deg, #b45309, #f59e0b); }
+
+.excel-card__icon {
+    font-size: 48px;
+    opacity: 0.92;
+}
+
+.excel-card__name {
+    font-size: 13px;
+    font-weight: 600;
+    text-align: center;
+    line-height: 1.6;
+    direction: rtl;
+    word-break: break-all;
+}
+
+.excel-card__hint {
+    font-size: 12px;
+    opacity: 0.8;
+    background: rgba(255,255,255,0.18);
+    padding: 4px 14px;
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.extra-row{
+display:grid;
+grid-template-columns:1fr 1fr;
+gap:24px;
+margin-top:25px;
+}
+
+.extra-card{
+background:white;
+    padding:28px;
+    border-radius:18px;
+    min-height: 520px;
+    box-shadow:0 6px 18px rgba(0,0,0,0.10);
+}
+
+.extra-card canvas{
+height:280px !important;
+}
+/* اعداد جداول: Times New Roman */
+.stat-value,
+#statsTable td,
+.pretty-table td,
+#groupFlowTable td,
+.drilling-pretty-table td,
+.ranking-table td,
+.offline-table td {
+    font-family: 'TimesNewRoman', 'Times New Roman', serif;
+}
+
+/* سرستون‌ها و متن فارسی جداول: B Nazanin */
+#statsTable th,
+.pretty-table th,
+#groupFlowTable th,
+.drilling-pretty-table th,
+.ranking-table th,
+.offline-table th,
+.zone-table-title,
+h1, h2, h3, h4,
+.section-title,
+.tab,
+label,
+select,
+button,
+.kpi-box {
+    font-family: 'BNazanin', Tahoma, Arial;
+}
+.ranking-row{
+margin-top:25px;
+}
+
+.ranking-card{
+background:white;
+    padding:28px;
+    border-radius:18px;
+    min-height: 520px;
+    box-shadow:0 6px 18px rgba(0,0,0,0.10);
+}
+
+.ranking-card canvas{
+height:320px !important;
+}
+#wellSearch{
+padding:8px 10px;
+border-radius:8px;
+border:1px solid #77b0e9;
+margin-bottom:8px;
+font-family:'BNazanin';
+}
+.compare-top-row{
+display:grid;
+grid-template-columns:1fr 1fr;
+gap:24px;
+margin-top:20px;
+}
+
+.compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    padding: 20px 0;
+}
+
+.chart-header{
+display:flex;
+justify-content:space-between;
+align-items:center;
+margin-bottom:10px;
+}
+
+.chart-header select{
+padding:6px 10px;
+border-radius:8px;
+border:1px solid #ccc;
+font-family:'BNazanin';
+}
+.chart-card h3{
+text-align:center;
+margin-bottom:10px;
+font-weight:600;
+}
+.ranking-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.ranking-table th,
+.ranking-table td {
+    padding: 12px;
+    border-bottom: 1px solid #ddd;
+    text-align: center;
+}
+
+.ranking-table th {
+    background: #f3f4f6;
+}
+/* =========================================
+   GROUP TAB
+========================================= */
+
+.group-filters{
+
+display:grid;
+
+grid-template-columns:
+repeat(auto-fit,minmax(220px,1fr));
+
+gap:20px;
+
+margin-bottom:30px;
+
+padding:22px;
+
+background:linear-gradient(
+145deg,
+#f8fbff,
+#eef4ff
+);
+
+border-radius:18px;
+
+box-shadow:
+0 6px 18px rgba(0,0,0,0.06);
+
+}
+
+.group-section{
+
+  width: 100%;
+  padding: 24px;
+  box-sizing: border-box;
+
+}
+
+.section-title{
+
+display:flex;
+
+align-items:center;
+
+gap:10px;
+
+font-size:22px;
+
+font-weight:700;
+
+margin-bottom:22px;
+
+color:#1e3a8a;
+
+}
+
+.section-title i{
+
+color:#2563eb;
+
+font-size:20px;
+
+}
+
+.group-grid{
+
+display:grid;
+
+grid-template-columns:1fr 1fr;
+
+gap:24px;
+
+}
+
+.full-width{
+
+grid-column:1 / -1;
+
+}
+
+.group-section .chart-card{
+  min-height: 520px;
+  padding: 20px;
+background:linear-gradient(
+145deg,
+#ffffff,
+#f7faff
+);
+
+border-radius:18px;
+
+padding:20px;
+
+box-shadow:
+0 10px 30px rgba(0,0,0,0.08);
+
+transition:0.3s;
+
+overflow:hidden;
+
+position:relative;
+
+}
+
+.group-section .chart-card:hover{
+
+transform:translateY(-4px);
+
+box-shadow:
+0 16px 36px rgba(0,0,0,0.12);
+
+}
+
+.group-section canvas{
+
+height:340px !important;
+
+}
+
+#groupWellSearch{
+
+padding:8px 10px;
+
+border-radius:10px;
+
+border:1px solid #bfd7ff;
+
+margin-bottom:8px;
+
+font-family:'BNazanin';
+
+}
+
+#groupFlowTable{
+
+width:100%;
+
+border-collapse:collapse;
+
+margin-top:10px;
+
+}
+
+#groupFlowTable th{
+
+background:#2563eb;
+
+color:white;
+
+padding:10px;
+
+}
+
+#groupFlowTable td{
+
+padding:8px;
+
+border:1px solid #e5e7eb;
+
+text-align:center;
+
+}
+
+#groupFlowTable tr:nth-child(even){
+
+background:#f8fafc;
+
+}
+.toggle-table{
+
+background:#2563eb;
+
+color:white;
+
+border:none;
+
+padding:8px 16px;
+
+border-radius:8px;
+
+cursor:pointer;
+
+margin-bottom:10px;
+
+}
+
+
+
+.toggle-table{
+
+background:#2563eb;
+color:white;
+border:none;
+padding:8px 16px;
+border-radius:8px;
+cursor:pointer;
+margin-bottom:12px;
+
+}
+
+#flowTableContainer{
+
+display:none;
+
+margin-top:10px;
+
+}
+
+#flowTableContainer.active{
+
+display:block;
+
+}
+
+.status-summary-row {
+    display: flex;
+    gap: 10px;
+    margin: 18px 0;
+    flex-wrap: wrap;
+}
+
+.status-box {
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #fff;
+}
+
+.status-critical     { background: #e63946; } /* بحرانی */
+.status-stable       { background: #2a9d8f; } /* پایدار */
+.status-improved     { background: #457b9d; } /* بهبود یافته */
+.status-unknown      { background: #6c757d; } /* نامشخص */
+/* =========================================
+   GROUP ANALYTICS CHARTS
+========================================= */
+
+.group-analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(600px, 1fr)); /* افزایش حداقل عرض */
+    gap: 30px;
+}
+
+.group-analytics-grid .chart-card {
+    min-height: 550px; /* افزایش ارتفاع پایه */
+    background: #fff;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    position: relative;
+}
+
+/* کلیدی برای جلوگیری از فشردگی */
+.group-analytics-grid canvas {
+    width: 100% !important;
+    height: 450px !important; /* ارتفاع ثابت برای جلوگیری از تغییر ناگهانی */
+    display: block;
+}
+
+#groupExpectedVsActual {
+    width: 100% !important;
+    height: 420px !important;  /* 350–450px بسته به UI خودت */
+    display: block;
+}
+.group-expected-card {
+    min-height: 480px;
+}
+
+.group-analytics-grid .chart-card{
+
+min-height:500px;
+
+}
+
+
+.group-wide{
+
+grid-column:1 / -1;
+
+}
+
+.chart-card h3{
+
+text-align:center;
+
+margin-bottom:18px;
+
+font-size:20px;
+
+font-weight:700;
+
+color:#1e3a8a;
+
+}
+
+@media(max-width:900px){
+
+.group-grid,
+.group-analytics-grid,
+.compare-grid,
+.compare-top-row,
+.extra-row{
+
+grid-template-columns:1fr;
+
+}
+
+
+}
+
+@media(max-width:600px){
+
+.chart-card{
+
+padding:16px;
+
+}
+
+.chart-card h3{
+
+font-size:17px;
+
+}
+
+.group-section canvas,
+.group-analytics-grid canvas{
+  width: 100% !important;
+  height: auto !important;
+  min-height: 360px;
+  display: block;
+}
+
+
+}
+.landing-body{
+  margin:0;
+  min-height:100vh;
+  background-size:cover;
+  background-position:center;
+  background-repeat:no-repeat;
+
+  animation: bgSlide 20s infinite;
+}
+
+@keyframes bgSlide{
+
+0%{
+background-image:url("images/bg1.jpg");
+}
+
+16%{
+background-image:url("images/bg2.jpg");
+}
+
+32%{
+background-image:url("images/bg3.jpg");
+}
+
+48%{
+background-image:url("images/bg4.jpg");
+}
+
+64%{
+background-image:url("images/bg5.jpg");
+}
+
+80%{
+background-image:url("images/bg6.jpg");
+}
+
+100%{
+background-image:url("images/bg1.jpg");
+}
+
+}
+.dashboard-body{
+  margin:0;
+  min-height:100vh;
+
+  background-size:cover;
+  background-position:center;
+  background-repeat:no-repeat;
+
+  animation: dashboardBg 25s infinite;
+}
+
+@keyframes dashboardBg{
+
+0%{
+background-image:url("images/bg4.jpg");
+}
+
+33%{
+background-image:url("images/bg5.jpg");
+}
+
+66%{
+background-image:url("images/bg6.jpg");
+}
+
+100%{
+background-image:url("images/bg4.jpg");
+}
+
+}
+.year-filter {
+  margin-right: 1rem;
+  margin-bottom: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.year-filter select {
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-family: inherit;
+  border: 1px solid #aaa;
+}
+.status-orange {
+    background: #ff0000;
+    color: white;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-weight: bold;
+    display: inline-block;
+    margin-left: 6px;
+}
+/* برای دو ستون کردن نمودارهای تولید */
+.group-grid.two-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr; /* دو ستون با عرض مساوی */
+    gap: 20px; /* فاصله بین نمودارها */
+}
+
+.group-grid.two-cols {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important; /* اجبار به دو ستون */
+    gap: 24px !important;
+}
+
+/* جلوگیری از تداخل استایل‌های قدیمی */
+.group-grid.two-cols .chart-card {
+    grid-column: auto !important; 
+    width: 100% !important;
+}
+.group-filters { display: flex; flex-direction: column; gap: 10px; padding: 10px; }
+.filter-group-row { display: flex; gap: 15px; }
+.compact-zones .filter-item { flex: 1; max-width: 200px; }
+/* برای اینکه کارت نمودار حفاری تمام عرض باشد */
+.chart-card.full-width {
+    grid-column: 1 / -1;
+    min-height: 400px;
+}
+
+/* بهبود ظاهر بخش‌های گروه‌بندی */
+.group-section {
+    margin-bottom: 30px;
+    padding: 20px;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.section-title {
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #1e293b;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.section-title i {
+    color: #3b82f6;
+}
+.chart-card.full-width {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 330px; /* بیشتر از قبل */
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+}
+
+/* برای اینکه کارت نمودار حفاری تمام عرض باشد */
+/* کارت نمودار تمام عرض و با ارتفاع مناسب */
+.chart-card.full-width,
+#tab-drilling .chart-card,
+.drilling-chart-card {
+    grid-column: 1 / -1;
+    display: block !important;
+    position: relative;
+    width: 100%;
+    min-height: 500px;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+    padding: 20px;
+}
+
+.drilling-chart-wrapper {
+    position: relative;
+    width: 100%;
+    height: 520px;
+    overflow: hidden;
+}
+
+.chart-canvas-wrapper {
+    position: relative;
+    width: 100%;
+    height: 400px;
+}
+
+.chart-canvas-wrapper--tall {
+    height: 460px;
+}
+
+
+#contractorAvgFlowChart {
+    display: block;
+    height: 480px !important;
+}
+
+
+#tab-drilling .chart-card {
+    width: 100%;
+    /* این بلوک را برای تست کامنت کن یا height را حذف کن */
+    /* min-height: 420px;
+       height: 420px; */
+    position: relative;
+    display: block;
+    padding: 20px;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+}
+
+.drilling-chart-wrapper canvas {
+    position: relative;
+    z-index: 2;
+}
+.kpi-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 25px;
+    gap: 12px;
+}
+
+.kpi-box {
+    flex: 1;
+    padding: 15px;
+    border-radius: 12px;
+    color: white;
+    text-align: center;
+    font-size: 14px;
+}
+
+.kpi-red { background: #d9534f; }
+.kpi-green { background: #5cb85c; }
+.kpi-blue { background: #5bc0de; }
+.kpi-orange { background: #f0ad4e; }
+
+.drilling-chart-card {
+    min-height: 500px;
+}
+
+.ranking-box {
+    margin-top: 30px;
+    padding: 18px;
+    border-radius: 12px;
+    background: #f8f8f8;
+}
+
+.ranking-list li {
+    margin-bottom: 6px;
+    font-size: 14px;
+}
+#drillResultsTableContainer {
+    margin-top: 24px;   /* جدول را پایین‌تر می‌برد */
+}
+.ranking-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.rank-card {
+    padding: 15px;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.1);
+    text-align: center;
+}
+
+.rank-1 { border-top: 4px solid gold; }
+.rank-2 { border-top: 4px solid silver; }
+.rank-3 { border-top: 4px solid #cd7f32; }
+.rank-other { border-top: 4px solid #0aa; }
+
+.rank-card h4 { margin: 5px 0; font-size: 16px; }
+.rank-card p { margin: 0; font-size: 14px; }
+.drilling-pretty-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+}
+
+.drilling-pretty-table th {
+    background: #004c8c;
+    color: white;
+    padding: 8px;
+}
+
+.drilling-pretty-table td {
+    background: #fdfdfd;
+    padding: 8px;
+    border-bottom: 1px solid #ccc;
+}
+
+.drilling-pretty-table tr:nth-child(even) td {
+    background: #f4faff;
+}
+.drilling-result-wrapper {
+    background: #fff;
+    padding: 20px;
+    border-radius: 14px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+}
+.drilling-result-wrapper h3 {
+    margin-bottom: 15px;
+    color: #004c8c;
+    border-bottom: 2px solid #eee;
+    padding-bottom: 10px;
+}
+#toggleTableBtn {
+    padding: 8px 18px;
+    border-radius: 8px;
+    background-color: #28a745;   /* سبز */
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+#toggleTableBtn:hover {
+    background-color: #218838;
+}
+.offline-table-wrapper {
+    background: #fff;
+    padding: 35px;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    border: 1px solid #fcfafa; /* بوردر مشکی طبق درخواست */
+}
+
+.offline-table th, .offline-table td {
+    border: 1px solid #ddd;
+    padding: 10px;
+    text-align: center;
+}
+
+#chartWellStatus {
+    border: 1px solid #f5f3f3; /* بوردر مشکی برای پای چارت */
+    padding: 5px;
+}
+/* اگر این استایل را قبلاً اضافه کردید، آن را به این صورت اصلاح کنید */
+#chartWellStatus {
+    border: 1px solid #fcfcfc;
+    padding: 10px; /* کمی پدینگ بیشتر برای زیبایی */
+    width: 100%;  /* این باعث می‌شود عرض کانواس با عرض دایوِ مادر تنظیم شود */
+    height: auto; /* ارتفاع خودکار تنظیم شود تا نسبت تصویر حفظ شود */
+}
+/* تب نمای کلی، نمودار پهنه
+/* کارت نمودار */
+.chart-card{
+background:#fff;
+padding:20px;
+border-radius:12px;
+box-shadow:0 4px 14px rgba(0,0,0,0.08);
+}
+
+/* فیلتر سال */
+#zoneYearFilter{
+padding:6px 12px;
+border-radius:8px;
+border:1px solid #d0d7de;
+background:#f8fafc;
+font-family:tahoma;
+font-size:13px;
+cursor:pointer;
+transition:all .2s;
+}
+
+#zoneYearFilter:hover{
+border-color:#3b82f6;
+background:#ffffff;
+}
+
+/* عنوان جدول */
+.zone-table-title {
+    font-family: "B Nazanin";
+    font-size: 18px;
+    margin-bottom: 12px;
+    color: #1f2937;
+    font-weight: bold;
+    text-align: center; /* مرکز کردن متن */
+    width: 100%;
+}
+
+/* جدول */
+.pretty-table {
+    width: 95%;
+    max-width: 1200px;
+    border-collapse: collapse;
+    background: #ffffff;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.07);
+    /* حذف direction: ltr از اینجا */
+}
+
+/* هدر جدول */
+.pretty-table thead{
+background:linear-gradient(90deg,#2563eb,#1d4ed8);
+color:white;
+font-family:"B Nazanin";
+font-size:15px;
+}
+
+/* سلول ها */
+.pretty-table th,
+.pretty-table td{
+padding:8px 10px;
+text-align:center;
+border-bottom:1px solid #e5e7eb;
+}
+
+/* فونت اعداد */
+.pretty-table td{
+font-family:"Times New Roman";
+}
+
+/* ستون اول (نام چاه) */
+.pretty-table td:first-child{
+font-family:"B Nazanin";
+font-weight:bold;
+}
+
+/* ردیف ها */
+.pretty-table tbody tr:hover{
+background:#f1f5f9;
+transition:0.2s;
+}
+
+/* ردیف های زوج */
+.pretty-table tbody tr:nth-child(even){
+background:#fafafa;
+}
+/* اصلاح نهایی برای اطمینان از مرکزیت */
+.table-wrapper {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center; 
+    margin-top: 25px;
+    direction: rtl; /* کل کانتینر را راست‌چین می‌کنیم */
+}
+
+.table-wrapper .pretty-table {
+    direction: rtl; /* محتوای جدول را دوباره RTL می‌کنیم تا متن‌ها فارسی بمانند */
+    width: 95%;
+    max-width: 1200px;
+}
+.table-wrapper.full-width {
+    grid-column: 1 / -1 !important;   /* می‌گوید کل عرض Grid را بگیر */
+}
+/* ========================================
+   دکمه تغییر تم
+======================================== */
+.theme-toggle {
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: white;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s;
+    flex-shrink: 0;
+    margin-right: auto; /* ✅ چسباندن به سمت چپ */
+}
+
+.theme-toggle:hover {
+    background: rgba(255,255,255,0.3);
+    transform: rotate(20deg) scale(1.1);
+}
+
+/* ========================================
+   حالت دارک مود
+======================================== */
+body[data-theme="dark"] {
+    background-color: #0f1117 !important;
+    color: #e2e8f0;
+    animation: none !important;
+}
+
+body[data-theme="dark"] .dashboard-body {
+    background: #0f1117 !important;
+}
+
+/* کارت‌ها و پانل‌ها */
+body[data-theme="dark"] .tab-panel,
+body[data-theme="dark"] .chart-card,
+body[data-theme="dark"] .extra-card,
+body[data-theme="dark"] .ranking-card,
+body[data-theme="dark"] .ranking-box,
+body[data-theme="dark"] .rank-card,
+body[data-theme="dark"] .stat-card,
+body[data-theme="dark"] .stats-box,
+body[data-theme="dark"] .group-section,
+body[data-theme="dark"] .kpi,
+body[data-theme="dark"] .offline-table-wrapper,
+body[data-theme="dark"] .drilling-result-wrapper,
+body[data-theme="dark"] .drilling-chart-card {
+    background: #1e2130 !important;
+    border-color: #2d3548 !important;
+    color: #e2e8f0 !important;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;
+}
+
+/* فیلترها */
+body[data-theme="dark"] .filters-container,
+body[data-theme="dark"] .group-filters {
+    background: #161923 !important;
+    border-color: #2d3548 !important;
+}
+
+body[data-theme="dark"] .filter-item select,
+body[data-theme="dark"] .filter-item input,
+body[data-theme="dark"] #wellSearch,
+body[data-theme="dark"] #groupWellSearch,
+body[data-theme="dark"] #zoneYearFilter,
+body[data-theme="dark"] #rankingYearFilter,
+body[data-theme="dark"] #effYearFilter,
+body[data-theme="dark"] #groupYear,
+body[data-theme="dark"] #groupMonth,
+body[data-theme="dark"] #groupOffice,
+body[data-theme="dark"] #groupWell,
+body[data-theme="dark"] #groupMainZone,
+body[data-theme="dark"] #groupSubZone,
+body[data-theme="dark"] #groupYearPerf,
+body[data-theme="dark"] #groupYearProd,
+body[data-theme="dark"] #groupYearRank,
+body[data-theme="dark"] #drillFilterContractor,
+body[data-theme="dark"] #drillFilterWell,
+body[data-theme="dark"] #filterYear,
+body[data-theme="dark"] #filterOffice,
+body[data-theme="dark"] #filterWell {
+    background: #252839 !important;
+    color: #e2e8f0 !important;
+    border-color: #3d4a63 !important;
+}
+
+/* تب‌ها */
+body[data-theme="dark"] .tab {
+    background: #1e2130 !important;
+    color: #94a3b8 !important;
+    border-color: #2d3548 !important;
+}
+
+body[data-theme="dark"] .tab.active {
+    background: #252839 !important;
+    color: #60a5fa !important;
+    border-color: #2d3548 !important;
+    border-bottom-color: #252839 !important;
+}
+
+body[data-theme="dark"] .tabs {
+    border-bottom-color: #2d3548 !important;
+}
+
+/* جداول */
+body[data-theme="dark"] #statsTable th,
+body[data-theme="dark"] .drilling-pretty-table th,
+body[data-theme="dark"] .pretty-table thead,
+body[data-theme="dark"] .ranking-table th,
+body[data-theme="dark"] .offline-table th,
+body[data-theme="dark"] #groupFlowTable th,
+body[data-theme="dark"] #drillPrettyTable th {
+    background: #1a3a5c !important;
+    color: #e2e8f0 !important;
+}
+
+body[data-theme="dark"] #statsTable td,
+body[data-theme="dark"] .drilling-pretty-table td,
+body[data-theme="dark"] .pretty-table td,
+body[data-theme="dark"] .ranking-table td,
+body[data-theme="dark"] .offline-table td,
+body[data-theme="dark"] #groupFlowTable td,
+body[data-theme="dark"] #drillPrettyTable td {
+    border-color: #2d3548 !important;
+    color: #e2e8f0 !important;
+    background: #1e2130 !important;
+}
+
+body[data-theme="dark"] #statsTable tr:nth-child(even) td,
+body[data-theme="dark"] .pretty-table tbody tr:nth-child(even) td,
+body[data-theme="dark"] #groupFlowTable tr:nth-child(even) td {
+    background: #252839 !important;
+}
+
+body[data-theme="dark"] .pretty-table tbody tr:hover {
+    background: #2d3548 !important;
+}
+
+/* متن‌های مختلف */
+body[data-theme="dark"] .stat-title,
+body[data-theme="dark"] .filter-item label,
+body[data-theme="dark"] h3,
+body[data-theme="dark"] .section-title,
+body[data-theme="dark"] .zone-table-title {
+    color: #c4d0e4 !important;
+}
+
+body[data-theme="dark"] .stat-value {
+    color: #ffffff !important;
+}
+
+/* KPI boxes */
+body[data-theme="dark"] .kpi-box {
+    opacity: 0.92;
+}
+
+/* دارک مود هدر برای کل صفحه */
+body[data-theme="dark"] .dashboard-container {
+    background: transparent;
+}
+
+/* اسکرول‌بار */
+body[data-theme="dark"] ::-webkit-scrollbar {
+    background: #1e2130;
+}
+body[data-theme="dark"] ::-webkit-scrollbar-thumb {
+    background: #3d4a63;
+    border-radius: 4px;
+}
+
+body[data-theme="dark"] .excel-card--green  { background: linear-gradient(135deg, #14532d, #166534); }
+body[data-theme="dark"] .excel-card--blue   { background: linear-gradient(135deg, #1e3a8a, #1d4ed8); }
+body[data-theme="dark"] .excel-card--orange { background: linear-gradient(135deg, #92400e, #b45309); }
+/* ===== فیلتر سال نمودارهای نمای کلی ===== */
+.chart-year-filter {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    background: #f8f9fa;
+    padding: 12px 16px;
+    border-radius: 10px;
+    margin: 20px 0 0;
+    font-size: 0.9rem;
+}
+.chart-year-filter .cyf-label { color: #555; font-weight: bold; }
+.chart-year-filter label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+.year-dot {
+    display: inline-block;
+    width: 11px; height: 11px;
+    border-radius: 50%;
+    margin-left: 4px;
+}
+
+/* چهار نمودار تمام‌عرض روی هم */
+.overview-charts-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    margin-top: 16px;
+}
+.overview-charts-stack .chart-card { width: 100%; }
+.overview-chart-wrapper {
+    position: relative;
+    width: 100%;
+    height: 320px;
+}
+.overview-chart-wrapper canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* نمودار ترند پهنه (بالای جدول پهنه) */
+.zone-trend-card {
+    width: 95%;
+    max-width: 1200px;
+    background: #fff;
+    border-radius: 14px;
+    padding: 18px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.07);
+}
+.zone-trend-wrapper {
+    position: relative;
+    width: 100%;
+    height: 300px;
+}
+.zone-trend-wrapper canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* دارک‌مود */
+body[data-theme="dark"] .chart-year-filter { background: #161923 !important; }
+body[data-theme="dark"] .chart-year-filter .cyf-label { color: #c4d0e4 !important; }
+body[data-theme="dark"] .zone-trend-card { background: #1e2130 !important; }
+#ptToggleTableBtn {
+    background: linear-gradient(135deg, #1d4ed8, #3b82f6);
+    color: #fff;
+    border: none;
+    padding: 10px 22px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: 'BNazanin', Tahoma, Arial;
+    font-size: 15px;
+    font-weight: bold;
+    box-shadow: 0 4px 12px rgba(29,78,216,0.25);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+#ptToggleTableBtn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(29,78,216,0.35);
+}
+
+#ptToggleTableBtn:active {
+    transform: translateY(0);
+}
+
+body[data-theme="dark"] #ptToggleTableBtn {
+    background: linear-gradient(135deg, #1e3a8a, #1d4ed8);
+}
+#ptTable th,
+#ptTable td {
+    text-align: center;
+    vertical-align: middle;
+}
+.pt-gap-counts {
+    display: flex;
+    gap: 14px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+}
+.pt-count-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-family: 'BNazanin', Tahoma, Arial;
+    font-size: 16px;
+    font-weight: bold;
+    color: #fff;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.12);
+}
+.pt-count-pos { background: linear-gradient(135deg, #16a34a, #22c55e); }
+.pt-count-neg { background: linear-gradient(135deg, #b91c1c, #ef4444); }
+/* باکس اطلاعات پایه چاه */
+.well-info-box {
+    background: linear-gradient(135deg, #fdf6e3, #faf0d7);
+    border: 1px solid #f0e0b0;
+    border-radius: 16px;
+    padding: 20px 24px;
+    margin-top: 4px;
+    box-shadow: 0 4px 14px rgba(180,140,40,0.10);
+}
+.well-info-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+}
+.well-info-header h3 {
+    margin: 0;
+    color: #92600a;
+    font-family: 'BNazanin', Tahoma, Arial;
+    font-size: 1.2rem;
+}
+#wellInfoToggleBtn {
+    background: linear-gradient(135deg, #0891b2, #06b6d4);
+    color: #fff;
+    border: none;
+    padding: 9px 20px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: 'BNazanin', Tahoma, Arial;
+    font-size: 14px;
+    font-weight: bold;
+    box-shadow: 0 4px 12px rgba(6,182,212,0.30);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+#wellInfoToggleBtn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(6,182,212,0.40);
+}
+.well-info-content {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.well-info-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 14px;
+    background: rgba(255,255,255,0.6);
+    border-radius: 10px;
+    border-right: 4px solid #d4a017;
+}
+.well-info-label {
+    font-family: 'BNazanin', Tahoma, Arial;
+    font-weight: bold;
+    color: #5b4708;
+}
+.well-info-value {
+    font-family: 'TimesNewRoman', 'Times New Roman', serif;
+    color: #1f2937;
+    text-align: left;
+}
+
+/* دارک‌مود */
+body[data-theme="dark"] .well-info-box {
+    background: linear-gradient(135deg, #2a2410, #221d0c) !important;
+    border-color: #4a3d15 !important;
+}
+body[data-theme="dark"] .well-info-header h3 { color: #e3b341 !important; }
+body[data-theme="dark"] .well-info-row {
+    background: rgba(255,255,255,0.05) !important;
+}
+body[data-theme="dark"] .well-info-label { color: #e3b341 !important; }
+body[data-theme="dark"] .well-info-value { color: #e2e8f0 !important; }
+#ptTable tr.pt-row-pos td { background: #dcfce7 !important; }
+#ptTable tr.pt-row-neg td { background: #fee2e2 !important; }
+
+#ptTable tr.pt-row-pos:hover td { background: #bbf7d0 !important; }
+#ptTable tr.pt-row-neg:hover td { background: #fecaca !important; }
+
+/* دارک‌مود */
+body[data-theme="dark"] #ptTable tr.pt-row-pos td { background: #14532d !important; }
+body[data-theme="dark"] #ptTable tr.pt-row-neg td { background: #5c1a1a !important; }
+/* ===== نقشه حرارتی ===== */
+.heatmap-table { width:100%; border-collapse:collapse; font-size:12px; }
+.heatmap-table th {
+    padding:6px 8px; text-align:center; font-family:'BNazanin',Tahoma;
+    color:#475569; white-space:nowrap; min-width:54px;
+}
+.heatmap-table th:first-child { text-align:right; min-width:140px; }
+.heatmap-table td { padding:2px; }
+.heatmap-table .hm-name {
+    padding:6px 10px; font-family:'BNazanin',Tahoma; font-weight:bold;
+    color:#1f2937; white-space:nowrap; text-align:right;
+}
+.hm-cell {
+    border-radius:5px; padding:7px 3px; text-align:center;
+    font-family:'TimesNewRoman','Times New Roman',serif;
+    font-size:11px; font-weight:bold;
+}
+
+/* ===== خوشه‌بندی ===== */
+.cluster-legend-wrap {
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+    gap:14px; margin-top:20px;
+}
+.cluster-card-box {
+    background:#fff; border-radius:12px; padding:16px;
+    box-shadow:0 3px 10px rgba(0,0,0,0.08); border-top:4px solid #ccc;
+}
+.cluster-card-title { font-family:'BNazanin',Tahoma; font-weight:bold; font-size:15px; margin-bottom:10px; }
+.cluster-chips { display:flex; flex-wrap:wrap; gap:6px; }
+.cluster-chip {
+    padding:3px 10px; border-radius:12px; font-size:12px;
+    font-family:'BNazanin',Tahoma;
+}
+
+/* ===== هشدارها ===== */
+.alert-card {
+    display:flex; align-items:flex-start; gap:12px;
+    padding:14px 18px; border-radius:12px; margin-bottom:12px;
+}
+.alert-card.danger  { background:#fee2e2; border:1px solid #fecaca; }
+.alert-card.warning { background:#fef3c7; border:1px solid #fde68a; }
+.alert-card.success { background:#dcfce7; border:1px solid #bbf7d0; }
+.alert-card.info    { background:#e0f2fe; border:1px solid #bae6fd; }
+.alert-card-icon { font-size:22px; flex-shrink:0; }
+.alert-card-title { font-family:'BNazanin',Tahoma; font-weight:bold; font-size:15px; }
+.alert-card-desc  { font-family:'BNazanin',Tahoma; font-size:13px; color:#475569; margin-top:3px; }
+
+/* دارک‌مود */
+body[data-theme="dark"] .heatmap-table th { color:#c4d0e4 !important; }
+body[data-theme="dark"] .heatmap-table .hm-name { color:#e2e8f0 !important; }
+body[data-theme="dark"] .cluster-card-box { background:#1e2130 !important; }
+body[data-theme="dark"] .cluster-card-title { color:#e2e8f0 !important; }
+body[data-theme="dark"] .alert-card.danger  { background:#3a1818 !important; border-color:#5c1a1a !important; }
+body[data-theme="dark"] .alert-card.warning { background:#3a3115 !important; border-color:#5c4a15 !important; }
+body[data-theme="dark"] .alert-card.success { background:#14301d !important; border-color:#1a5c2d !important; }
+body[data-theme="dark"] .alert-card.info    { background:#16293a !important; border-color:#1a3a5c !important; }
+body[data-theme="dark"] .alert-card-desc { color:#94a3b8 !important; }
+/* دکمه نمایش/مخفی جدول (مشترک سه تب جدید) */
+.table-toggle-btn {
+    background: linear-gradient(135deg, #0891b2, #06b6d4);
+    color: #fff;
+    border: none;
+    padding: 9px 20px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: 'BNazanin', Tahoma, Arial;
+    font-size: 14px;
+    font-weight: bold;
+    box-shadow: 0 4px 12px rgba(6,182,212,0.30);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.table-toggle-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(6,182,212,0.40); }
+.table-toggle-btn:active { transform: translateY(0); }
+body[data-theme="dark"] .table-toggle-btn { background: linear-gradient(135deg, #155e75, #0891b2); }
+
+/* وسط‌چین سلول‌های جدول‌های سه تب جدید */
+#clusterTable th, #clusterTable td,
+#riskTable th, #riskTable td {
+    text-align: center !important;
+    vertical-align: middle !important;
+}
+.tab-well-search {
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid #ced4da;
+    font-family: 'BNazanin', Tahoma, Arial;
+    font-size: 0.9rem;
+    margin-bottom: 5px;
+    outline: none;
+}
+body[data-theme="dark"] .tab-well-search {
+    background: #252839 !important;
+    color: #e2e8f0 !important;
+    border-color: #3d4a63 !important;
+}
+/* ===== خط زمانی نصب/کشیدن ===== */
+.well-timeline { position: relative; height: 130px; margin: 34px 12px 54px; }
+.well-timeline .tl-ruler {
+    position: absolute; top: 50%; left: 0; right: 0; height: 4px;
+    background: #cbd5e1; border-radius: 2px; transform: translateY(-50%);
+}
+.well-timeline .tl-period { position: absolute; top: 50%; height: 14px; transform: translateY(-50%); border-radius: 7px; }
+.well-timeline .tl-period.complete { background: linear-gradient(90deg,#16a34a,#22c55e); }
+.well-timeline .tl-period.open { background: repeating-linear-gradient(45deg,#f59e0b,#f59e0b 6px,#fbbf24 6px,#fbbf24 12px); }
+.well-timeline .tl-mark { position: absolute; top: 50%; width: 3px; height: 34px; transform: translate(-50%,-50%); border-radius: 2px; }
+.well-timeline .tl-mark.install { background: #15803d; }
+.well-timeline .tl-mark.pull { background: #b91c1c; }
+.well-timeline .tl-label {
+    position: absolute; font-family: 'TimesNewRoman','Times New Roman',serif; font-size: 11px;
+    white-space: nowrap; transform: translateX(-50%); color: #334155; text-align: center; line-height: 1.4;
+}
+.well-timeline .tl-label.up { top: calc(50% - 52px); }
+.well-timeline .tl-label.down { top: calc(50% + 24px); }
+.well-timeline .tl-tick { position: absolute; top: calc(50% + 4px); width: 1px; height: 8px; background: #94a3b8; transform: translateX(-50%); }
+.well-timeline .tl-tick-label {
+    position: absolute; top: calc(50% + 14px); font-family: 'TimesNewRoman','Times New Roman',serif;
+    font-size: 10px; color: #94a3b8; transform: translateX(-50%); white-space: nowrap;
+}
+.timeline-legend { display:flex; gap:18px; flex-wrap:wrap; justify-content:center; margin: 6px 0; font-family:'BNazanin',Tahoma; font-size:13px; }
+.timeline-legend span { display:inline-flex; align-items:center; gap:6px; }
+.timeline-legend .dot { width:14px; height:14px; border-radius:3px; display:inline-block; }
+
+.contractor-well-box {
+    background: linear-gradient(135deg,#eef6ff,#e0f2fe); border:1px solid #bae6fd; border-radius:14px;
+    padding:18px 20px; margin-top:18px; display:grid; grid-template-columns:1fr 1fr; gap:16px;
+}
+.contractor-well-box .cwb-section h4 { margin:0 0 10px; color:#0369a1; font-family:'BNazanin',Tahoma; font-size:1.05rem; }
+.contractor-well-box .cwb-row { display:flex; justify-content:space-between; gap:12px; padding:6px 10px; background:rgba(255,255,255,0.6); border-radius:8px; margin-bottom:6px; }
+.contractor-well-box .cwb-label { font-family:'BNazanin',Tahoma; color:#475569; }
+.contractor-well-box .cwb-value { font-family:'TimesNewRoman','Times New Roman',serif; font-weight:bold; color:#0f172a; }
+
+#contractorPerfTable th, #contractorPerfTable td { text-align:center !important; vertical-align:middle !important; }
+
+body[data-theme="dark"] .well-timeline .tl-ruler { background:#3d4a63; }
+body[data-theme="dark"] .well-timeline .tl-label { color:#c4d0e4; }
+body[data-theme="dark"] .contractor-well-box { background:linear-gradient(135deg,#16293a,#0f1d2e) !important; border-color:#1a3a5c !important; }
+body[data-theme="dark"] .contractor-well-box .cwb-section h4 { color:#7dd3fc !important; }
+body[data-theme="dark"] .contractor-well-box .cwb-row { background:rgba(255,255,255,0.05) !important; }
+body[data-theme="dark"] .contractor-well-box .cwb-label { color:#94a3b8 !important; }
+body[data-theme="dark"] .contractor-well-box .cwb-value { color:#e2e8f0 !important; }
+@media(max-width:700px){ .contractor-well-box { grid-template-columns:1fr; } }
+.cwb-equip-table th, .cwb-equip-table td,
+#manufacturerTable th, #manufacturerTable td,
+#stagesTable th, #stagesTable td,
+#cycleDetailTable th, #cycleDetailTable td {
+    text-align: center !important; vertical-align: middle !important;
+}
+.cwb-equip-table { width: 100%; font-size: 12px; margin-top: 6px; }
+#equipAnalysisCard .chart-canvas-wrapper { position: relative; height: 320px; }
+#equipAnalysisCard .chart-canvas-wrapper--tall { height: 400px; }
+#equipAnalysisCard canvas { max-height: 100% !important; }
+#equipAnalysisCard .chart-canvas-wrapper {
+    position: relative;
+    height: 320px;
+    width: 100%;
+}
+#equipAnalysisCard .chart-canvas-wrapper--tall { height: 400px; }
+#equipAnalysisCard .chart-canvas-wrapper canvas {
+    position: absolute !important;
+    top: 0; left: 0;
+    width: 100% !important;
+    height: 100% !important;
+}
+.flow-labels-menu {
+    position: absolute;
+    top: 36px; left: 0;
+    min-width: 210px; max-height: 280px; overflow-y: auto;
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15); padding: 8px; z-index: 50;
+}
+.flow-labels-menu .flm-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px; border-radius: 7px; cursor: pointer;
+    font-family: 'BNazanin', Tahoma; font-size: 13px; color: #334155;
+}
+.flow-labels-menu .flm-item:hover { background: #f1f5f9; }
+.flow-labels-menu .flm-item input { cursor: pointer; }
+.flow-labels-menu .flm-empty { padding: 10px; color: #94a3b8; font-family: 'BNazanin', Tahoma; font-size: 13px; }
+.flow-labels-menu .flm-actions {
+    display: flex; gap: 6px; padding: 6px 4px 8px; border-bottom: 1px solid #eef2f7; margin-bottom: 6px;
+}
+.flow-labels-menu .flm-actions button {
+    flex: 1; border: none; border-radius: 6px; padding: 5px; cursor: pointer;
+    font-family: 'BNazanin', Tahoma; font-size: 12px;
+}
+.flm-all { background: #dcfce7; color: #166534; }
+.flm-none { background: #fee2e2; color: #b91c1c; }
+body[data-theme="dark"] .flow-labels-menu { background: #1e2130; border-color: #2d3548; }
+body[data-theme="dark"] .flow-labels-menu .flm-item { color: #e2e8f0; }
+body[data-theme="dark"] .flow-labels-menu .flm-item:hover { background: #252839; }
+.stat-subvalue {
+    font-family: 'TimesNewRoman', 'Times New Roman', serif;
+    font-size: 0.82rem;
+    color: #64748b;
+    margin-top: 4px;
+}
+body[data-theme="dark"] .stat-subvalue { color: #94a3b8; }
+.welltype-panel {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
+    margin: 16px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.05); overflow: hidden;
+}
+.welltype-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 18px; cursor: pointer; font-family: 'BNazanin', Tahoma;
+    font-weight: bold; color: #0a3d91; background: #f8fafc; user-select: none;
+}
+.welltype-header i:first-child { color: #0d6efd; }
+.welltype-body { padding: 16px 18px; display: block; }
+.welltype-body.collapsed { display: none; }
+.welltype-types { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.wt-btn {
+    padding: 8px 18px; border-radius: 20px; border: 1px solid #cbd5e1;
+    background: #fff; color: #475569; cursor: pointer;
+    font-family: 'BNazanin', Tahoma; font-size: 0.9rem; transition: all 0.2s;
+}
+.wt-btn:hover { border-color: #0d6efd; }
+.wt-btn.active { background: linear-gradient(135deg,#0d6efd,#00a8c6); color: #fff; border-color: transparent; }
+.welltype-wells { display: flex; flex-wrap: wrap; gap: 8px; max-height: 220px; overflow-y: auto; }
+.wt-well {
+    padding: 7px 14px; border-radius: 8px; border: 1px solid #e2e8f0;
+    background: #f8fafc; color: #334155; cursor: pointer;
+    font-family: 'BNazanin', Tahoma; font-size: 0.85rem; transition: all 0.15s;
+}
+.wt-well:hover { background: #eef2ff; border-color: #c7d2fe; }
+.wt-well.selected { background: #16a34a; color: #fff; border-color: transparent; font-weight: bold; }
+.welltype-empty { color: #94a3b8; font-family: 'BNazanin', Tahoma; font-size: 0.85rem; padding: 6px; }
+body[data-theme="dark"] .welltype-panel { background: #1e2130; border-color: #2d3548; }
+body[data-theme="dark"] .welltype-header { background: #161923; color: #60a5fa; }
+body[data-theme="dark"] .wt-btn { background: #252839; color: #94a3b8; border-color: #3d4a63; }
+body[data-theme="dark"] .wt-well { background: #252839; color: #cbd5e1; border-color: #3d4a63; }
+.permit-badge {
+    align-items: center;
+    background: rgba(124,58,237,0.10);
+    color: #6d28d9;
+    border: 1px solid #7c3aed;
+    border-radius: 16px;
+    padding: 4px 12px;
+    font-family: 'BNazanin', Tahoma, Arial;
+    font-size: 0.82rem;
+    font-weight: bold;
+    white-space: nowrap;
+}
+body[data-theme="dark"] .permit-badge {
+    background: rgba(124,58,237,0.18);
+    color: #c4b5fd;
+}
+.permit-filter-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.permit-filter-row select {
+    padding: 7px 12px; border-radius: 8px; border: 1px solid #ced4da;
+    font-family: 'BNazanin', Tahoma; font-size: 0.9rem;
+}
+#permitTable td:nth-child(2) { padding: 6px 10px; }
+body[data-theme="dark"] .permit-filter-row select {
+    background: #252839; color: #e2e8f0; border-color: #3d4a63;
+}
+/* در دارک‌مود رنگ‌های روشن سلول نام کمی تیره‌تر تا متن خوانا بماند */
+body[data-theme="dark"] #permitTable td[style*="background"] { color: #0f172a !important; }

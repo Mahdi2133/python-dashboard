@@ -1,0 +1,1257 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>داشبورد تحلیل چاه‌ها</title>
+
+    <!-- فراخوانی فایل‌های محلی -->
+    <link rel="stylesheet" href="all.min.css"> 
+    <link rel="stylesheet" href="style.css">   
+
+    <script src="chart.umd.js"></script>
+    <script src="chartjs-plugin-annotation.min.js"></script>
+    <script src="chartjs-plugin-zoom.min.js"></script>
+</head>
+<body class="dashboard-body" data-api="/production-trend/api/data">
+    
+    <header class="dashboard-header">
+        <h1>
+            <i class="fa-solid fa-chart-line"></i>
+            داشبورد تحلیل چاه‌ها
+        </h1>
+        <p>تحلیل پیشرفته</p>
+
+        </div>
+        <!-- ✅ دکمه سمت چپ هدر -->
+        <button class="theme-toggle" id="themeToggleBtn" onclick="toggleTheme()">
+            <i class="fa-solid fa-moon" id="themeIcon"></i>
+        </button>
+    </div>
+    </header> <!-- اینجا تگ هدر به درستی بسته شد -->
+
+
+
+
+<div class="dashboard-container">
+
+<div class="tabs-container">
+
+<ul class="tabs">
+
+<li class="tab active" data-tab="overview">
+<i class="fa-solid fa-chart-pie"></i>
+نمای کلی
+</li>
+
+<li class="tab" data-tab="compare">
+<i class="fa-solid fa-scale-balanced"></i>
+مقایسه
+</li>
+
+<li class="tab" data-tab="group">
+<i class="fa-solid fa-layer-group"></i>
+گروه‌بندی
+</li>
+
+<li class="tab" data-tab="drilling">
+    <i class="fa-solid fa-oil-well"></i>
+    اطلاعات حفاری
+</li>
+
+<li class="tab" data-tab="pumptest">
+    <i class="fa-solid fa-flask"></i>
+    عملکرد پیمانکاران (آزمایش پمپاژ)
+</li>
+
+<li class="tab" data-tab="heatmap">
+    <i class="fa-solid fa-fire"></i>
+    نقشه حرارتی
+</li>
+
+<li class="tab" data-tab="cluster">
+    <i class="fa-solid fa-diagram-project"></i>
+    خوشه‌بندی
+</li>
+
+<li class="tab" data-tab="alerts">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    هشدارها
+</li>
+
+<li class="tab" data-tab="excel">
+<i class="fa-solid fa-file-excel"></i>
+خروجی اکسل
+</li>
+
+
+</ul>
+
+</div>
+
+
+<div class="tab-panel active" id="tab-overview">
+
+<div class="filters-container">
+
+<div class="filter-item">
+<label>سال</label>
+<select id="filterYear">
+<option value="all">همه سال‌ها</option>
+<option value="1403">1403</option>
+<option value="1404">1404</option>
+</select>
+</div>
+
+<div class="filter-item">
+<label>ماه (چندتایی)</label>
+<div id="monthFilterBox" style="display:flex;flex-wrap:wrap;gap:6px;max-width:320px;">
+  <label><input type="checkbox" id="ovMonthAll" checked> همه</label>
+  <label><input type="checkbox" class="ov-month" value="1"> فروردین</label>
+  <label><input type="checkbox" class="ov-month" value="2"> اردیبهشت</label>
+  <label><input type="checkbox" class="ov-month" value="3"> خرداد</label>
+  <label><input type="checkbox" class="ov-month" value="4"> تیر</label>
+  <label><input type="checkbox" class="ov-month" value="5"> مرداد</label>
+  <label><input type="checkbox" class="ov-month" value="6"> شهریور</label>
+  <label><input type="checkbox" class="ov-month" value="7"> مهر</label>
+  <label><input type="checkbox" class="ov-month" value="8"> آبان</label>
+  <label><input type="checkbox" class="ov-month" value="9"> آذر</label>
+  <label><input type="checkbox" class="ov-month" value="10"> دی</label>
+  <label><input type="checkbox" class="ov-month" value="11"> بهمن</label>
+  <label><input type="checkbox" class="ov-month" value="12"> اسفند</label>
+</div>
+</div>
+
+
+<div class="filter-item">
+<label>اداره</label>
+<select id="filterOffice">
+<option value="all">همه ادارات</option>
+</select>
+</div>
+
+<div class="filter-item">
+<label>جستجوی چاه</label>
+
+<input
+type="text"
+id="wellSearch"
+placeholder="نام چاه را جستجو کنید..."
+>
+
+<select id="filterWell">
+<option value="all">همه چاه‌ها</option>
+</select>
+</div>
+
+
+</div>
+
+
+<!-- کارت های آماری -->
+
+<div class="stats-cards">
+
+<div class="stat-card">
+<div class="stat-icon pressure-icon">
+<i class="fa-solid fa-gauge-high"></i>
+</div>
+<div class="stat-content">
+<div class="stat-title">میانگین فشار</div>
+<div class="stat-value" id="avgPressureValue">-</div>
+</div>
+</div>
+
+<div class="stat-card">
+<div class="stat-icon production-icon">
+<i class="fa-solid fa-industry"></i>
+</div>
+<div class="stat-content">
+<div class="stat-title">کل تولید</div>
+<div class="stat-value" id="totalProductionValue">-</div>
+</div>
+</div>
+
+<div class="stat-card">
+<div class="stat-icon flowrate-icon">
+<i class="fa-solid fa-water"></i>
+</div>
+<div class="stat-content">
+<div class="stat-title">میانگین دبی</div>
+<div class="stat-value" id="avgFlowrateValue">-</div>
+</div>
+</div>
+
+<div class="stat-card">
+<div class="stat-icon runtime-icon">
+<i class="fa-solid fa-clock"></i>
+</div>
+<div class="stat-content">
+<div class="stat-title">جمع کارکرد</div>
+<div class="stat-value" id="avgRuntimeValue">-</div>
+<div class="stat-subvalue" id="runtimeMonthsValue">معادل: - ماه</div>
+</div>
+</div>
+
+</div>
+
+<div class="kpi-row">
+    <div class="kpi">🔼 بیشترین تولید: <span id="kpiMaxProd">-</span></div>
+    <div class="kpi">🔽 کمترین فشار: <span id="kpiMinPressure">-</span></div>
+</div>
+
+<!-- پنل فیلتر نوع چاه -->
+<div class="welltype-panel" id="wellTypePanel">
+    <div class="welltype-header" onclick="toggleWellTypePanel()">
+        <span><i class="fa-solid fa-filter"></i> فیلتر نوع چاه</span>
+        <i class="fa-solid fa-chevron-left" id="wellTypeChevron"></i>
+    </div>
+    <div class="welltype-body collapsed" id="wellTypeBody">
+        <div class="welltype-types" id="wellTypeButtons">
+            <button class="wt-btn active" data-type="all" onclick="selectWellType('all', this)">همه</button>
+            <button class="wt-btn" data-type="آهکی" onclick="selectWellType('آهکی', this)">آهکی</button>
+            <button class="wt-btn" data-type="سیمانتاسیون" onclick="selectWellType('سیمانتاسیون', this)">سیمانتاسیون</button>
+            <button class="wt-btn" data-type="معمولی" onclick="selectWellType('معمولی', this)">معمولی</button>
+        </div>
+        <div class="welltype-wells" id="wellTypeWellList"></div>
+    </div>
+</div>
+
+<!-- جدول اعتبار پروانه -->
+<div class="welltype-panel" id="permitValidityPanel">
+    <div class="welltype-header" onclick="togglePermitPanel()">
+        <span><i class="fa-solid fa-id-card"></i> اعتبار پروانه چاه‌ها</span>
+        <i class="fa-solid fa-chevron-left" id="permitPanelChevron"></i>
+    </div>
+    <div class="welltype-body collapsed" id="permitPanelBody">
+        <div class="permit-filter-row">
+            <input type="text" id="permitSearch" class="tab-well-search" placeholder="جستجوی نام چاه...">
+            <select id="permitCategory">
+                <option value="all">همه</option>
+                <option value="soon">۳ ماه یا کمتر تا انقضا</option>
+                <option value="other">سایر (منقضی یا اعتبار بیشتر)</option>
+            </select>
+        </div>
+        <div style="overflow-x:auto; margin-top:12px;">
+            <table class="drilling-pretty-table" id="permitTable"><thead></thead><tbody></tbody></table>
+        </div>
+    </div>
+</div>
+
+
+
+<!-- فیلتر سال نمودارهای روند (چک‌باکس - چند انتخابی) -->
+<div class="chart-year-filter" id="overviewYearFilter">
+    <span class="cyf-label"><i class="fa-solid fa-calendar"></i> سال‌های نمودار:</span>
+    <label><input type="checkbox" id="ovYearAll"> <strong>همه سال‌ها</strong></label>
+    <label><span class="year-dot" style="background:#e60049"></span><input type="checkbox" class="ov-year" value="1399"> ۱۳۹۹</label>
+    <label><span class="year-dot" style="background:#0bb4ff"></span><input type="checkbox" class="ov-year" value="1400"> ۱۴۰۰</label>
+    <label><span class="year-dot" style="background:#50e991"></span><input type="checkbox" class="ov-year" value="1401"> ۱۴۰۱</label>
+    <label><span class="year-dot" style="background:#e6d800"></span><input type="checkbox" class="ov-year" value="1402"> ۱۴۰۲</label>
+    <label><span class="year-dot" style="background:#9b19f5"></span><input type="checkbox" class="ov-year" value="1403"> ۱۴۰۳</label>
+    <label><span class="year-dot" style="background:#ffa300"></span><input type="checkbox" class="ov-year" value="1404" checked> ۱۴۰۴</label>
+    <label><span class="year-dot" style="background:#00bfa0"></span><input type="checkbox" class="ov-year" value="1405"> ۱۴۰۵</label>
+    <button type="button" id="resetZoomBtn" style="margin-inline-start:12px;padding:4px 10px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer;"><i class="fa-solid fa-magnifying-glass-minus"></i> بازگشت نمودار</button>
+</div>
+
+<!-- چهار نمودار تمام‌عرض، هر کدام یک ردیف -->
+<div class="overview-charts-stack">
+    <div class="chart-card">
+        <h3>روند تولید (ماهانه)</h3>
+        <div class="overview-chart-wrapper"><button type="button" class="chart-reset-btn" data-chart="chartProduction" style="position:absolute;top:8px;left:8px;z-index:5;padding:3px 9px;border:1px solid #cbd5e1;border-radius:6px;background:rgba(255,255,255,.92);cursor:pointer;font-family:'BNazanin',Tahoma;font-size:12px;"><i class="fa-solid fa-arrow-rotate-left"></i> حالت اصلی</button><canvas id="chartProduction"></canvas></div>
+    </div>
+    </div>
+    <div class="chart-card">
+        <div style="display:flex; justify-content:space-between; align-items:center; position:relative;">
+            <h3 style="margin:0;">روند دبی (ماهانه)</h3>
+            <span id="permitBadge" class="permit-badge" style="display:none;"></span>
+            <div style="position:relative;">
+                <button id="flowLabelsBtn" onclick="toggleFlowLabelsMenu()"
+                    style="background:#eef2ff; color:#3730a3; border:1px solid #c7d2fe; padding:6px 14px;
+                    border-radius:8px; cursor:pointer; font-family:'BNazanin',Tahoma; font-size:13px;
+                    display:inline-flex; align-items:center; gap:6px;">
+                    <i class="fa-solid fa-tags"></i> نمایش لیبل‌ها
+                    <i class="fa-solid fa-chevron-down" style="font-size:11px;"></i>
+                </button>
+                <div id="flowLabelsMenu" class="flow-labels-menu" style="display:none;"></div>
+            </div>
+        </div>
+        <div class="overview-chart-wrapper"><button type="button" class="chart-reset-btn" data-chart="chartFlow" style="position:absolute;top:8px;left:8px;z-index:5;padding:3px 9px;border:1px solid #cbd5e1;border-radius:6px;background:rgba(255,255,255,.92);cursor:pointer;font-family:'BNazanin',Tahoma;font-size:12px;"><i class="fa-solid fa-arrow-rotate-left"></i> حالت اصلی</button><canvas id="chartFlow"></canvas></div>
+    </div>
+    <!-- باکس اطلاعات پایه چاه (فقط هنگام انتخاب یک چاه) -->
+    <div id="wellInfoBox" class="well-info-box" style="display:none;">
+        <div class="well-info-header">
+            <h3><i class="fa-solid fa-circle-info"></i> اطلاعات پایه چاه</h3>
+            <button id="wellInfoToggleBtn" onclick="toggleWellInfo()">عدم نمایش توضیحات</button>
+        </div>
+        <div id="wellInfoContent" class="well-info-content"></div>
+    </div>
+    <!-- دکمه باز/بسته کردن بخش خط زمانی -->
+<div style="display:flex; justify-content:center; margin:10px 0;">
+    <button id="timelineToggleBtn" onclick="toggleTimelineSection()"
+        style="background:linear-gradient(135deg,#16a34a,#22c55e); color:#fff; border:none;
+        padding:12px 26px; border-radius:30px; cursor:pointer; font-family:'BNazanin',Tahoma;
+        font-size:15px; font-weight:bold; box-shadow:0 4px 14px rgba(22,163,74,0.35);
+        display:flex; align-items:center; gap:10px; transition:transform 0.2s;">
+        <i class="fa-solid fa-timeline"></i>
+        <span id="timelineToggleLabel">نمایش خط زمانی نصب و کشیدن (همراه با تحلیل)</span>
+        <i class="fa-solid fa-chevron-down" id="timelineToggleChevron"></i>
+    </button>
+</div>
+
+<!-- مجموعه‌ی جمع‌شونده -->
+<div id="timelineSection" style="display:none;">
+    <!-- خط زمانی نصب/کشیدن چاه -->
+<div id="wellTimelineCard" class="chart-card">
+    <h3>خط زمانی نصب و کشیدن چاه</h3>
+    <div id="wellTimelineHint" style="color:#888; padding:10px;">برای نمایش خط زمانی، یک چاه را از فیلتر بالا انتخاب کنید.</div>
+    <div id="wellTimelineWrap" style="display:none;">
+        <div id="wellTimeline" class="well-timeline"></div>
+        <div id="wellTimelineLegend" class="timeline-legend"></div>
+        <div id="contractorWellBox" class="contractor-well-box"></div>
+    </div>
+    <div id="equipAnalysisCard" class="chart-card">
+    <h3>تحلیل تجهیزات نصب و عمر مفید</h3>
+    <p style="color:#64748b; font-size:13px;">تحلیل‌های زیر روی همه‌ی دوره‌ها (شامل نصب‌های باز که عمرشان تا آخرین تاریخ سیستم محاسبه می‌شود) انجام می‌شود.</p>
+
+    <div class="group-grid">
+        <div class="chart-card"><h3>میانگین عمر مفید بر حسب تعداد طبقات</h3>
+            <div class="chart-canvas-wrapper"><canvas id="lifeByStagesChart"></canvas></div></div>
+        <div class="chart-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                <h3 style="margin:0;">میانگین عمر بر اساس تیپ تجهیز</h3>
+                <select id="equipTypeSelect" style="padding:6px 12px; border-radius:8px; border:1px solid #ced4da; font-family:'BNazanin',Tahoma;">
+                    <option value="موتور">تیپ موتور</option>
+                    <option value="پمپ">تیپ پمپ</option>
+                </select>
+            </div>
+            <div class="chart-canvas-wrapper"><canvas id="lifeByEquipTypeChart"></canvas></div>
+        </div>
+    </div>
+    <div style="display:flex; justify-content:center; margin-top:20px;">
+        <div class="chart-card" style="width:70%; max-width:760px;">
+            <h3 style="text-align:center;">میانگین عمر مفید بر حسب سازنده</h3>
+            <div class="chart-canvas-wrapper chart-canvas-wrapper--tall"><canvas id="lifeByManufacturerChart"></canvas></div>
+        </div>
+    </div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:24px;">
+        <h3>جدول تحلیل بر حسب سازنده</h3>
+        <button class="table-toggle-btn" onclick="toggleGenericTable('manufacturerTableWrap', this)">نمایش/مخفی کردن جدول</button>
+    </div>
+    <div id="manufacturerTableWrap" style="overflow-x:auto; margin-top:12px; display:none;">
+        <table class="drilling-pretty-table" id="manufacturerTable"><thead></thead><tbody></tbody></table>
+    </div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:24px;">
+        <h3>جدول تحلیل بر حسب تعداد طبقات</h3>
+        <button class="table-toggle-btn" onclick="toggleGenericTable('stagesTableWrap', this)">نمایش/مخفی کردن جدول</button>
+    </div>
+    <div id="stagesTableWrap" style="overflow-x:auto; margin-top:12px; display:none;">
+        <table class="drilling-pretty-table" id="stagesTable"><thead></thead><tbody></tbody></table>
+    </div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:24px;">
+        <h3>جدول جزئیات دوره‌ها (تجهیزات همه چاه‌ها)</h3>
+        <button class="table-toggle-btn" onclick="toggleGenericTable('cycleDetailWrap', this)">نمایش/مخفی کردن جدول</button>
+    </div>
+    <div id="cycleDetailWrap" style="overflow-x:auto; margin-top:12px; display:none;">
+        <table class="drilling-pretty-table" id="cycleDetailTable"><thead></thead><tbody></tbody></table>
+    </div>
+</div>
+</div>
+<!-- پایان timelineSection -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:24px;">
+        <h3>خلاصه عملکرد پیمانکاران (نصب و کشیدن)</h3>
+        <button class="table-toggle-btn" onclick="toggleGenericTable('contractorPerfWrap', this)">نمایش/مخفی کردن جدول</button>
+    </div>
+    <div id="contractorPerfWrap" style="overflow-x:auto; margin-top:12px; display:none;">
+        <table class="drilling-pretty-table" id="contractorPerfTable"><thead></thead><tbody></tbody></table>
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:24px;">
+    <h3>هشدار نصب باز ثبت‌نشده</h3>
+    <button class="table-toggle-btn" onclick="toggleGenericTable('openInstallWarnBox', this)">نمایش/مخفی کردن هشدارها</button>
+</div>
+<div id="openInstallWarnBox" style="margin-top:12px; display:none;"></div>
+</div>
+    <div class="chart-card">
+        <h3>روند کارکرد (ماهانه)</h3>
+        <div class="overview-chart-wrapper"><button type="button" class="chart-reset-btn" data-chart="chartRuntime" style="position:absolute;top:8px;left:8px;z-index:5;padding:3px 9px;border:1px solid #cbd5e1;border-radius:6px;background:rgba(255,255,255,.92);cursor:pointer;font-family:'BNazanin',Tahoma;font-size:12px;"><i class="fa-solid fa-arrow-rotate-left"></i> حالت اصلی</button><canvas id="chartRuntime"></canvas></div>
+    </div>
+    <div class="chart-card">
+        <h3>روند فشار (ماهانه)</h3>
+        <div class="overview-chart-wrapper"><button type="button" class="chart-reset-btn" data-chart="chartPressure" style="position:absolute;top:8px;left:8px;z-index:5;padding:3px 9px;border:1px solid #cbd5e1;border-radius:6px;background:rgba(255,255,255,.92);cursor:pointer;font-family:'BNazanin',Tahoma;font-size:12px;"><i class="fa-solid fa-arrow-rotate-left"></i> حالت اصلی</button><canvas id="chartPressure"></canvas></div>
+    </div>
+</div>
+
+<!-- پای‌چارت و نمودار پهنه -->
+<div class="charts-grid">
+    <div class="chart-card" id="wellStatusCard">
+        <h3 style="text-align:center;">وضعیت چاه‌ها</h3>
+        <div style="width: 390px; margin: 0 auto;">
+            <canvas id="chartWellStatus"></canvas>
+        </div>
+    </div>
+
+    <div class="chart-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <h3>تعداد چاه در هر پهنه</h3>
+            <select id="zoneYearFilter">
+                <option value="all">همه سال‌ها</option>
+                <option value="1399">1399</option>
+                <option value="1400">1400</option>
+                <option value="1401">1401</option>
+                <option value="1402">1402</option>
+                <option value="1403">1403</option>
+                <option value="1404">1404</option>
+                <option value="1405">1405</option>
+            </select>
+        </div>
+        <canvas id="chartZoneWells"></canvas>
+    </div>
+</div>
+
+<div id="zoneWellsTableContainer" class="table-wrapper full-width"></div>
+
+
+
+
+<!-- کانتینر جدول که مخفی است و با کلیک باز می‌شود -->
+<div id="offlineWellsContainer" class="offline-table-wrapper" style="display: none; margin-top: 20px;">
+    <h3 style="color: #e74c3c; text-align: center;">لیست چاه‌های خارج از مدار</h3>
+    <table id="offlineWellsTable" class="offline-table" style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+        <thead>
+            <tr style="background: #e74c3c; color: white;">
+                <th style="padding: 10px;">ردیف</th>
+                <th style="padding: 10px;">نام چاه</th>
+                <th style="padding: 10px;">نام پهنه</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+    
+
+<div class="stats-box">
+
+<h3>خلاصه آماری مراکز</h3>
+
+<table id="statsTable" class="sortable">
+<thead>
+<tr>
+<th>ردیف</th>
+<th>نام مرکز</th>
+<th>تولید</th>
+<th>انحراف معیار تولید</th>
+<th>دبی متوسط</th>
+<th>انحراف معیار دبی</th>
+<th>کارکرد</th>
+<th>انحراف معیار کارکرد</th>
+
+</tr>
+</thead>
+
+<tbody></tbody>
+
+</table>
+</div>
+</div>
+
+
+<!-- جایگزین کردن کل محتوای tab-compare -->
+<div class="tab-panel" id="tab-compare">
+    <div class="compare-top-row">
+        <!-- نمودار رتبه‌بندی که تغییر نام می‌یابد -->
+        <div class="ranking-card">
+            <div class="chart-header">
+                <h3>رتبه‌بندی ادارات بر اساس میانگین کارکرد هر چاه </h3>
+                <select id="rankingYearFilter">
+                    <option value="1399">1399</option>
+                    <option value="1400">1400</option>
+                    <option value="1401">1401</option>
+                    <option value="1402">1402</option>
+                    <option value="1403">1403</option>
+                    <option value="1404">1404</option>
+                    <option value="1405">1405</option>
+                </select>
+            </div>
+            <div class="chart-canvas-wrapper">
+                <canvas id="chartOfficeRanking"></canvas>
+            </div>
+        </div>
+
+        <div class="extra-card">
+            <h3>تعداد چاه ها به تفکیک اداره</h3>
+            <div class="chart-canvas-wrapper">
+                <canvas id="chartWellsByOffice"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- نمودارهای مقایسه‌ای باقی‌مانده -->
+    <div class="compare-grid">
+        <div class="chart-card">
+            <h3>مقایسه تولید ادارات (میانگین)</h3>
+            <div class="chart-canvas-wrapper">
+                <canvas id="compareProduction"></canvas>
+            </div>
+        </div>
+        <div class="chart-card">
+            <h3>مقایسه کارکرد ادارات</h3>
+            <div class="chart-canvas-wrapper">
+                <canvas id="compareRuntime"></canvas>
+            </div>
+        </div>
+
+        <div class="chart-card">
+            <h3>مقایسه دبی ادارات</h3>
+            <div class="chart-canvas-wrapper">
+                <canvas id="compareFlow"></canvas>
+            </div>
+        </div>
+        <div class="chart-card">
+            <div class="chart-header">
+                <h3>راندمان ادارات</h3>
+                <select id="effYearFilter">
+                    <option value="all">همه سال‌ها</option>
+                    <option value="1399">1399</option>
+                    <option value="1400">1400</option>
+                    <option value="1401">1401</option>
+                    <option value="1402">1402</option>
+                    <option value="1403">1403</option>
+                    <option value="1404">1404</option>
+                    <option value="1405">1405</option>
+                </select>
+            </div>
+            <div class="chart-canvas-wrapper">
+                <canvas id="compareEfficiency"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+<div class="tab-panel" id="tab-group">
+
+    <!-- فیلترهای گروه‌بندی -->
+
+ <div class="group-filters">
+
+    <div class="filter-group-row">
+
+        <div class="filter-item">
+            <label>سال</label>
+            <select id="groupYear">
+                <option value="all">همه سال‌ها</option>
+            </select>
+        </div>
+
+        <div class="filter-item">
+            <label>ماه</label>
+            <select id="groupMonth">
+                <option value="all">همه ماه‌ها</option>
+
+                <option value="فروردین">فروردین</option>
+                <option value="اردیبهشت">اردیبهشت</option>
+                <option value="خرداد">خرداد</option>
+                <option value="تیر">تیر</option>
+                <option value="مرداد">مرداد</option>
+                <option value="شهریور">شهریور</option>
+                <option value="مهر">مهر</option>
+                <option value="آبان">آبان</option>
+                <option value="آذر">آذر</option>
+                <option value="دی">دی</option>
+                <option value="بهمن">بهمن</option>
+                <option value="اسفند">اسفند</option>
+            </select>
+        </div>
+
+        
+        <div class="filter-item">
+            <label>اداره</label>
+            <select id="groupOffice">
+                <option value="all">همه ادارات</option>
+            </select>
+        </div>
+
+        <div class="filter-item">
+            <label>چاه</label>
+
+            <input type="text" id="groupWellSearch" placeholder="نام چاه...">
+
+            <select id="groupWell">
+                <option value="all">همه چاه‌ها</option>
+            </select>
+
+        </div>
+
+    </div>
+
+
+    <div class="filter-group-row compact-zones">
+
+        <div class="filter-item">
+            <label>پهنه اصلی</label>
+            <select id="groupMainZone">
+                <option value="all">همه</option>
+            </select>
+        </div>
+
+        <div class="filter-item">
+            <label>زیر پهنه</label>
+            <select id="groupSubZone">
+                <option value="all">همه</option>
+            </select>
+        </div>
+
+    </div>
+
+</div>
+
+
+
+    <!-- دسته آماری 1 -->
+
+    <section class="group-section">
+
+        <div class="section-title">
+            <i class="fa-solid fa-water"></i>
+            تغییرات دبی نسبت به سال پایه 1399
+        </div>
+
+        <div class="group-grid">
+
+            <div class="chart-card">
+                <h3>روند تغییرات دبی</h3>
+                <div class="chart-canvas-wrapper">
+                    <canvas id="groupFlowTrend"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h3>درصد تغییر دبی چاه‌ها</h3>
+                <div class="chart-canvas-wrapper">
+                    <canvas id="groupFlowChange"></canvas>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="stats-box">
+
+<div class="table-controls">
+
+<button id="toggleFlowTable" class="toggle-table">
+نمایش جدول
+</button>
+
+<select id="statusFilter">
+<option value="all">همه وضعیت‌ها</option>
+<option value="بحرانی">بحرانی</option>
+<option value="بحرانی۷۰">بحرانی ۷۰٪+</option>
+<option value="پایدار">پایدار</option>
+<option value="بهبود یافته">بهبود یافته</option>
+<option value="نامشخص">نامشخص</option>
+</select>
+
+
+</div>
+
+<h3>جدول تحلیل تغییرات دبی</h3>
+<div id="statusSummary" class="status-summary-row"></div>
+
+<div id="flowTableContainer" class="table-collapsible">
+
+<table id="groupFlowTable">
+
+<thead>
+<tr>
+
+<th>نام چاه</th>
+
+<th>دبی 1399</th>
+
+<th>دبی 1400</th>
+<th>درصد تغییر 1400</th>
+
+<th>دبی 1401</th>
+<th>درصد تغییر 1401</th>
+
+<th>دبی 1402</th>
+<th>درصد تغییر 1402</th>
+
+<th>دبی 1403</th>
+<th>درصد تغییر 1403</th>
+
+<th>دبی 1404</th>
+<th>درصد تغییر 1404</th>
+
+<th>وضعیت</th>
+
+</tr>
+</thead>
+
+
+<tbody></tbody>
+
+</table>
+
+</div>
+
+
+        </div>
+
+    </section>
+ <!-- دسته آماری: تولید پس از آزمایش پمپاژ -->
+    <section class="group-section">
+        <div class="section-title">
+            <i class="fa-solid fa-flask-vial"></i>
+            تحلیل تولید واقعی در برابر مورد انتظار (پس از تاریخ پایان آزمایش)
+        </div>
+
+        <div class="chart-card">
+            <h3>مقایسه تولید واقعی و مورد انتظار هر چاه</h3>
+            <div class="chart-canvas-wrapper chart-canvas-wrapper--tall">
+                <canvas id="postTestProdChart"></canvas>
+            </div>
+        </div>
+
+        <div class="stats-box" style="margin-top:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>جدول تولید واقعی / مورد انتظار پس از آزمایش</h3>
+                <button class="table-toggle-btn" onclick="toggleGenericTable('postTestTableWrap', this)">نمایش/مخفی کردن جدول</button>
+            </div>
+            <div id="postTestTableWrap" style="overflow-x:auto; margin-top:12px; display:none;">
+                <table class="drilling-pretty-table" id="postTestTable"><thead></thead><tbody></tbody></table>
+            </div>
+        </div>
+    </section>   
+
+
+    <!-- دسته آماری 2 -->
+
+    <section class="group-section">
+
+        <div class="section-title">
+            <i class="fa-solid fa-chart-bubble"></i>
+            تحلیل عملکرد چاه‌ها
+        </div>
+<div class="year-filter">
+  <label>سال:</label>
+  <select id="groupYearPerf">
+    <option value="all">همه سال‌ها</option>
+    <option value="1399">1399</option>
+    <option value="1400">1400</option>
+    <option value="1401">1401</option>
+    <option value="1402">1402</option>
+    <option value="1403">1403</option>
+    <option value="1404" selected>1404</option>
+    <option value="1405">1405</option>
+  </select>
+</div>
+
+
+        <div class="group-grid">
+
+            <div class="chart-card">
+                <h3>نمودار تولید واقعی / مورد انتظار</h3>
+                <div class="chart-canvas-wrapper">
+                    <canvas id="groupExpectedVsActual"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h3>نقشه عملکرد چاه‌ها</h3>
+                <div class="chart-canvas-wrapper chart-canvas-wrapper--tall">
+                    <canvas id="groupQuadrant"></canvas>
+                </div>
+            </div>
+
+        </div>
+
+    </section>
+
+
+    <!-- دسته آماری 3 -->
+
+<section class="group-section">
+    <div class="section-title">
+        <i class="fa-solid fa-chart-area"></i>
+        تحلیل روند تولید
+    </div>
+    
+    <div class="year-filter">
+        <label>سال:</label>
+        <select id="groupYearProd">
+            <option value="all" selected>همه سال‌ها</option>
+            <option value="1399">1399</option>
+            <option value="1400">1400</option>
+            <option value="1401">1401</option>
+            <option value="1402">1402</option>
+            <option value="1403">1403</option>
+            <option value="1404">1404</option>
+            <option value="1405">1405</option>
+        </select>
+    </div>
+    <!-- تغییر اصلی در خط زیر است: حذف full-width از کارت دوم -->
+    <div class="group-grid two-cols">
+        <div class="chart-card">
+            <h3>روند تولید سالانه</h3>
+            <div class="chart-canvas-wrapper">
+                <canvas id="groupYearlyProductionTrend"></canvas>
+            </div>
+        </div>
+
+        <div class="chart-card">
+            <h3>روند تولید ماهانه</h3>
+            <div class="chart-canvas-wrapper">
+                <canvas id="groupProductionTrend"></canvas>
+            </div>
+        </div>
+    </div>
+</section>
+
+    <!-- دسته آماری 5 -->
+    <section class="group-section">
+
+        <div class="section-title">
+            <i class="fa-solid fa-ranking-star"></i>
+            رتبه‌بندی عملکرد
+        </div>
+
+        <div class="year-filter">
+            <label>سال:</label>
+            <select id="groupYearRank">
+                <option value="all" selected>همه سال‌ها</option>
+                <option value="1399">1399</option>
+                <option value="1400">1400</option>
+                <option value="1401">1401</option>
+                <option value="1402">1402</option>
+                <option value="1403">1403</option>
+                <option value="1404">1404</option>
+                <option value="1405">1405</option>
+            </select>
+        </div>
+
+        <div class="group-grid">
+            <div class="chart-card">
+                <h3>Radar عملکرد ادارات</h3>
+                <div class="chart-canvas-wrapper">
+                    <canvas id="groupRadar"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h3>رتبه کلی ادارات</h3>
+                <div class="chart-canvas-wrapper">
+                    <canvas id="groupRanking"></canvas>
+                </div>
+            </div>
+        </div>
+
+    </section>
+
+</div> <!-- این بستن tab-group است -->
+
+<div id="tab-drilling" class="tab-panel">
+    <div class="section-box">
+
+        <h3 class="section-title">
+            <i class="fa-solid fa-chart-line"></i>
+            تحلیل عملکرد پیمانکاران حفاری
+        </h3>
+
+        <!-- ====================== KPI BOXES ====================== -->
+        <div class="kpi-row">
+            <div class="kpi-box kpi-red">
+                <h4>بیشترین درصد افت</h4>
+                <p id="kpi-max-drop">نام پیمانکار - 00%</p>
+            </div>
+
+            <div class="kpi-box kpi-green">
+                <h4>کمترین درصد افت</h4>
+                <p id="kpi-min-drop">نام پیمانکار - 00%</p>
+            </div>
+
+            <div class="kpi-box kpi-orange">
+                <h4>بیشترین شاخص (p/m/w)</h4>
+                <p id="kpi-max-index">نام پیمانکار - 0.000</p>
+            </div>
+
+            <div class="kpi-box kpi-blue">
+                <h4>کمترین شاخص (p/m/w)</h4>
+                <p id="kpi-min-index">نام پیمانکار - 0.000</p>
+            </div>
+        </div>
+
+        <!-- ====================== FILTERS ====================== -->
+        <div class="group-filters">
+            <div class="filter-item">
+                <label>پیمانکار</label>
+                <select id="drillFilterContractor">
+                    <option value="all">انتخاب پیمانکار...</option>
+                </select>
+            </div>
+
+            <div class="filter-item">
+                <label>چاه</label>
+                <select id="drillFilterWell">
+                    <option value="all">ابتدا پیمانکار را انتخاب کنید</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- نمودار فقط در این کارت باشد -->
+<div class="chart-grid">
+    <div class="chart-card full-width drilling-chart-card">
+        <h3>نمودار دبی ماهانه همه سال‌ها</h3>
+        <div class="drilling-chart-wrapper">
+            <canvas id="contractorAvgFlowChart"></canvas>
+        </div>
+    </div>
+</div>
+
+
+<!-- جایگزین بخش جدول قبلی کنید -->
+<div class="section-box" style="margin-top: 50px;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3>جدول خروجی اطلاعات پیمانکاران</h3>
+        <button id="toggleTableBtn" onclick="toggleTable()">نمایش/مخفی کردن جدول</button>
+    </div>
+    <div id="drillingTableWrapper" style="overflow-x: auto; display: none; margin-top: 15px;">
+        <table class="drilling-pretty-table" id="drillPrettyTable">
+            <thead></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+
+<div class="ranking-box">
+    <h3>رتبه‌بندی پیمانکاران</h3>
+    <div id="rankingCards" class="ranking-cards"></div>
+</div>
+
+
+    </div>
+</div>
+
+<div class="tab-panel" id="tab-pumptest">
+    <div class="section-box">
+
+        <h3 class="section-title">
+            <i class="fa-solid fa-flask"></i>
+            عملکرد پیمانکاران آزمایش پمپاژ
+        </h3>
+
+        <!-- KPI -->
+        <div class="kpi-row">
+            <div class="kpi-box kpi-blue">
+                <h4>دقیق‌ترین پیمانکار</h4>
+                <p id="pt-kpi-best">-</p>
+            </div>
+            <div class="kpi-box kpi-red">
+                <h4>پرانحراف‌ترین پیمانکار</h4>
+                <p id="pt-kpi-worst">-</p>
+            </div>
+            <div class="kpi-box kpi-green">
+                <h4>میانگین دبی پیشنهادی</h4>
+                <p id="pt-kpi-avgsug">-</p>
+            </div>
+            <div class="kpi-box kpi-orange">
+                <h4>میانگین ضریب بهره‌برداری</h4>
+                <p id="pt-kpi-util">-</p>
+            </div>
+        </div>
+
+        <!-- فیلترها -->
+        <div class="group-filters">
+            <div class="filter-item">
+                <label>پیمانکار</label>
+                <select id="ptContractor"><option value="all">همه پیمانکاران</option></select>
+            </div>
+            <div class="filter-item">
+                <label>سال حفر</label>
+                <select id="ptYear"><option value="all">همه سال‌ها</option></select>
+            </div>
+        </div>
+
+        <!-- نمودارها -->
+        <div class="group-grid">
+            <div class="chart-card">
+                <h3>شکاف دبی پیشنهادی و تولید واقعی (٪)</h3>
+                <div class="chart-canvas-wrapper"><canvas id="ptGapChart"></canvas></div>
+            </div>
+            <div class="chart-card">
+                <h3>ضریب بهره‌برداری (پیشنهادی ÷ حداکثر آبدهی)</h3>
+                <div class="chart-canvas-wrapper"><canvas id="ptUtilChart"></canvas></div>
+            </div>
+        </div>
+
+        <div class="group-grid">
+            <div class="chart-card">
+                <h3>میانگین افت آب به تفکیک پیمانکار</h3>
+                <div class="chart-canvas-wrapper"><canvas id="ptDrawdownChart"></canvas></div>
+            </div>
+            <div class="chart-card">
+                <h3>نقشه دبی پیشنهادی / واقعی</h3>
+                <div class="chart-canvas-wrapper chart-canvas-wrapper--tall"><canvas id="ptScatter"></canvas></div>
+            </div>
+        </div>
+
+        <!-- کارت‌های رتبه -->
+        <div class="ranking-box">
+            <h3>رتبه‌بندی پیمانکاران بر اساس دقت پیش‌بینی دبی</h3>
+            <div id="ptRankingCards" class="ranking-cards"></div>
+        </div>
+
+        <!-- جدول -->
+        <div class="section-box" style="margin-top: 40px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>جدول کامل آزمایش پمپاژ</h3>
+                <button id="ptToggleTableBtn" onclick="togglePtTable()">نمایش/مخفی کردن جدول</button>
+            </div>
+            <div id="ptGapCounts" class="pt-gap-counts"></div>
+            <div id="ptTableWrapper" style="overflow-x:auto; display:none; margin-top:15px;">
+                <table class="drilling-pretty-table" id="ptTable">
+                    <thead></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- ===== نقشه حرارتی ===== -->
+<div class="tab-panel" id="tab-heatmap">
+    <div class="section-box">
+        <h3 class="section-title">
+            <i class="fa-solid fa-fire"></i>
+            نقشه حرارتی ماهانه
+        </h3>
+
+        <div class="group-filters">
+            <div class="filter-item">
+                <label>اداره</label>
+                <select id="hmOffice"><option value="all">همه ادارات</option></select>
+            </div>
+            <div class="filter-item">
+                <label>چاه</label>
+                <input type="text" id="hmWellSearch" placeholder="جستجوی نام چاه..." class="tab-well-search">
+                <select id="hmWell"><option value="all">همه چاه‌ها</option></select>
+            </div>
+            <div class="filter-item">
+                <label>متریک</label>
+                <select id="hmMetric">
+                    <option value="تولید">تولید ماهانه</option>
+                    <option value="دبی">دبی ماهانه</option>
+                    <option value="کارکرد">کارکرد ماهانه</option>
+                    <option value="فشار">فشار ماهانه</option>
+                </select>
+            </div>
+            <div class="filter-item">
+                <label>سال</label>
+                <select id="hmYear"></select>
+            </div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px;">
+            <h3>جدول نقشه حرارتی</h3>
+            <button class="table-toggle-btn" onclick="toggleGenericTable('heatmapContainer', this)">نمایش/مخفی کردن جدول</button>
+        </div>
+        <div id="heatmapContainer" style="overflow-x:auto; margin-top:12px; display:none;"></div>
+    </div>
+</div>
+
+<!-- ===== خوشه‌بندی ===== -->
+<div class="tab-panel" id="tab-cluster">
+    <div class="section-box">
+        <h3 class="section-title">
+            <i class="fa-solid fa-diagram-project"></i>
+            خوشه‌بندی چاه‌ها (K-Means)
+        </h3>
+
+        <div class="group-filters">
+            <div class="filter-item">
+                <label>اداره</label>
+                <select id="clOffice"><option value="all">همه ادارات</option></select>
+            </div>
+            <div class="filter-item">
+                <label>چاه</label>
+                <input type="text" id="clWellSearch" placeholder="جستجوی نام چاه..." class="tab-well-search">
+                <select id="clWell"><option value="all">همه چاه‌ها</option></select>
+            </div>
+            <div class="filter-item">
+                <label>سال تحلیل</label>
+                <select id="clusterYear"></select>
+            </div>
+            <div class="filter-item">
+                <label>تعداد خوشه</label>
+                <select id="clusterK">
+                    <option value="3">۳ خوشه</option>
+                    <option value="4" selected>۴ خوشه</option>
+                    <option value="5">۵ خوشه</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="group-grid">
+            <div class="chart-card">
+                <h3>نقشه پراکندگی خوشه‌ها (دبی / تولید)</h3>
+                <div class="chart-canvas-wrapper chart-canvas-wrapper--tall"><canvas id="clusterScatter"></canvas></div>
+            </div>
+            <div class="chart-card">
+                <h3>مشخصات خوشه‌ها (رادار)</h3>
+                <div class="chart-canvas-wrapper chart-canvas-wrapper--tall"><canvas id="clusterRadar"></canvas></div>
+            </div>
+        </div>
+
+        <div id="clusterLegend" class="cluster-legend-wrap"></div>
+
+        <div class="section-box" style="margin-top:30px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>جدول خوشه‌بندی</h3>
+                <button class="table-toggle-btn" onclick="toggleGenericTable('clusterTableWrap', this)">نمایش/مخفی کردن جدول</button>
+            </div>
+            <div id="clusterTableWrap" style="overflow-x:auto; margin-top:12px; display:none;">
+                <table class="drilling-pretty-table" id="clusterTable">
+                    <thead></thead><tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== هشدارها ===== -->
+<div class="tab-panel" id="tab-alerts">
+    <div class="section-box">
+        <h3 class="section-title">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            هشدارها و تحلیل ریسک
+        </h3>
+
+        <div class="group-filters">
+            <div class="filter-item">
+                <label>اداره</label>
+                <select id="alOffice"><option value="all">همه ادارات</option></select>
+            </div>
+            <div class="filter-item">
+                <label>چاه</label>
+                <input type="text" id="alWellSearch" placeholder="جستجوی نام چاه..." class="tab-well-search">
+                <select id="alWell"><option value="all">همه چاه‌ها</option></select>
+            </div>
+            <div class="filter-item">
+                <label>سال مبنا (قبل)</label>
+                <select id="alYearPrev"></select>
+            </div>
+            <div class="filter-item">
+                <label>سال مقایسه (بعد)</label>
+                <select id="alYearLast"></select>
+            </div>
+        </div>
+
+        <div id="alertsContainer"></div>
+
+        <div class="group-grid" style="margin-top:20px;">
+            <div class="chart-card">
+                <h3>افت تولید (سال آخر نسبت به سال قبل)</h3>
+                <div class="chart-canvas-wrapper chart-canvas-wrapper--tall"><canvas id="declineChart"></canvas></div>
+            </div>
+            <div class="chart-card">
+                <h3>شاخص پایداری تولید (ضریب تغییرات)</h3>
+                <div class="chart-canvas-wrapper chart-canvas-wrapper--tall"><canvas id="stabilityChart"></canvas></div>
+            </div>
+        </div>
+
+        <div class="section-box" style="margin-top:30px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>جدول تحلیل جامع ریسک</h3>
+                <button class="table-toggle-btn" onclick="toggleGenericTable('riskTableWrap', this)">نمایش/مخفی کردن جدول</button>
+            </div>
+            <div id="riskTableWrap" style="overflow-x:auto; margin-top:12px; display:none;">
+                <table class="drilling-pretty-table" id="riskTable">
+                    <thead></thead><tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="tab-panel" id="tab-excel">
+
+    <div class="excel-cards-container">
+
+        <div class="excel-card excel-card--orange" onclick="downloadHeatmapExcel()">
+            <i class="fa-solid fa-file-excel excel-card__icon"></i>
+            <span class="excel-card__name">نقشه_حرارتی.xlsx</span>
+            <span class="excel-card__hint"><i class="fa-solid fa-download"></i> دانلود</span>
+        </div>
+
+        <div class="excel-card excel-card--green" onclick="downloadClusterExcel()">
+            <i class="fa-solid fa-file-excel excel-card__icon"></i>
+            <span class="excel-card__name">خوشه_بندی.xlsx</span>
+            <span class="excel-card__hint"><i class="fa-solid fa-download"></i> دانلود</span>
+        </div>
+
+        <div class="excel-card excel-card--blue" onclick="downloadRiskExcel()">
+            <i class="fa-solid fa-file-excel excel-card__icon"></i>
+            <span class="excel-card__name">تحلیل_ریسک.xlsx</span>
+            <span class="excel-card__hint"><i class="fa-solid fa-download"></i> دانلود</span>
+        </div>
+
+        <div class="excel-card excel-card--green" onclick="downloadStatsExcel()">
+            <i class="fa-solid fa-file-excel excel-card__icon"></i>
+            <span class="excel-card__name">خلاصه آماری مراکز.xlsx</span>
+            <span class="excel-card__hint"><i class="fa-solid fa-download"></i> دانلود</span>
+        </div>
+
+        <div class="excel-card excel-card--blue" onclick="downloadFlowChangeExcel()">
+            <i class="fa-solid fa-file-excel excel-card__icon"></i>
+            <span class="excel-card__name">جدول_تحلیل_تغییرات_دبی.xlsx</span>
+            <span class="excel-card__hint"><i class="fa-solid fa-download"></i> دانلود</span>
+        </div>
+
+        <div class="excel-card excel-card--orange" onclick="downloadDrillingExcel()">
+            <i class="fa-solid fa-file-excel excel-card__icon"></i>
+            <span class="excel-card__name">گزارش_حفاری.xlsx</span>
+            <span class="excel-card__hint"><i class="fa-solid fa-download"></i> دانلود</span>
+        </div>
+        <div class="excel-card excel-card--blue" onclick="downloadPumpTestExcel()">
+            <i class="fa-solid fa-file-excel excel-card__icon"></i>
+            <span class="excel-card__name">عملکرد_پیمانکاران_آزمایش_پمپاژ.xlsx</span>
+            <span class="excel-card__hint"><i class="fa-solid fa-download"></i> دانلود</span>
+        </div>
+        <div class="excel-card excel-card--green" onclick="downloadCycleAnalysisExcel()">
+    <i class="fa-solid fa-file-excel excel-card__icon"></i>
+    <span class="excel-card__name">تحلیل_تجهیزات_دوره_ها.xlsx</span>
+    <span class="excel-card__hint"><i class="fa-solid fa-download"></i> دانلود</span>
+</div>
+<div class="excel-card excel-card--orange" onclick="downloadManufacturerExcel()">
+    <i class="fa-solid fa-file-excel excel-card__icon"></i>
+    <span class="excel-card__name">تحلیل_سازنده.xlsx</span>
+    <span class="excel-card__hint"><i class="fa-solid fa-download"></i> دانلود</span>
+</div>
+<div class="excel-card excel-card--blue" onclick="downloadStagesExcel()">
+    <i class="fa-solid fa-file-excel excel-card__icon"></i>
+    <span class="excel-card__name">تحلیل_طبقات.xlsx</span>
+    <span class="excel-card__hint"><i class="fa-solid fa-download"></i> دانلود</span>
+</div>
+<div class="excel-card excel-card--green" onclick="downloadContractorPerfExcel()">
+    <i class="fa-solid fa-file-excel excel-card__icon"></i>
+    <span class="excel-card__name">خلاصه_عملکرد_پیمانکاران.xlsx</span>
+    <span class="excel-card__hint"><i class="fa-solid fa-download"></i> دانلود</span>
+</div>
+
+    </div>
+
+</div>
+
+
+<script src="xlsx.full.min.js"></script>
+<script src="script.js"></script>
+
+</body>
+</html>
+
