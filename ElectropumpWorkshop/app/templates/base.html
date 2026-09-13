@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<title>{% block title %}{{ APP_TITLE }}{% endblock %}</title>
+<link rel="icon" href="{{ url_for('static', filename='img/favicon.svg') }}" type="image/svg+xml">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+{% block head %}{% endblock %}
+</head>
+<body>
+
+<header class="app-header">
+  <div class="header-inner">
+    <div class="header-title">
+      <div class="icon">⚙️</div>
+      <div>
+        <h1>{{ APP_TITLE }}</h1>
+        <p>سیستم مدیریت و ورود اطلاعات کارگاه الکتروپمپ — اجرای محلی روی شبکه سازمانی</p>
+      </div>
+    </div>
+    <div class="header-meta">
+      امروز: <code>{{ TODAY_J_STR }}</code>
+      &nbsp;·&nbsp; پایگاه داده: <code>SQLite</code>
+    </div>
+  </div>
+  <nav class="app-nav">
+    <div class="nav-inner">
+      {% for key, label, icon, href in NAV %}
+      <a class="nav-btn {% if active == key %}active{% endif %}" href="{{ href }}">
+        <span>{{ icon }}</span><span>{{ label }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </nav>
+</header>
+
+<main class="main-container">
+  {% block content %}{% endblock %}
+</main>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal">
+    <h3 id="modal-title">تأیید عملیات</h3>
+    <p id="modal-msg">آیا مطمئن هستید؟</p>
+    <div class="modal-actions">
+      <button class="btn-danger" id="modal-confirm-btn" type="button">تأیید</button>
+      <button class="btn-secondary" id="modal-cancel-btn" type="button">انصراف</button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/jalali.js') }}"></script>
+<script src="{{ url_for('static', filename='js/core.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

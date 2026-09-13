@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}گزارش‌ساز — {{ APP_TITLE }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h2>🧩 گزارش‌ساز پویا</h2>
+    <div class="sub">مجموعه‌داده ← فیلد ← فیلتر ← گروه‌بندی ← مرتب‌سازی ← تجمیع</div>
+  </div>
+  <a class="btn-ghost" href="/reports">📈 گزارش‌های آماده</a>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="section-title">۱. مجموعه‌داده و فیلترهای پایه</div>
+    <div class="field-group cols-2">
+      <div class="field"><label>مجموعه‌داده</label>
+        <select id="b-dataset"></select></div>
+      <div class="field"><label>سقف سطرها</label>
+        <select id="b-limit">
+          <option value="200">۲۰۰</option><option value="1000" selected>۱۰۰۰</option>
+          <option value="5000">۵۰۰۰</option><option value="20000">۲۰۰۰۰</option>
+        </select></div>
+      <div class="field"><label>از تاریخ</label>
+        <input type="text" id="b-date-from" class="jdate"></div>
+      <div class="field"><label>تا تاریخ</label>
+        <input type="text" id="b-date-to" class="jdate"></div>
+      <div class="field"><label>سال شمسی</label>
+        <select id="b-year"><option value="">همه</option></select></div>
+      <div class="field"><label>مرکز</label>
+        <select id="b-center"><option value="">همه</option></select></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">۲. گروه‌بندی <span class="count">Group By</span></div>
+    <div class="field">
+      <label>فیلدهای گروه‌بندی (چند انتخابی)</label>
+      <div class="btn-group compact" id="b-groups"></div>
+      <span class="hint">اگر هیچ فیلدی انتخاب نشود، گزارش به‌صورت فهرست یا مجموع کل تولید می‌شود.</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">۳. تجمیع <span class="count">Aggregation</span></div>
+    <div id="b-aggs"></div>
+    <button class="btn-ghost mt-1" id="b-add-agg" type="button">➕ افزودن تجمیع</button>
+  </div>
+
+  <div class="card">
+    <div class="section-title">۴. فیلترهای پیشرفته</div>
+    <div id="b-filters"></div>
+    <button class="btn-ghost mt-1" id="b-add-filter" type="button">➕ افزودن فیلتر</button>
+  </div>
+
+  <div class="card">
+    <div class="section-title">۵. فیلدهای فهرست (بدون گروه‌بندی)</div>
+    <div class="field">
+      <label>ستون‌های خروجی</label>
+      <div class="btn-group compact" id="b-fields"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">۶. مرتب‌سازی</div>
+    <div class="field-group cols-2">
+      <div class="field"><label>بر اساس</label><select id="b-sort"></select></div>
+      <div class="field"><label>جهت</label>
+        <select id="b-dir"><option value="desc">نزولی</option><option value="asc">صعودی</option></select></div>
+    </div>
+  </div>
+</div>
+
+<div class="form-actions">
+  <button class="btn-primary" id="b-run" type="button">▶ اجرای گزارش</button>
+  <button class="export-btn export-xlsx" data-fmt="xlsx" type="button">📊 اکسل</button>
+  <button class="export-btn export-csv"  data-fmt="csv"  type="button">📄 CSV</button>
+  <button class="export-btn export-json" data-fmt="json" type="button">🗂 JSON</button>
+  <button class="export-btn export-pdf"  data-fmt="pdf"  type="button">📕 PDF</button>
+  <button class="btn-secondary" id="b-reset" type="button">پاک کردن</button>
+</div>
+
+<div class="card hidden" id="b-result">
+  <div class="section-title">نتیجه <span class="count" id="b-count"></span></div>
+  <div class="chart-card mb-2 hidden" id="b-chart-card"><h3>نمودار</h3>
+    <div class="bar-chart" id="b-chart"></div></div>
+  <div class="table-scroll">
+    <table><thead><tr id="b-head"></tr></thead><tbody id="b-body"></tbody></table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/report_builder.js') }}"></script>{% endblock %}
