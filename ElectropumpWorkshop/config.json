@@ -9,5 +9,6 @@
     "log_level": "INFO",
     "backup_keep": 30,
     "app_title": "سامانه مدیریت کارگاه الکتروپمپ",
-    "organization": ""
+    "organization": "",
+    "auth_enabled": true
 }

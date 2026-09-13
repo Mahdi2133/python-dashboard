@@ -55,9 +55,16 @@
         <select id="fb-other"><option value="0">خیر</option><option value="1">بله</option></select></div>
       <div class="field span-2"><label>سرستون خروجی اکسل</label>
         <input type="text" id="fb-export"></div>
-      <div class="field span-full" id="fb-options-wrap">
-        <label>گزینه‌های اختصاصی (هر خط یک گزینه، به شکل <code>مقدار|برچسب</code>)</label>
-        <textarea id="fb-options" placeholder="نو|🆕 نو&#10;تعمیری|🔧 تعمیری"></textarea>
+      <div class="field span-full hidden" id="fb-options-wrap">
+        <label>گزینه‌های این فیلد <span id="fb-options-count" class="badge muted"></span></label>
+        <div id="fb-options-note"></div>
+        <div class="options-editor" id="fb-options-list"></div>
+        <div class="toolbar-actions mt-1">
+          <button class="btn-ghost btn-sm" id="fb-opt-add" type="button">➕ گزینه جدید</button>
+          <button class="btn-ghost btn-sm" id="fb-opt-bulk" type="button">📋 ورود گروهی</button>
+        </div>
+        <textarea id="fb-options-bulk" class="hidden mt-1"
+          placeholder="هر خط یک گزینه، به شکل  مقدار|برچسب|آیکون"></textarea>
       </div>
     </div>
     <div class="modal-actions">

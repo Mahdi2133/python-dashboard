@@ -2,6 +2,7 @@
   'use strict';
   var A = window.App;
   var schema = null, editingField = null, editingSection = null, dragged = null;
+  var optionState = { source: null, readonly: false, rows: [] };
 
   var TYPE_LABELS = {
     text: 'متن', number: 'عدد', textarea: 'متن بلند', date: 'تاریخ میلادی',
@@ -62,6 +63,104 @@
     return found;
   }
 
+  /* ── option editor ──────────────────────────────────────────────────── */
+  function renderOptions() {
+    var list = A.qs('#fb-options-list');
+    var count = A.qs('#fb-options-count');
+    count.textContent = optionState.rows.length
+      ? optionState.rows.length + ' گزینه' : 'بدون گزینه';
+    if (optionState.readonly) {
+      list.innerHTML = optionState.rows.length
+        ? optionState.rows.map(function (o) {
+            return '<div class="badge muted">' + A.esc(o.label || o.value) + '</div>';
+          }).join(' ')
+        : '<span class="muted small">—</span>';
+      return;
+    }
+    if (!optionState.rows.length) {
+      list.innerHTML = '<span class="muted small">گزینه‌ای تعریف نشده. '
+        + 'با دکمه‌ی «گزینه جدید» اضافه کنید.</span>';
+      return;
+    }
+    list.innerHTML = '<div class="options-head"><span></span><span>مقدار ذخیره‌شده</span>'
+      + '<span>برچسب نمایشی</span><span>آیکون</span><span>فعال</span><span></span></div>'
+      + optionState.rows.map(function (o, i) {
+          return '<div class="option-row' + (o.is_active ? '' : ' off')
+            + '" draggable="true" data-i="' + i + '">'
+            + '<span class="handle">⠿</span>'
+            + '<input type="text" data-k="value" value="' + A.esc(o.value) + '">'
+            + '<input type="text" data-k="label" value="' + A.esc(o.label || '') + '">'
+            + '<input type="text" data-k="icon" maxlength="4" value="'
+              + A.esc(o.icon || '') + '">'
+            + '<button type="button" class="opt-toggle" title="فعال / غیرفعال">'
+              + (o.is_active ? '✅' : '⛔') + '</button>'
+            + '<button type="button" class="opt-del" title="حذف از فهرست">✕</button>'
+            + '</div>';
+        }).join('');
+  }
+
+  async function loadOptions(field) {
+    var wrap = A.qs('#fb-options-wrap');
+    var note = A.qs('#fb-options-note');
+    optionState = { source: null, readonly: false, rows: [] };
+    A.qs('#fb-options-bulk').classList.add('hidden');
+    A.qs('#fb-options-bulk').value = '';
+
+    var choiceTypes = ['select', 'radio', 'checkbox', 'multiselect', 'autocomplete'];
+    if (!field) {
+      /* New field: options are typed in before the field exists. */
+      wrap.classList.toggle('hidden', !choiceTypes.includes(A.qs('#fb-type').value));
+      optionState.source = 'own';
+      note.innerHTML = '<div class="alert info small">این گزینه‌ها مخصوص همین فیلد '
+        + 'خواهند بود.</div>';
+      renderOptions();
+      return;
+    }
+    if (!choiceTypes.includes(field.field_type)) {
+      wrap.classList.add('hidden');
+      return;
+    }
+    wrap.classList.remove('hidden');
+    note.innerHTML = '<div class="loading small">در حال بارگذاری گزینه‌ها</div>';
+    try {
+      var res = await A.api.get('/api/form-builder/fields/' + field.id + '/options');
+      var d = res.data;
+      optionState.source = d.source;
+      optionState.readonly = !!d.readonly;
+      optionState.rows = (d.options || []).map(function (o) {
+        return { value: o.value, label: o.label || o.value, icon: o.icon || '',
+                 is_active: o.is_active !== false };
+      });
+      if (d.readonly) {
+        note.innerHTML = '<div class="alert warn small">' + A.esc(d.note || '') + '</div>';
+      } else if (d.source === 'lookup') {
+        var shared = (d.shared_with || []);
+        note.innerHTML = '<div class="alert warn small">این گزینه‌ها در فهرست مشترک '
+          + '«<b>' + A.esc(d.category_name || d.category) + '</b>» نگهداری می‌شوند'
+          + (shared.length
+              ? ' و فیلدهای دیگری هم از آن استفاده می‌کنند: <b>'
+                + shared.map(A.esc).join('، ') + '</b>. تغییر اینجا روی آن‌ها هم اثر می‌گذارد.'
+              : '.')
+          + ' گزینه‌ای که از فهرست بردارید <b>حذف نمی‌شود</b>، فقط غیرفعال می‌گردد تا '
+          + 'رکوردهای قبلی سالم بمانند.</div>';
+      } else {
+        note.innerHTML = '<div class="alert info small">این گزینه‌ها مخصوص همین فیلد است.'
+          + ' گزینه‌ی برداشته‌شده غیرفعال می‌شود، نه حذف.</div>';
+      }
+      renderOptions();
+    } catch (err) {
+      note.innerHTML = '<div class="alert error small">' + A.esc(err.message) + '</div>';
+    }
+  }
+
+  function collectOptions() {
+    return optionState.rows.filter(function (o) { return o.value; })
+      .map(function (o) {
+        return { value: o.value, label: o.label || o.value,
+                 icon: o.icon || null, is_active: o.is_active };
+      });
+  }
+
   function openFieldEditor(field) {
     editingField = field;
     A.qs('#field-modal-title').textContent = field
@@ -87,14 +186,9 @@
     A.qs('#fb-help').value = field && field.help_text ? field.help_text : '';
     A.qs('#fb-other').value = field && field.allow_other ? '1' : '0';
     A.qs('#fb-export').value = field && field.export_header ? field.export_header : '';
-    A.qs('#fb-options').value = field
-      ? (field.own_options || []).map(function (o) {
-          return o.value + (o.label !== o.value ? '|' + o.label : '');
-        }).join('\n')
-      : '';
-    A.qs('#fb-options-wrap').classList.toggle('hidden', !!(field && field.is_builtin));
     A.qs('#fb-delete').classList.toggle('hidden', !field);
     A.openModal('field-modal');
+    loadOptions(field);
   }
 
   function collectField() {
@@ -116,12 +210,7 @@
       help_text: A.qs('#fb-help').value.trim(),
       allow_other: A.qs('#fb-other').value === '1',
       export_header: A.qs('#fb-export').value.trim(),
-      options: A.qs('#fb-options').value.split('\n').map(function (line) {
-        var parts = line.split('|');
-        var value = (parts[0] || '').trim();
-        if (!value) return null;
-        return { value: value, label: (parts[1] || value).trim() };
-      }).filter(Boolean)
+      options: collectOptions()
     };
   }
 
@@ -130,10 +219,20 @@
     if (!payload.field_name || !payload.label) {
       A.toast('نام فنی و برچسب الزامی است.', 'error'); return;
     }
+    var options = payload.options;
+    /* A lookup-backed field keeps its options in the shared category, so they
+       are saved through the options endpoint rather than with the field. */
+    var optionsAreShared = editingField && optionState.source === 'lookup';
+    if (optionsAreShared || optionState.readonly) delete payload.options;
+
     try {
       var res = editingField
         ? await A.api.put('/api/form-builder/fields/' + editingField.id, payload)
         : await A.api.post('/api/form-builder/fields', payload);
+      if (optionsAreShared && !optionState.readonly) {
+        await A.api.put('/api/form-builder/fields/' + editingField.id + '/options',
+                        { options: options });
+      }
       A.toast(res.message);
       A.closeModal('field-modal');
       await load();
@@ -197,6 +296,85 @@
     A.qs('#btn-new-section').addEventListener('click', function () { openSectionEditor(null); });
     A.qs('#fb-save').addEventListener('click', saveField);
     A.qs('#sb-save').addEventListener('click', saveSection);
+
+    /* Changing the type of a NEW field toggles the option editor. */
+    A.qs('#fb-type').addEventListener('change', function () {
+      if (!editingField) loadOptions(null);
+    });
+
+    var optList = A.qs('#fb-options-list');
+    optList.addEventListener('input', function (ev) {
+      var input = ev.target.closest('input[data-k]');
+      if (!input) return;
+      var row = +input.closest('[data-i]').dataset.i;
+      optionState.rows[row][input.dataset.k] = input.value;
+    });
+    optList.addEventListener('click', function (ev) {
+      var row = ev.target.closest('[data-i]');
+      if (!row) return;
+      var i = +row.dataset.i;
+      if (ev.target.closest('.opt-toggle')) {
+        optionState.rows[i].is_active = !optionState.rows[i].is_active;
+        renderOptions();
+      } else if (ev.target.closest('.opt-del')) {
+        optionState.rows.splice(i, 1);
+        renderOptions();
+      }
+    });
+    var optDrag = null;
+    optList.addEventListener('dragstart', function (ev) {
+      optDrag = ev.target.closest('.option-row');
+      if (optDrag) optDrag.classList.add('dragging');
+    });
+    optList.addEventListener('dragend', function () {
+      if (!optDrag) return;
+      optDrag.classList.remove('dragging');
+      var order = A.qsa('.option-row', optList).map(function (r) { return +r.dataset.i; });
+      optionState.rows = order.map(function (i) { return optionState.rows[i]; });
+      optDrag = null;
+      renderOptions();
+    });
+    optList.addEventListener('dragover', function (ev) {
+      ev.preventDefault();
+      var over = ev.target.closest('.option-row');
+      if (!over || !optDrag || over === optDrag) return;
+      var rect = over.getBoundingClientRect();
+      over.parentNode.insertBefore(optDrag,
+        (ev.clientY - rect.top) > rect.height / 2 ? over.nextSibling : over);
+    });
+
+    A.qs('#fb-opt-add').addEventListener('click', function () {
+      if (optionState.readonly) return;
+      optionState.rows.push({ value: '', label: '', icon: '', is_active: true });
+      renderOptions();
+      var inputs = A.qsa('.option-row input[data-k="value"]', optList);
+      if (inputs.length) inputs[inputs.length - 1].focus();
+    });
+
+    A.qs('#fb-opt-bulk').addEventListener('click', function () {
+      var box = A.qs('#fb-options-bulk');
+      if (box.classList.contains('hidden')) {
+        box.value = optionState.rows.map(function (o) {
+          return [o.value, o.label, o.icon].filter(Boolean).join('|');
+        }).join('\n');
+        box.classList.remove('hidden');
+        box.focus();
+        A.toast('پس از ویرایش، دوباره روی «ورود گروهی» بزنید تا اعمال شود.');
+      } else {
+        var seen = {};
+        optionState.rows.forEach(function (o) { seen[o.value] = o; });
+        optionState.rows = box.value.split('\n').map(function (line) {
+          var parts = line.split('|');
+          var value = (parts[0] || '').trim();
+          if (!value) return null;
+          return { value: value, label: (parts[1] || value).trim(),
+                   icon: (parts[2] || '').trim(),
+                   is_active: seen[value] ? seen[value].is_active : true };
+        }).filter(Boolean);
+        box.classList.add('hidden');
+        renderOptions();
+      }
+    });
 
     A.qs('#fb-delete').addEventListener('click', async function () {
       if (!editingField) return;

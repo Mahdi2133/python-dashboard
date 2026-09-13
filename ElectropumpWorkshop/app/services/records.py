@@ -13,7 +13,8 @@ from ..models import (FormField, LookupItem, Record, RecordDynamicValue,
 from .audit import diff_fields, record_audit
 from .jalali import (MONTHS_FA, jalali_parts_to_date, normalize_digits,
                      parse_jalali, parse_jalali_to_date, to_jalali_str)
-from .lookups import normalize_text, resolve_id, resolve_item
+from .lookups import (fold_persian, normalize_text, resolve_id,
+                      resolve_item)
 
 log = logging.getLogger(__name__)
 
@@ -90,9 +91,9 @@ def resolve_well(name_or_id, create_missing=False):
     alias = WellAlias.query.filter_by(alias=raw).one_or_none()
     if alias:
         return alias.well, raw
-    folded = raw.replace(" ", "").lower()
+    folded = fold_persian(raw)
     for candidate in Well.query.all():
-        if candidate.name.replace(" ", "").lower() == folded:
+        if fold_persian(candidate.name) == folded:
             return candidate, raw
     if create_missing:
         well = Well(name=raw, is_active=True, is_verified=False,
@@ -355,9 +356,23 @@ def apply_payload(record: Record, payload: dict, create_missing=False,
     return record
 
 
+def _actor_id():
+    """Id of the signed-in user, or None when running from the CLI/importer."""
+    try:
+        from flask import g, has_request_context
+        if has_request_context():
+            user = getattr(g, "current_user", None)
+            return user.id if user else None
+    except Exception:
+        pass
+    return None
+
+
 def create_record(payload: dict, create_missing=False) -> Record:
     record = Record()
     apply_payload(record, payload, create_missing=create_missing)
+    record.created_by = _actor_id()
+    record.updated_by = record.created_by
     db.session.add(record)
     db.session.flush()
     record_audit("create", "record", record.id,
@@ -369,6 +384,7 @@ def create_record(payload: dict, create_missing=False) -> Record:
 def update_record(record: Record, payload: dict) -> Record:
     before = serialize_record(record)
     apply_payload(record, payload)
+    record.updated_by = _actor_id()
     db.session.flush()
     after = serialize_record(record)
     record_audit("update", "record", record.id,
@@ -416,6 +432,10 @@ def serialize_record(record: Record, verbose: bool = True) -> dict:
     data["reported_to_finance"] = bool(record.reported_to_finance)
     data["well_id"] = record.well_id
     data["well"] = record.well.name if record.well else record.well_name_raw
+    # Carried on every record so exports and reports can show them without a
+    # second lookup; they belong to the well, not to the operation.
+    data["well_pm_code"] = record.well.pm_code if record.well else None
+    data["well_class"] = record.well.well_class if record.well else None
     data["pump_prev"] = record.pump_prev_raw or _label(record.pump_prev_id)
     for key, category in Record.MULTI_FIELDS.items():
         data[key] = record.tag_values(category)

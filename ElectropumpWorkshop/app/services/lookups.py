@@ -7,8 +7,12 @@ from ..models import LookupAlias, LookupCategory, LookupItem
 
 log = logging.getLogger(__name__)
 
+# ZWNJ is deliberately NOT folded away here: it is meaningful in Persian
+# ("می‌رود" is not "می رود") and this function also normalises text that is
+# about to be *stored* and shown back to the user. Matching strips it instead,
+# in fold_persian().
 _ARABIC_MAP = str.maketrans({"ي": "ی", "ك": "ک", "ة": "ه", "ۀ": "ه",
-                             "‌": " ", "‏": "", "‎": ""})
+                             "‏": "", "‎": ""})
 
 
 def normalize_text(value) -> str:
@@ -20,8 +24,26 @@ def normalize_text(value) -> str:
     return text
 
 
+_ALEF_MAP = str.maketrans({"آ": "ا", "أ": "ا", "إ": "ا", "ٱ": "ا",
+                           "ؤ": "و", "ئ": "ی", "ى": "ی"})
+_HARAKAT = re.compile(r"[\u064B-\u065F\u0670\u0640]")
+
+
+def fold_persian(value) -> str:
+    """Aggressive fold for matching two spellings of the same Persian name.
+
+    Beyond ``normalize_text`` this also collapses the alef family (آ/أ/إ → ا),
+    hamze carriers (ئ → ی), harakat and every kind of space or dash. Persian
+    data entry treats these as interchangeable — «آزاد شهر» and «ازاد شهر» are
+    one well — so matching must too.
+    """
+    text = normalize_text(value).translate(_ALEF_MAP)
+    text = _HARAKAT.sub("", text)
+    return re.sub(r"[\s\u200c_\-]+", "", text).lower()
+
+
 def _fold(value: str) -> str:
-    return normalize_text(value).replace(" ", "").lower()
+    return fold_persian(value)
 
 
 def get_category(code: str) -> LookupCategory | None:

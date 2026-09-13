@@ -31,6 +31,7 @@ _DEFAULT_CONFIG = {
     "backup_keep": 30,
     "app_title": "سامانه مدیریت کارگاه الکتروپمپ",
     "organization": "",
+    "auth_enabled": True,
 }
 
 

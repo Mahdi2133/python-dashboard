@@ -120,8 +120,8 @@ class Record(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
                            nullable=False)
-    created_by = db.Column(db.Integer, db.ForeignKey("users.id"))
-    updated_by = db.Column(db.Integer, db.ForeignKey("users.id"))
+    created_by = db.Column(db.Integer, db.ForeignKey("app_users.id"), index=True)
+    updated_by = db.Column(db.Integer, db.ForeignKey("app_users.id"), index=True)
 
     well = db.relationship("Well", backref=db.backref("records", lazy="dynamic"))
     tags = db.relationship("RecordTag", back_populates="record",

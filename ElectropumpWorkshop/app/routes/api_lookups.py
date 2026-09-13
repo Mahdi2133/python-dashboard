@@ -7,6 +7,7 @@ from flask import Blueprint
 
 from ..extensions import db
 from ..models import LookupAlias, LookupCategory, LookupItem, Record, RecordTag
+from ..services.auth import permission_required
 from ..services.audit import record_audit
 from ..services.lookups import items_by_category, normalize_text
 from ._helpers import body, fail, ok
@@ -15,6 +16,7 @@ bp = Blueprint("api_lookups", __name__, url_prefix="/api/lookups")
 
 
 @bp.get("")
+@permission_required("record.create")
 def all_lookups():
     active_only = "all" not in (body() or {}) and True
     from flask import request
@@ -24,12 +26,14 @@ def all_lookups():
 
 
 @bp.get("/categories")
+@permission_required("form.manage")
 def categories():
     cats = LookupCategory.query.order_by(LookupCategory.sort_order).all()
     return ok([c.to_dict() for c in cats])
 
 
 @bp.get("/<code>")
+@permission_required("record.create")
 def category_items(code):
     cat = LookupCategory.query.filter_by(code=code).one_or_none()
     if cat is None:
@@ -40,6 +44,7 @@ def category_items(code):
 
 
 @bp.post("/<code>")
+@permission_required("form.manage")
 def add_item(code):
     cat = LookupCategory.query.filter_by(code=code).one_or_none()
     if cat is None:
@@ -67,6 +72,7 @@ def add_item(code):
 
 
 @bp.put("/item/<int:item_id>")
+@permission_required("form.manage")
 def update_item(item_id):
     item = db.session.get(LookupItem, item_id)
     if item is None:
@@ -100,6 +106,7 @@ def update_item(item_id):
 
 
 @bp.post("/item/<int:item_id>/aliases")
+@permission_required("form.manage")
 def add_alias(item_id):
     item = db.session.get(LookupItem, item_id)
     if item is None:
@@ -115,6 +122,7 @@ def add_alias(item_id):
 
 
 @bp.delete("/item/<int:item_id>")
+@permission_required("form.manage")
 def deactivate_item(item_id):
     """Physical delete only when nothing references the option."""
     item = db.session.get(LookupItem, item_id)
@@ -139,6 +147,7 @@ def deactivate_item(item_id):
 
 
 @bp.post("/<code>/reorder")
+@permission_required("form.manage")
 def reorder(code):
     cat = LookupCategory.query.filter_by(code=code).one_or_none()
     if cat is None:

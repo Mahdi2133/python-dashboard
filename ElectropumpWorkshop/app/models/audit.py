@@ -4,7 +4,7 @@ from datetime import datetime
 from ..extensions import db
 
 AUDIT_ACTIONS = ("create", "update", "delete", "restore", "import", "export",
-                 "backup", "db_restore", "seed", "config")
+                 "backup", "db_restore", "seed", "config", "login", "logout")
 
 
 class User(db.Model):
@@ -29,7 +29,7 @@ class AuditLog(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+    user_id = db.Column(db.Integer, db.ForeignKey("app_users.id"), index=True)
     username = db.Column(db.String(80))
     action = db.Column(db.String(40), nullable=False, index=True)
     entity = db.Column(db.String(60), index=True)

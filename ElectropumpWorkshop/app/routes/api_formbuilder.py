@@ -2,8 +2,10 @@
 from flask import Blueprint, request
 
 from ..extensions import db
-from ..models import FormField, FormFieldOption, FormSection, RecordDynamicValue
+from ..models import (FormField, FormFieldOption, FormSection, LookupCategory,
+                      LookupItem, RecordDynamicValue)
 from ..models.formbuilder import FIELD_TYPES
+from ..services.auth import permission_required
 from ..services.audit import record_audit
 from ..services.jalali import MONTHS_FA
 from ..services.lookups import items_by_category, normalize_text
@@ -12,12 +14,53 @@ from ._helpers import body, fail, ok
 bp = Blueprint("api_formbuilder", __name__, url_prefix="/api/form-builder")
 
 
+def _sync_options(field, options):
+    """Reconcile a field's own options with the list the editor submitted.
+
+    Options in use by saved records must not vanish, so an option that is
+    dropped from the list is deactivated rather than deleted; one that comes
+    back is reactivated. Matching is by value, which is what records store.
+    """
+    incoming = []
+    for idx, opt in enumerate(options):
+        if isinstance(opt, dict):
+            value = normalize_text(opt.get("value"))
+            label = normalize_text(opt.get("label")) or value
+            icon = (opt.get("icon") or "").strip() or None
+            active = opt.get("is_active", True) in (True, "true", "1", 1)
+        else:
+            value = label = normalize_text(opt)
+            icon, active = None, True
+        if not value:
+            continue
+        incoming.append({"value": value, "label": label, "icon": icon,
+                         "sort_order": idx, "is_active": active})
+
+    existing = {o.value: o for o in field.options}
+    seen = set()
+    for spec in incoming:
+        seen.add(spec["value"])
+        current = existing.get(spec["value"])
+        if current is None:
+            db.session.add(FormFieldOption(field_id=field.id, **spec))
+        else:
+            current.label = spec["label"]
+            current.icon = spec["icon"]
+            current.sort_order = spec["sort_order"]
+            current.is_active = spec["is_active"]
+    for value, option in existing.items():
+        if value not in seen:
+            option.is_active = False
+    db.session.flush()
+
+
 def _month_options():
     return [{"value": str(i), "label": MONTHS_FA[i], "is_active": True,
              "sort_order": i} for i in range(1, 13)]
 
 
 @bp.get("")
+@permission_required("record.create")
 def get_schema():
     """Everything the data-entry page needs to render itself, in one call."""
     active_only = request.args.get("all") not in ("1", "true")
@@ -33,6 +76,7 @@ def get_schema():
 
 
 @bp.post("/sections")
+@permission_required("form.manage")
 def create_section():
     payload = body()
     code = normalize_text(payload.get("code"))
@@ -58,6 +102,7 @@ def create_section():
 
 
 @bp.put("/sections/<int:section_id>")
+@permission_required("form.manage")
 def update_section(section_id):
     section = db.session.get(FormSection, section_id)
     if section is None:
@@ -78,6 +123,7 @@ def update_section(section_id):
 
 
 @bp.delete("/sections/<int:section_id>")
+@permission_required("form.manage")
 def delete_section(section_id):
     section = db.session.get(FormSection, section_id)
     if section is None:
@@ -107,6 +153,7 @@ def delete_section(section_id):
 
 
 @bp.post("/fields")
+@permission_required("form.manage")
 def create_field():
     payload = body()
     name = normalize_text(payload.get("field_name"))
@@ -147,21 +194,14 @@ def create_field():
     )
     db.session.add(field)
     db.session.flush()
-    for idx, opt in enumerate(payload.get("options") or []):
-        value = normalize_text(opt.get("value") if isinstance(opt, dict) else opt)
-        if not value:
-            continue
-        db.session.add(FormFieldOption(
-            field_id=field.id, value=value,
-            label=normalize_text(opt.get("label")) if isinstance(opt, dict) else value,
-            icon=opt.get("icon") if isinstance(opt, dict) else None,
-            sort_order=idx))
+    _sync_options(field, payload.get("options") or [])
     record_audit("create", "form_field", field.id, summary=f"افزودن فیلد «{label}»")
     db.session.commit()
-    return ok(field.to_dict(), message="فیلد افزوده شد.")
+    return ok(field.to_dict(active_only=False), message="فیلد افزوده شد.")
 
 
 @bp.put("/fields/<int:field_id>")
+@permission_required("form.manage")
 def update_field(field_id):
     field = db.session.get(FormField, field_id)
     if field is None:
@@ -192,12 +232,19 @@ def update_field(field_id):
     for attr in ("is_required", "is_active", "allow_other", "show_in_table"):
         if attr in payload:
             setattr(field, attr, payload[attr] in (True, "true", "1", 1))
+
+    # Options were previously ignored here, so editing a field's choices did
+    # nothing — the field came back with its original list every time.
+    if "options" in payload:
+        _sync_options(field, payload.get("options") or [])
+
     record_audit("update", "form_field", field.id, summary=f"ویرایش فیلد «{field.label}»")
     db.session.commit()
-    return ok(field.to_dict(), message="فیلد به‌روزرسانی شد.")
+    return ok(field.to_dict(active_only=False), message="فیلد به‌روزرسانی شد.")
 
 
 @bp.delete("/fields/<int:field_id>")
+@permission_required("form.manage")
 def delete_field(field_id):
     field = db.session.get(FormField, field_id)
     if field is None:
@@ -218,6 +265,7 @@ def delete_field(field_id):
 
 
 @bp.post("/fields/<int:field_id>/options")
+@permission_required("form.manage")
 def add_field_option(field_id):
     field = db.session.get(FormField, field_id)
     if field is None:
@@ -239,6 +287,7 @@ def add_field_option(field_id):
 
 
 @bp.put("/options/<int:option_id>")
+@permission_required("form.manage")
 def update_field_option(option_id):
     opt = db.session.get(FormFieldOption, option_id)
     if opt is None:
@@ -255,7 +304,112 @@ def update_field_option(option_id):
     return ok(opt.to_dict(), message="گزینه به‌روزرسانی شد.")
 
 
+@bp.get("/fields/<int:field_id>/options")
+@permission_required("form.manage")
+def field_options(field_id):
+    """The options actually shown for a field, wherever they are stored."""
+    field = db.session.get(FormField, field_id)
+    if field is None:
+        return fail("فیلد یافت نشد.", 404)
+    source = field.options_source
+    if source == "lookup":
+        cat = LookupCategory.query.filter_by(code=field.lookup_category).one_or_none()
+        items = sorted(cat.items, key=lambda i: (i.sort_order, i.id)) if cat else []
+        return ok({
+            "source": "lookup", "category": field.lookup_category,
+            "category_name": cat.name_fa if cat else field.lookup_category,
+            "shared_with": [f.field_name for f in FormField.query.filter_by(
+                lookup_category=field.lookup_category).all() if f.id != field.id],
+            "options": [i.to_dict() for i in items],
+        })
+    if source == "months":
+        return ok({"source": "months", "options": _month_options(),
+                   "readonly": True,
+                   "note": "ماه‌های تقویم شمسی ثابت‌اند و ویرایش نمی‌شوند."})
+    if source == "wells":
+        return ok({"source": "wells", "options": [], "readonly": True,
+                   "note": "گزینه‌های این فیلد از جدول «چاه‌ها» خوانده می‌شود؛ "
+                           "از صفحه‌ی «چاه‌ها» مدیریت کنید."})
+    return ok({"source": "own", "options": [o.to_dict() for o in
+                                            sorted(field.options,
+                                                   key=lambda o: o.sort_order)]})
+
+
+@bp.put("/fields/<int:field_id>/options")
+@permission_required("form.manage")
+def set_field_options(field_id):
+    """Save the option list of a field, routing to the right store.
+
+    For a lookup-backed field this edits the shared category, which is what
+    the operator means when they open «مرکز» and change its buttons; the UI
+    warns them that other fields share that list.
+    """
+    field = db.session.get(FormField, field_id)
+    if field is None:
+        return fail("فیلد یافت نشد.", 404)
+    source = field.options_source
+    if source in ("months", "wells"):
+        return fail("گزینه‌های این فیلد از این بخش قابل ویرایش نیستند.", 422)
+
+    options = body().get("options")
+    if not isinstance(options, list):
+        return fail("فهرست گزینه‌ها ارسال نشده است.", 422)
+
+    if source == "own":
+        _sync_options(field, options)
+        record_audit("update", "form_field", field.id,
+                     summary=f"ویرایش گزینه‌های فیلد «{field.label}»")
+        db.session.commit()
+        return ok(field.to_dict(active_only=False), message="گزینه‌ها ذخیره شد.")
+
+    cat = LookupCategory.query.filter_by(code=field.lookup_category).one_or_none()
+    if cat is None:
+        return fail("دسته‌ی گزینه یافت نشد.", 404)
+
+    existing = {i.value: i for i in cat.items}
+    seen, created = set(), 0
+    for idx, opt in enumerate(options):
+        value = normalize_text(opt.get("value") if isinstance(opt, dict) else opt)
+        if not value:
+            continue
+        label = normalize_text(opt.get("label")) if isinstance(opt, dict) else value
+        icon = (opt.get("icon") or "").strip() or None if isinstance(opt, dict) else None
+        active = (opt.get("is_active", True) in (True, "true", "1", 1)
+                  if isinstance(opt, dict) else True)
+        seen.add(value)
+        item = existing.get(value)
+        if item is None:
+            item = LookupItem(category_id=cat.id, value=value, label=label or value,
+                              icon=icon, sort_order=idx, is_active=active)
+            db.session.add(item)
+            created += 1
+        else:
+            item.label = label or value
+            item.icon = icon
+            item.sort_order = idx
+            item.is_active = active
+            # "Ad-hoc" means an imported value nobody has vetted yet. Activating
+            # it IS the admin vetting it; merely saving the list while leaving
+            # it switched off is not, so the flag stays and it keeps showing up
+            # for review.
+            if active:
+                item.is_adhoc = False
+    # Options left out are deactivated, never deleted: records point at them.
+    for value, item in existing.items():
+        if value not in seen:
+            item.is_active = False
+    record_audit("update", "lookup_item", None,
+                 summary=f"ویرایش گزینه‌های «{cat.name_fa}» از فرم‌ساز "
+                         f"({created} گزینه جدید)")
+    db.session.commit()
+    return ok({"source": "lookup", "category": cat.code,
+               "options": [i.to_dict() for i in
+                           sorted(cat.items, key=lambda i: (i.sort_order, i.id))]},
+              message="گزینه‌ها ذخیره شد.")
+
+
 @bp.post("/reorder")
+@permission_required("form.manage")
 def reorder_fields():
     payload = body()
     for position, field_id in enumerate(payload.get("fields") or []):

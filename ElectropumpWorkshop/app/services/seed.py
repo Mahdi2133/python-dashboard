@@ -10,6 +10,7 @@ from ..extensions import db
 from ..models import (FormField, FormSection, LookupAlias, LookupCategory,
                       LookupItem, Well)
 from .seed_data import FORM_SECTIONS, LOOKUP_CATEGORIES
+from .seed_well_pm import WELL_PM_DATA
 from .seed_wells import ALL_WELLS
 
 log = logging.getLogger(__name__)
@@ -74,6 +75,48 @@ def seed_wells() -> dict:
     return {"wells": added}
 
 
+def seed_well_pm() -> dict:
+    """Attach PM code / class / address to wells, matching on name.
+
+    A well named in the PM workbook but missing from the well list is created:
+    it is a real well the workshop simply had not logged work on yet. Existing
+    values are left alone so a correction made in the UI survives the next
+    startup.
+    """
+    from .lookups import fold_persian, normalize_text
+
+    # Names are matched with the Persian fold, so «ازاد شهر 2» in the
+    # operations sheet lines up with «آزاد شهر 2» in the PM workbook.
+    by_name = {}
+    for well in Well.query.all():
+        by_name.setdefault(fold_persian(well.name), well)
+
+    updated = created = 0
+    for name, pm_code, well_class, address in WELL_PM_DATA:
+        key = fold_persian(name)
+        well = by_name.get(key)
+        if well is None:
+            well = Well(name=normalize_text(name), is_active=True, is_verified=True,
+                        pm_code=pm_code, well_class=well_class,
+                        address=address or None)
+            db.session.add(well)
+            db.session.flush()
+            by_name[key] = well
+            created += 1
+            continue
+        changed = False
+        if not well.pm_code and pm_code:
+            well.pm_code, changed = pm_code, True
+        if not well.well_class and well_class:
+            well.well_class, changed = well_class, True
+        if not well.address and address:
+            well.address, changed = address, True
+        if changed:
+            updated += 1
+    db.session.commit()
+    return {"wells_pm_updated": updated, "wells_pm_created": created}
+
+
 def seed_form() -> dict:
     added_sections = added_fields = 0
     for order, spec in enumerate(FORM_SECTIONS):
@@ -112,10 +155,33 @@ def seed_form() -> dict:
     return {"sections": added_sections, "fields": added_fields}
 
 
+def seed_admin() -> dict:
+    """Create the first administrator so a fresh install can be logged into.
+
+    Only ever runs when the user table is empty. The password is the well-known
+    default and the account is flagged to force a change at first login, which
+    the login screen enforces.
+    """
+    from ..models.auth import AppUser
+    if AppUser.query.count():
+        return {"admin_created": 0}
+    admin = AppUser(username="admin", role="admin", is_active=True,
+                    first_name="مدیر", last_name="سیستم",
+                    must_change_password=True,
+                    notes="حساب پیش‌فرض؛ پس از اولین ورود رمز عبور را تغییر دهید.")
+    admin.set_password("admin")
+    db.session.add(admin)
+    db.session.commit()
+    log.warning("Default administrator created (admin/admin) — must be changed")
+    return {"admin_created": 1}
+
+
 def seed_all(force: bool = False) -> dict:
     result = {}
+    result.update(seed_admin())
     result.update(seed_lookups())
     result.update(seed_wells())
+    result.update(seed_well_pm())
     result.update(seed_form())
     result["changed"] = any(v for k, v in result.items() if isinstance(v, int))
     if result["changed"]:

@@ -7,8 +7,12 @@
     <div class="sub">شاخص‌ها مستقیماً از پایگاه داده محاسبه می‌شوند.</div>
   </div>
   <div class="toolbar-actions">
+    {% if 'entry' in ALLOWED_PAGES %}
     <a class="btn-ghost" href="/entry">📝 ثبت رکورد جدید</a>
+    {% endif %}
+    {% if 'reports' in ALLOWED_PAGES %}
     <a class="btn-ghost" href="/reports">📈 گزارش‌ها</a>
+    {% endif %}
   </div>
 </div>
 

@@ -2,7 +2,7 @@
 import json
 import logging
 
-from flask import has_request_context, request
+from flask import g, has_request_context, request
 
 from ..extensions import db
 from ..models import AuditLog
@@ -14,11 +14,15 @@ def record_audit(action, entity=None, entity_id=None, summary=None, details=None
                  commit=False):
     """Append one audit row. Never raises — auditing must not break the work."""
     try:
+        user = None
+        if has_request_context():
+            user = getattr(g, "current_user", None)
         entry = AuditLog(
             action=action, entity=entity, entity_id=entity_id, summary=summary,
             details=json.dumps(details, ensure_ascii=False) if details is not None else None,
             ip_address=request.remote_addr if has_request_context() else None,
-            username=(request.headers.get("X-User") if has_request_context() else None) or "system",
+            user_id=user.id if user else None,
+            username=user.username if user else "system",
         )
         db.session.add(entry)
         if commit:

@@ -12,6 +12,12 @@ class Well(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), unique=True, nullable=False, index=True)
     code = db.Column(db.String(60), index=True)
+    # From the maintenance workbook «کلاسه و pm code»: the PM system's asset id
+    # and the well's class number. Operators search by these as often as by
+    # name, so they travel with the well everywhere it is shown or exported.
+    pm_code = db.Column(db.String(40), index=True)
+    well_class = db.Column(db.String(40), index=True)
+    address = db.Column(db.Text)
     center_id = db.Column(db.Integer, db.ForeignKey("lookup_items.id"), index=True)
     depth = db.Column(db.Float)
     status = db.Column(db.String(40), default="active")
@@ -28,15 +34,28 @@ class Well(db.Model):
     def to_dict(self, with_stats=False):
         data = {
             "id": self.id, "name": self.name, "code": self.code,
+            "pm_code": self.pm_code, "well_class": self.well_class,
+            "address": self.address,
             "center_id": self.center_id,
             "center": self.center.label if self.center else None,
             "depth": self.depth, "status": self.status,
             "is_active": self.is_active, "is_verified": self.is_verified,
             "notes": self.notes,
+            "display": self.display_label,
         }
         if with_stats:
             data["record_count"] = len([r for r in self.records if r.is_active])
         return data
+
+    @property
+    def display_label(self):
+        """Name with the PM code and class appended, for pickers and reports."""
+        parts = []
+        if self.pm_code:
+            parts.append(f"PM {self.pm_code}")
+        if self.well_class:
+            parts.append(f"کلاسه {self.well_class}")
+        return f"{self.name} ({' · '.join(parts)})" if parts else self.name
 
 
 class WellAlias(db.Model):

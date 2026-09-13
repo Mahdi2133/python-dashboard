@@ -3,6 +3,7 @@ from flask import Blueprint, Response, request
 
 from ..reports import DATASETS, REPORTS, run_builder, run_report
 from ..reports.builder import AGGREGATIONS, OPERATORS
+from ..services.auth import permission_required
 from ..services.audit import record_audit
 from ..services.exporter import render
 from ..services.jalali import today_jalali
@@ -12,6 +13,7 @@ bp = Blueprint("api_reports", __name__, url_prefix="/api/reports")
 
 
 @bp.get("")
+@permission_required("report.view")
 def list_reports():
     return ok({
         "reports": [{"key": k, "title": v["title"], "description": v["desc"]}
@@ -26,6 +28,7 @@ def list_reports():
 
 
 @bp.get("/<key>")
+@permission_required("report.view")
 def get_report(key):
     if key not in REPORTS:
         return fail("گزارش موردنظر تعریف نشده است.", 404)
@@ -33,6 +36,7 @@ def get_report(key):
 
 
 @bp.post("/builder")
+@permission_required("report.build")
 def builder():
     try:
         result = run_builder(body())
@@ -65,6 +69,7 @@ def _download(result, fmt, filename_stem):
 
 
 @bp.get("/<key>/export.<fmt>")
+@permission_required("record.export")
 def export_report(key, fmt):
     if key not in REPORTS:
         return fail("گزارش موردنظر تعریف نشده است.", 404)
@@ -72,6 +77,7 @@ def export_report(key, fmt):
 
 
 @bp.post("/builder/export.<fmt>")
+@permission_required("record.export")
 def export_builder(fmt):
     try:
         result = run_builder(body())

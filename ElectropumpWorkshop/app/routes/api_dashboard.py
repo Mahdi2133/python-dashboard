@@ -4,6 +4,7 @@ from sqlalchemy import func
 
 from ..extensions import db
 from ..models import LookupItem, Record, RecordTag, Well
+from ..services.auth import permission_required
 from ..services.jalali import MONTHS_FA, today_jalali
 from ..services.records import search_query
 from ._helpers import ok, query_params
@@ -29,6 +30,7 @@ def _top_tag(ids, category, limit=12):
 
 
 @bp.get("")
+@permission_required("dashboard.view")
 def dashboard():
     params = query_params()
     base = search_query(params).order_by(None)

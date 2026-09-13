@@ -6,6 +6,7 @@ from werkzeug.utils import secure_filename
 
 from ..models import FormField
 from ..paths import uploads_dir
+from ..services.auth import login_required, permission_required
 from ..services.audit import record_audit
 from ..services.exporter import render
 from ..services.importer import (commit_import, import_localstorage, preview,
@@ -34,6 +35,14 @@ def _export_columns():
     for field in fields:
         if field.field_name in ("op_jdate",):
             continue
+        # The PM code and well class sit next to the well name, matching the
+        # order the maintenance workbook uses.
+        if field.field_name == "well":
+            columns.append({"key": "well", "label": field.export_header or "نام چاه"})
+            columns.append({"key": "well_pm_code", "label": "کد PM"})
+            columns.append({"key": "well_class", "label": "کلاسه چاه"})
+            seen.update({"well", "well_pm_code", "well_class"})
+            continue
         key = (field.model_attr[:-3] if field.model_attr
                and field.model_attr.endswith("_id") else
                (field.model_attr or field.field_name))
@@ -56,6 +65,7 @@ def _export_rows(columns):
 
 
 @bp.get("/export.<fmt>")
+@permission_required("record.export")
 def export_records(fmt):
     columns = _export_columns()
     rows = _export_rows(columns)
@@ -76,6 +86,7 @@ def export_records(fmt):
 
 # ── Excel import wizard ──────────────────────────────────────────────────────
 @bp.post("/import/upload")
+@permission_required("data.import")
 def upload():
     upload_file = request.files.get("file")
     if upload_file is None or not upload_file.filename:
@@ -94,6 +105,7 @@ def upload():
 
 
 @bp.get("/import/preview")
+@permission_required("data.import")
 def import_preview():
     name = secure_filename(request.args.get("filename", ""))
     path = uploads_dir() / name
@@ -109,6 +121,7 @@ def import_preview():
 
 
 @bp.post("/import/commit")
+@permission_required("data.import")
 def import_commit():
     payload = body()
     name = secure_filename(payload.get("filename", ""))
@@ -135,6 +148,7 @@ def import_commit():
 
 # ── localStorage migration ───────────────────────────────────────────────────
 @bp.post("/import/localstorage")
+@permission_required("data.import")
 def localstorage():
     payload = body()
     raw = payload.get("records")
@@ -155,5 +169,6 @@ def localstorage():
 
 
 @bp.get("/months")
+@login_required
 def months():
     return ok([{"value": i, "label": MONTHS_FA[i]} for i in range(1, 13)])

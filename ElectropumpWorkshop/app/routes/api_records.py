@@ -3,6 +3,7 @@ from flask import Blueprint
 
 from ..extensions import db
 from ..models import Record
+from ..services.auth import permission_required
 from ..services.records import (ValidationError, create_record, deactivate_record,
                                 search_query, serialize_record, update_record)
 from ._helpers import body, fail, ok, paging, query_params
@@ -11,6 +12,7 @@ bp = Blueprint("api_records", __name__, url_prefix="/api/records")
 
 
 @bp.get("")
+@permission_required("record.view")
 def list_records():
     """Server-side pagination (requirement 26) — the table never loads it all."""
     page, size = paging()
@@ -25,6 +27,7 @@ def list_records():
 
 
 @bp.get("/<int:record_id>")
+@permission_required("record.view")
 def get_record(record_id):
     record = db.session.get(Record, record_id)
     if record is None:
@@ -33,6 +36,7 @@ def get_record(record_id):
 
 
 @bp.post("")
+@permission_required("record.create")
 def post_record():
     try:
         record = create_record(body())
@@ -43,6 +47,7 @@ def post_record():
 
 @bp.put("/<int:record_id>")
 @bp.patch("/<int:record_id>")
+@permission_required("record.edit")
 def put_record(record_id):
     record = db.session.get(Record, record_id)
     if record is None:
@@ -55,6 +60,7 @@ def put_record(record_id):
 
 
 @bp.delete("/<int:record_id>")
+@permission_required("record.delete")
 def delete_record(record_id):
     record = db.session.get(Record, record_id)
     if record is None:
@@ -65,6 +71,7 @@ def delete_record(record_id):
 
 
 @bp.post("/<int:record_id>/restore")
+@permission_required("record.delete")
 def restore_record(record_id):
     record = db.session.get(Record, record_id)
     if record is None:

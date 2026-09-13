@@ -4,6 +4,7 @@ from sqlalchemy import func
 
 from ..extensions import db
 from ..models import Record, Well, WellAlias
+from ..services.auth import permission_required
 from ..services.audit import record_audit
 from ..services.lookups import normalize_text, resolve_id
 from ._helpers import body, fail, ok, paging
@@ -12,6 +13,7 @@ bp = Blueprint("api_wells", __name__, url_prefix="/api/wells")
 
 
 @bp.get("")
+@permission_required("well.view")
 def list_wells():
     q = normalize_text(request.args.get("q", ""))
     limit = min(int(request.args.get("limit", 20) or 20), 500)
@@ -20,13 +22,17 @@ def list_wells():
         query = query.filter(Well.is_active.is_(True))
     if q:
         like = f"%{q}%"
+        # Operators look wells up by PM code as often as by name.
         query = query.filter(db.or_(Well.name.ilike(like),
+                                    Well.pm_code.ilike(like),
+                                    Well.well_class.ilike(like),
                                     Well.aliases.any(WellAlias.alias.ilike(like))))
     wells = query.order_by(Well.name).limit(limit).all()
     return ok([w.to_dict() for w in wells])
 
 
 @bp.get("/page")
+@permission_required("well.view")
 def paged_wells():
     page, size = paging()
     q = normalize_text(request.args.get("q", ""))
@@ -50,6 +56,7 @@ def paged_wells():
 
 
 @bp.post("")
+@permission_required("well.manage")
 def create_well():
     payload = body()
     name = normalize_text(payload.get("name"))
@@ -59,6 +66,9 @@ def create_well():
         return fail("چاهی با این نام از قبل ثبت شده است.", 409)
     well = Well(
         name=name, code=normalize_text(payload.get("code")) or None,
+        pm_code=normalize_text(payload.get("pm_code")) or None,
+        well_class=normalize_text(payload.get("well_class")) or None,
+        address=normalize_text(payload.get("address")) or None,
         center_id=resolve_id("center", payload.get("center")),
         depth=payload.get("depth") or None,
         notes=payload.get("notes"), is_verified=True,
@@ -71,6 +81,7 @@ def create_well():
 
 
 @bp.put("/<int:well_id>")
+@permission_required("well.manage")
 def update_well(well_id):
     well = db.session.get(Well, well_id)
     if well is None:
@@ -82,7 +93,7 @@ def update_well(well_id):
         if clash:
             return fail("نام تکراری است.", 409)
         well.name = new_name
-    for attr in ("code", "notes", "status"):
+    for attr in ("code", "notes", "status", "pm_code", "well_class", "address"):
         if attr in payload:
             setattr(well, attr, normalize_text(payload[attr]) or None)
     if "center" in payload or "center_id" in payload:
@@ -100,6 +111,7 @@ def update_well(well_id):
 
 
 @bp.delete("/<int:well_id>")
+@permission_required("well.manage")
 def deactivate_well(well_id):
     """Deactivate, never delete — old records must keep their well."""
     well = db.session.get(Well, well_id)
@@ -112,6 +124,7 @@ def deactivate_well(well_id):
 
 
 @bp.post("/<int:well_id>/merge")
+@permission_required("well.manage")
 def merge_well(well_id):
     """Fold a duplicate/misspelled well into a canonical one."""
     target = db.session.get(Well, well_id)
@@ -125,6 +138,10 @@ def merge_well(well_id):
         {"well_id": target.id}, synchronize_session=False)
     if not WellAlias.query.filter_by(alias=source.name).first():
         db.session.add(WellAlias(well_id=target.id, alias=source.name))
+    # Keep whichever identifiers the pair has between them.
+    for attr in ("pm_code", "well_class", "address", "code", "center_id", "depth"):
+        if not getattr(target, attr) and getattr(source, attr):
+            setattr(target, attr, getattr(source, attr))
     source.is_active = False
     record_audit("update", "well", target.id,
                  summary=f"ادغام «{source.name}» در «{target.name}» ({moved} رکورد)")

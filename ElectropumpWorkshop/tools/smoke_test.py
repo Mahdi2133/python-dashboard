@@ -20,6 +20,12 @@ def check(name, condition, detail=""):
     print(f"  [{'OK ' if condition else 'FAIL'}] {name}" + (f"  {detail}" if detail else ""))
 
 
+def _export_headers(client):
+    """The column list the raw export produces, without downloading the file."""
+    from app.routes.api_transfer import _export_columns
+    return _export_columns()
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="electropump_test_")
     db = os.path.join(tmp, "wells.db")
@@ -27,13 +33,17 @@ def main():
     app = create_app({"SQLALCHEMY_DATABASE_URI": f"sqlite:///{db}",
                       "WTF_CSRF_ENABLED": False})
     c = app.test_client()
+    login = c.post("/api/login", json={"username": "admin", "password": "admin"})
+    check("ورود مدیر پیش‌فرض", login.status_code == 200)
 
     print("\n— پایگاه داده و داده‌های مرجع —")
     sysinfo = c.get("/api/system").get_json()["data"]
     check("پایگاه داده ساخته و متصل شد", sysinfo["database"]["connected"])
     check("حالت WAL فعال است", sysinfo["database"]["journal_mode"] == "wal",
           sysinfo["database"]["journal_mode"])
-    check("۳۳۹ چاه درج شد", sysinfo["counts"]["wells"] == 339,
+    # 342 names from the HTML (339 unique) plus the wells that appear only in
+    # the PM workbook.
+    check("چاه‌ها درج شدند", sysinfo["counts"]["wells"] == 711,
           str(sysinfo["counts"]["wells"]))
     check("۲۰۱ گزینه درج شد", sysinfo["counts"]["lookup_items"] == 201,
           str(sysinfo["counts"]["lookup_items"]))
@@ -223,11 +233,105 @@ def main():
 
     print("\n— گزارش تغییرات و صفحات —")
     check("Audit log ثبت شده", c.get("/api/audit").get_json()["total"] > 0)
-    for path in ("/", "/entry", "/records", "/wells", "/reports", "/report-builder",
-                 "/form-builder", "/options", "/transfer", "/settings",
-                 "/print/report/overall"):
-        check(f"صفحه {path}", c.get(path).status_code == 200)
+    for path in ("/", "/entry", "/dashboard", "/records", "/wells", "/reports",
+                 "/report-builder", "/form-builder", "/options", "/transfer",
+                 "/users", "/settings", "/print/report/overall"):
+        # "/" redirects to the first page the signed-in user may open.
+        check(f"صفحه {path}",
+              c.get(path, follow_redirects=True).status_code == 200)
     check("صفحه ۴۰۴ فارسی", "یافت نشد" in c.get("/nope").get_data(as_text=True))
+
+    print("\n— ورود و سطح دسترسی —")
+    r = c.post("/api/users", json={
+        "username": "op_test", "password": "pass1234", "first_name": "کاربر",
+        "last_name": "آزمایشی", "personnel_code": "T-1", "role": "operator"})
+    check("ایجاد کاربر با نقش «ثبت اطلاعات»", r.status_code == 200)
+    op_id = r.get_json()["data"]["id"]
+    check("مجوزهای نقش اعمال شد",
+          set(r.get_json()["data"]["permissions"]) ==
+          {"record.create", "well.view", "report.view"})
+
+    op = app.test_client()
+    r = op.post("/api/login", json={"username": "op_test", "password": "pass1234"})
+    check("ورود کاربر جدید", r.status_code == 200)
+    check("کاربر می‌تواند رکورد ثبت کند",
+          op.post("/api/records", json=payload).status_code == 200)
+    check("کاربر نمی‌تواند ویرایش کند", op.put(f"/api/records/{rid}",
+                                              json={"description": "x"}).status_code == 403)
+    check("کاربر نمی‌تواند حذف کند",
+          op.delete(f"/api/records/{rid}").status_code == 403)
+    check("کاربر به مدیریت کاربران دسترسی ندارد",
+          op.get("/api/users").status_code == 403)
+    check("کاربر به تنظیمات دسترسی ندارد", op.get("/api/system").status_code == 403)
+    check("تب‌های غیرمجاز باز نمی‌شوند", op.get("/settings").status_code == 403)
+    check("تب مجاز باز می‌شود", op.get("/entry").status_code == 200)
+
+    c.put(f"/api/users/{op_id}", json={"permissions": ["record.create"]})
+    check("مجوز دستی جایگزین نقش می‌شود",
+          op.get("/api/me").get_json()["data"]["permissions"] == ["record.create"])
+    c.put(f"/api/users/{op_id}", json={"is_active": False})
+    check("غیرفعال‌سازی بلافاصله اثر می‌کند", op.get("/api/records").status_code == 401)
+    check("کاربر غیرفعال نمی‌تواند وارد شود",
+          op.post("/api/login", json={"username": "op_test",
+                                      "password": "pass1234"}).status_code == 401)
+
+    activity = c.get(f"/api/users/{op_id}/activity").get_json()["data"]
+    check("گزارش کارکرد: رکورد ثبت‌شده", activity["summary"]["records_created"] >= 1)
+    check("گزارش کارکرد: نشست ثبت شده", len(activity["sessions"]) >= 1)
+    check("گزارش کارکرد: اقدامات ثبت شده", len(activity["audits"]) >= 1)
+    check("رمز نادرست پذیرفته نمی‌شود",
+          app.test_client().post("/api/login",
+                                 json={"username": "admin",
+                                       "password": "x"}).status_code == 401)
+    check("بدون ورود، API بسته است",
+          app.test_client().get("/api/records").status_code == 401)
+
+    print("\n— کد PM و کلاسه چاه —")
+    wells = c.get("/api/wells?limit=1&q=10262").get_json()["data"]
+    check("جستجوی چاه با کد PM", bool(wells) and wells[0]["pm_code"] == "10262",
+          str(wells[:1]))
+    check("نمایش ترکیبی نام و کد", "PM" in (wells[0]["display"] if wells else ""))
+    with app.app_context():
+        cols = [col["label"] for col in _export_headers(c)]
+    check("ستون «کد PM» در خروجی", "کد PM" in cols)
+    check("ستون «کلاسه چاه» در خروجی", "کلاسه چاه" in cols)
+
+    print("\n— ویرایش گزینه‌های فرم —")
+    r = c.post("/api/form-builder/sections", json={"code": "opt_t", "title": "تست"})
+    sid2 = r.get_json()["data"]["id"]
+    r = c.post("/api/form-builder/fields",
+               json={"field_name": "opt_pick", "label": "انتخاب", "field_type": "radio",
+                     "section_id": sid2,
+                     "options": [{"value": "الف", "label": "الف"},
+                                 {"value": "ب", "label": "ب"}]})
+    fid2 = r.get_json()["data"]["id"]
+    r = c.put(f"/api/form-builder/fields/{fid2}",
+              json={"options": [{"value": "الف", "label": "الف ویرایش‌شده"},
+                                {"value": "ج", "label": "ج"}]})
+    opts = {o["value"]: o for o in r.get_json()["data"]["own_options"]}
+    check("ویرایش گزینه‌های فیلد سفارشی ذخیره می‌شود",
+          opts.get("الف", {}).get("label") == "الف ویرایش‌شده")
+    check("گزینه جدید افزوده می‌شود", "ج" in opts)
+    check("گزینه حذف‌شده فقط غیرفعال می‌شود",
+          "ب" in opts and opts["ب"]["is_active"] is False)
+
+    builtin = next(f for s in c.get("/api/form-builder?all=1").get_json()["data"]["sections"]
+                   for f in s["fields"] if f["field_name"] == "center")
+    r = c.get(f"/api/form-builder/fields/{builtin['id']}/options").get_json()["data"]
+    check("گزینه‌های فیلد پایه خوانده می‌شود", r["source"] == "lookup" and r["options"])
+    edited = [{"value": o["value"], "label": o["label"], "is_active": o["is_active"]}
+              for o in r["options"]]
+    edited[0]["label"] = "سوران ✓"
+    r = c.put(f"/api/form-builder/fields/{builtin['id']}/options",
+              json={"options": edited})
+    check("ویرایش گزینه‌های فیلد پایه ذخیره می‌شود", r.status_code == 200)
+    after = c.get(f"/api/form-builder/fields/{builtin['id']}/options").get_json()["data"]
+    check("برچسب جدید اعمال شد", after["options"][0]["label"] == "سوران ✓")
+
+    print("\n— ترتیب تب‌ها —")
+    check("صفحه اصلی، ثبت اطلاعات است",
+          b"page-mode" in c.get("/", follow_redirects=True).data)
+    check("داشبورد روی /dashboard است", c.get("/dashboard").status_code == 200)
 
     print("\n— شبکه —")
     from app.services.network import lan_addresses, port_is_free, primary_lan_ip

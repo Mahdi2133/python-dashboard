@@ -12,6 +12,7 @@ from ..models import (AuditLog, FormField, ImportBatch, LookupItem, Record,
                       Well)
 from ..paths import (app_dir, backups_dir, config_path, database_file,
                      load_config, logs_dir)
+from ..services.auth import permission_required
 from ..services.backup import (create_backup, list_backups, restore_backup,
                                validate_backup)
 from ..services.jalali import to_jalali_str
@@ -22,6 +23,7 @@ bp = Blueprint("api_admin", __name__, url_prefix="/api")
 
 
 @bp.get("/system")
+@permission_required("settings.view")
 def system_info():
     """Everything the Settings / System Information panel shows (req. 4)."""
     cfg = load_config()
@@ -79,11 +81,13 @@ def system_info():
 
 
 @bp.get("/backup")
+@permission_required("backup.manage")
 def get_backups():
     return ok(list_backups())
 
 
 @bp.post("/backup")
+@permission_required("backup.manage")
 def post_backup():
     try:
         info = create_backup(note=(body() or {}).get("note"))
@@ -93,6 +97,7 @@ def post_backup():
 
 
 @bp.get("/backup/<path:filename>/download")
+@permission_required("backup.manage")
 def download_backup(filename):
     safe = secure_filename(filename)
     path = backups_dir() / safe
@@ -103,6 +108,7 @@ def download_backup(filename):
 
 
 @bp.post("/backup/restore")
+@permission_required("backup.manage")
 def post_restore():
     """Restore from an existing backup file, or from an uploaded one."""
     upload = request.files.get("file")
@@ -132,6 +138,7 @@ def post_restore():
 
 
 @bp.get("/audit")
+@permission_required("audit.view")
 def audit():
     page, size = paging(default_size=100)
     query = AuditLog.query
@@ -153,12 +160,14 @@ def audit():
 
 
 @bp.get("/imports")
+@permission_required("data.import")
 def import_history():
     rows = ImportBatch.query.order_by(ImportBatch.started_at.desc()).limit(100).all()
     return ok([b.to_dict() for b in rows])
 
 
 @bp.get("/logs")
+@permission_required("audit.view")
 def app_log():
     path = logs_dir() / "app.log"
     if not path.exists():

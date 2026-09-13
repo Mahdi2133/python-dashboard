@@ -150,8 +150,16 @@
         try {
           var res = await A.api.get('/api/wells?limit=15&q=' + encodeURIComponent(value));
           items = res.data.map(function (w) {
+            /* The PM code and class identify the well in the maintenance
+               system, so they are shown next to the name — the field still
+               stores the plain name. */
+            var tags = [];
+            if (w.pm_code) tags.push('کد PM: ' + w.pm_code);
+            if (w.well_class) tags.push('کلاسه: ' + w.well_class);
+            if (w.center) tags.push(w.center);
+            if (!w.is_verified) tags.push('تأییدنشده');
             return { value: w.name, label: w.name, id: w.id,
-                     meta: w.center || (w.is_verified ? '' : 'تأییدنشده') };
+                     meta: tags.join(' · ') };
           });
         } catch (err) { items = []; }
       } else {
@@ -184,10 +192,43 @@
       input.value = item.dataset.value;
       list.classList.remove('show');
       input.dispatchEvent(new Event('change', { bubbles: true }));
+      if (source === 'wells' || source === 'well') showWellBadge(input);
     });
+    if (source === 'wells' || source === 'well') {
+      input.addEventListener('change', function () { showWellBadge(input); });
+    }
     document.addEventListener('click', function (ev) {
       if (!input.parentNode.contains(ev.target)) list.classList.remove('show');
     });
+  }
+
+  /* Badge under the well field confirming which well was matched. */
+  async function showWellBadge(input) {
+    var wrap = input.closest('.field');
+    if (!wrap) return;
+    var badge = wrap.querySelector('.well-badge');
+    if (!badge) {
+      badge = A.el('div', { class: 'well-badge hint' });
+      wrap.appendChild(badge);
+    }
+    var name = input.value.trim();
+    if (!name) { badge.textContent = ''; return; }
+    try {
+      var res = await A.api.get('/api/wells?all=1&limit=1&q=' + encodeURIComponent(name));
+      var w = (res.data || []).find(function (x) { return x.name === name; });
+      if (!w) {
+        badge.innerHTML = '<span class="badge warn">چاه جدید — با ثبت رکورد افزوده می‌شود</span>';
+        return;
+      }
+      var parts = [];
+      if (w.pm_code) parts.push('<span class="badge">کد PM: ' + A.esc(w.pm_code) + '</span>');
+      if (w.well_class) parts.push('<span class="badge">کلاسه: ' + A.esc(w.well_class) + '</span>');
+      if (w.center) parts.push('<span class="badge muted">' + A.esc(w.center) + '</span>');
+      if (!w.pm_code && !w.well_class) {
+        parts.push('<span class="badge muted">کد PM ثبت نشده</span>');
+      }
+      badge.innerHTML = parts.join(' ');
+    } catch (err) { badge.textContent = ''; }
   }
 
   /* ── reading / writing values ───────────────────────────────────────── */
@@ -304,6 +345,8 @@
       var other = A.qs('[data-other="failure"]');
       if (other) other.value = record.failure_other;
     }
+    var wellInput = A.qs('#fld-well');
+    if (wellInput && wellInput.value) showWellBadge(wellInput);
   }
 
   function clearForm() {

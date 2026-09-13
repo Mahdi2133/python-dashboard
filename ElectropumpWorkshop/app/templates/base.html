@@ -20,17 +20,30 @@
         <p>سیستم مدیریت و ورود اطلاعات کارگاه الکتروپمپ — اجرای محلی روی شبکه سازمانی</p>
       </div>
     </div>
-    <div class="header-meta">
-      امروز: <code>{{ TODAY_J_STR }}</code>
-      &nbsp;·&nbsp; پایگاه داده: <code>SQLite</code>
+    <div class="header-user">
+      {% if CURRENT_USER %}
+      <div class="user-chip">
+        <span class="avatar">{{ CURRENT_USER.full_name[:1] }}</span>
+        <div class="user-meta">
+          <b>{{ CURRENT_USER.full_name }}</b>
+          <span>{{ CURRENT_USER.role_label }}</span>
+        </div>
+      </div>
+      <span class="today">امروز: <code>{{ TODAY_J_STR }}</code></span>
+      <a class="btn-logout" href="/logout" title="خروج از سامانه">خروج ⏻</a>
+      {% else %}
+      <span class="today">امروز: <code>{{ TODAY_J_STR }}</code></span>
+      {% endif %}
     </div>
   </div>
   <nav class="app-nav">
     <div class="nav-inner">
       {% for key, label, icon, href in NAV %}
+      {% if key in ALLOWED_PAGES %}
       <a class="nav-btn {% if active == key %}active{% endif %}" href="{{ href }}">
         <span>{{ icon }}</span><span>{{ label }}</span>
       </a>
+      {% endif %}
       {% endfor %}
     </div>
   </nav>

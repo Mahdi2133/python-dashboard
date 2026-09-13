@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
+from datetime import timedelta
 
 from flask import Flask, jsonify, render_template, request
 from sqlalchemy import event
@@ -77,6 +78,13 @@ def create_app(config_overrides: dict | None = None) -> Flask:
         JSON_AS_ASCII=False,
         MAX_CONTENT_LENGTH=64 * 1024 * 1024,
         WTF_CSRF_TIME_LIMIT=None,
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        # The system runs on a plain-HTTP company LAN, so the cookie cannot be
+        # marked Secure or browsers would drop it and nobody could log in.
+        SESSION_COOKIE_SECURE=False,
+        AUTH_ENABLED=bool(cfg.get("auth_enabled", True)),
         APP_CONFIG=cfg,
         APP_TITLE=cfg.get("app_title") or "سامانه مدیریت کارگاه الکتروپمپ",
         LOG_LEVEL=cfg.get("log_level", "INFO"),
@@ -100,6 +108,20 @@ def create_app(config_overrides: dict | None = None) -> Flask:
     from . import models  # noqa: F401  (register mappers)
     from .routes import register_blueprints
     register_blueprints(app)
+
+    from .services.auth import load_current_user
+
+    @app.before_request
+    def _authenticate():
+        load_current_user()
+
+    @app.context_processor
+    def _inject_user():
+        from .services.auth import current_user
+        user = current_user()
+        return {"CURRENT_USER": user,
+                "ALLOWED_PAGES": user.allowed_pages if user else set(),
+                "AUTH_ENABLED": app.config["AUTH_ENABLED"]}
 
     # The migration tooling needs an app whose database has NOT been created
     # yet, so `flask db migrate` can diff the models against an empty schema.

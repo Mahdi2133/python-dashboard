@@ -85,6 +85,30 @@ class FormField(db.Model):
                               cascade="all, delete-orphan",
                               order_by="FormFieldOption.sort_order")
 
+    CHOICE_TYPES = ("select", "radio", "checkbox", "multiselect", "autocomplete")
+
+    @property
+    def is_choice(self):
+        return self.field_type in self.CHOICE_TYPES
+
+    @property
+    def options_source(self):
+        """Where this field's options live, so the editor knows what to edit.
+
+        ``lookup``  — a shared category in ``lookup_items``; editing it changes
+                      every field that draws on the same list.
+        ``own``     — options attached to this field alone.
+        ``months``  — the built-in Jalali month list.
+        ``wells``   — the wells table (the well autocomplete).
+        """
+        if not self.is_choice:
+            return None
+        if self.lookup_category == "__months__":
+            return "months"
+        if self.field_name == "well":
+            return "wells"
+        return "lookup" if self.lookup_category else "own"
+
     def to_dict(self, active_only=True):
         opts = [o for o in self.options if o.is_active or not active_only]
         return {
@@ -102,6 +126,8 @@ class FormField(db.Model):
             "show_in_table": self.show_in_table, "table_order": self.table_order,
             "export_header": self.export_header or self.label,
             "own_options": [o.to_dict() for o in opts],
+            "is_choice": self.is_choice,
+            "options_source": self.options_source,
         }
 
 
