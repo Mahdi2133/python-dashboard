@@ -24,12 +24,11 @@
   function renderChoice(field, multiple) {
     var opts = optionsFor(field);
     var type = multiple ? 'checkbox' : 'radio';
+    /* No blank "—" button: an empty choice is not a choice. Clearing is done
+       by clicking the selected option again, which reads better and stops the
+       dash from being picked by accident. */
     var html = '<div class="btn-group' + (opts.length > 14 ? ' compact' : '')
       + '" data-field="' + A.esc(field.field_name) + '">';
-    if (!multiple && !field.is_required) {
-      html += '<label><input type="radio" name="' + A.esc(field.field_name)
-        + '" value=""><span class="btn-opt">—</span></label>';
-    }
     opts.forEach(function (opt) {
       html += '<label><input type="' + type + '" name="' + A.esc(field.field_name)
         + '" value="' + A.esc(opt.value) + '"'
@@ -96,8 +95,16 @@
     else body = renderInput(field);
 
     var span = field.col_span > 1 ? ' span-' + Math.min(field.col_span, 2) : '';
-    var wide = ['textarea', 'checkbox', 'multiselect'].includes(field.field_type)
-      && optionsFor(field).length > 6 ? ' span-full' : '';
+    /* Long option lists and free text need the whole row; squeezing 20 buttons
+       into a 180px column is what made the form look ragged. */
+    var count = optionsFor(field).length;
+    var wide = '';
+    if (field.field_type === 'textarea') wide = ' span-full';
+    else if (['checkbox', 'multiselect'].includes(field.field_type) && count > 4) {
+      wide = ' span-full';
+    } else if (field.field_type === 'radio' && count > 7) {
+      wide = ' wide-choice';
+    }
     return '<div class="field' + span + wide + '" data-wrap="'
       + A.esc(field.field_name) + '">'
       + labelHtml(field) + body
@@ -120,7 +127,10 @@
 
     A.qsa('.jdate', grid).forEach(function (input) { J.attach(input); });
     A.qsa('[data-autocomplete]', grid).forEach(setupAutocomplete);
+    enableRadioClearing(grid);
+    grid.addEventListener('change', onFieldChanged);
     applyDefaults();
+    applyConditionalFields();
   }
 
   function applyDefaults() {
@@ -134,6 +144,82 @@
     if (dateInput && !dateInput.value && !editingId) {
       dateInput.value = J.format.apply(null, J.today());
     }
+  }
+
+  /* Clicking the already-selected radio clears it — the only way back to
+     "not answered" now that the blank option is gone. */
+  function enableRadioClearing(root) {
+    root.addEventListener('mousedown', function (ev) {
+      var label = ev.target.closest('.btn-group label');
+      if (!label) return;
+      var input = label.querySelector('input[type="radio"]');
+      if (input && input.checked) {
+        setTimeout(function () {
+          input.checked = false;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        }, 0);
+      }
+    });
+  }
+
+  /* ── conditional fields ─────────────────────────────────────────────── */
+  function currentValueOf(name) {
+    var picked = A.qs('input[name="' + name + '"]:checked');
+    if (picked) return picked.value;
+    var input = A.qs('#fld-' + name);
+    return input ? input.value.trim() : '';
+  }
+
+  function applyConditionalFields() {
+    (schema.conditional || []).forEach(function (rule) {
+      var wrap = A.qs('[data-wrap="' + rule.field + '"]');
+      if (!wrap) return;
+      var show = currentValueOf(rule.on) === rule.value;
+      wrap.classList.toggle('hidden', !show);
+      if (!show) {
+        /* A hidden answer must not be submitted — otherwise a contractor
+           picked before switching to «امانی» would still be saved. */
+        A.qsa('input[name="' + rule.field + '"]', wrap).forEach(function (i) {
+          i.checked = false;
+        });
+        var free = A.qs('#fld-' + rule.field);
+        if (free) free.value = '';
+        var other = A.qs('[data-other="' + rule.field + '"]');
+        if (other) other.value = '';
+      }
+    });
+  }
+
+  function onFieldChanged(ev) {
+    var name = ev.target.name || (ev.target.id || '').replace(/^fld-/, '');
+    if (!name) return;
+    if ((schema.conditional || []).some(function (r) { return r.on === name; })) {
+      applyConditionalFields();
+    }
+    if (name === 'well') fillCentreFromWell(ev.target.value);
+  }
+
+  /* Picking a well fills in its centre — the register knows which centre each
+     well belongs to, so the operator should not have to remember. */
+  async function fillCentreFromWell(name) {
+    name = (name || '').trim();
+    if (!name) return;
+    try {
+      var res = await A.api.get('/api/wells?all=1&limit=1&q='
+                                + encodeURIComponent(name));
+      var well = (res.data || []).find(function (w) { return w.name === name; });
+      if (!well || !well.center_value) return;
+      var radio = A.qs('input[name="center"][value="'
+                       + CSS.escape(well.center_value) + '"]');
+      if (!radio || radio.checked) return;
+      radio.checked = true;
+      radio.dispatchEvent(new Event('change', { bubbles: true }));
+      var wrap = A.qs('[data-wrap="center"]');
+      if (wrap) {
+        wrap.classList.add('auto-filled');
+        setTimeout(function () { wrap.classList.remove('auto-filled'); }, 1600);
+      }
+    } catch (err) { /* leave the centre for the operator to pick */ }
   }
 
   /* ── autocomplete (wells and lookup-backed text fields) ─────────────── */
@@ -192,7 +278,10 @@
       input.value = item.dataset.value;
       list.classList.remove('show');
       input.dispatchEvent(new Event('change', { bubbles: true }));
-      if (source === 'wells' || source === 'well') showWellBadge(input);
+      if (source === 'wells' || source === 'well') {
+        showWellBadge(input);
+        fillCentreFromWell(input.value);
+      }
     });
     if (source === 'wells' || source === 'well') {
       input.addEventListener('change', function () { showWellBadge(input); });
@@ -242,11 +331,22 @@
     return input ? input.value.trim() : '';
   }
 
+  function hiddenFields() {
+    var hidden = {};
+    (schema.conditional || []).forEach(function (rule) {
+      var wrap = A.qs('[data-wrap="' + rule.field + '"]');
+      if (wrap && wrap.classList.contains('hidden')) hidden[rule.field] = true;
+    });
+    return hidden;
+  }
+
   function collect() {
     var payload = { dynamic: {} };
+    var hidden = hiddenFields();
     schema.sections.forEach(function (section) {
       section.fields.forEach(function (field) {
         var name = field.field_name;
+        if (hidden[name]) { return; }
         var value;
         if (field.field_type === 'radio') {
           value = checkedValues(name)[0] || '';
@@ -347,6 +447,7 @@
     }
     var wellInput = A.qs('#fld-well');
     if (wellInput && wellInput.value) showWellBadge(wellInput);
+    applyConditionalFields();
   }
 
   function clearForm() {
@@ -356,6 +457,7 @@
     });
     clearErrors();
     applyDefaults();
+    applyConditionalFields();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 

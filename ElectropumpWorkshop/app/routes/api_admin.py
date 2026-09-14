@@ -15,7 +15,7 @@ from ..paths import (app_dir, backups_dir, config_path, database_file,
 from ..services.auth import permission_required
 from ..services.backup import (create_backup, list_backups, restore_backup,
                                validate_backup)
-from ..services.jalali import to_jalali_str
+from ..services.jalali import tehran_time_str, to_jalali_str
 from ..services.network import lan_addresses
 from ._helpers import body, fail, ok, paging
 
@@ -153,7 +153,7 @@ def audit():
     for row in rows:
         d = row.to_dict()
         d["created_at_j"] = to_jalali_str(row.created_at)
-        d["time"] = row.created_at.strftime("%H:%M:%S")
+        d["time"] = tehran_time_str(row.created_at)
         data.append(d)
     return ok(data, total=total, page=page, page_size=size,
               pages=max(1, (total + size - 1) // size))

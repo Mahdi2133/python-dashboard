@@ -38,6 +38,9 @@ class Well(db.Model):
             "address": self.address,
             "center_id": self.center_id,
             "center": self.center.label if self.center else None,
+            # The *stored* value, not the label: the entry form ticks the
+            # centre radio by value when a well is chosen.
+            "center_value": self.center.value if self.center else None,
             "depth": self.depth, "status": self.status,
             "is_active": self.is_active, "is_verified": self.is_verified,
             "notes": self.notes,

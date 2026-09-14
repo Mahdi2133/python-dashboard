@@ -12,7 +12,8 @@ from ..models.auth import (PERMISSIONS, PERMISSION_CODES, ROLES, AppUser,
 from ..services.audit import record_audit
 from ..services.auth import (admin_required, attempt_login, current_user,
                              end_sessions_for, login_required, logout_current)
-from ..services.jalali import parse_jalali_to_date, to_jalali_str
+from ..services.jalali import (parse_jalali_to_date, tehran_time_str,
+                               to_jalali_str)
 from ..services.lookups import normalize_text
 from ._helpers import body, fail, ok, paging
 
@@ -117,6 +118,7 @@ def list_users():
         d["records_created"] = counts.get(u.id, 0)
         d["is_online"] = u.id in open_sessions
         d["last_login_j"] = to_jalali_str(u.last_login_at)
+        d["last_login_time"] = tehran_time_str(u.last_login_at, with_seconds=False)
         data.append(d)
     return ok(data, total=total, page=page, page_size=size,
               pages=max(1, (total + size - 1) // size))
@@ -314,11 +316,11 @@ def user_activity(user_id):
         },
         "sessions": [dict(s.to_dict(),
                           login_at_j=to_jalali_str(s.login_at),
-                          login_time=s.login_at.strftime("%H:%M:%S") if s.login_at else "",
-                          logout_time=s.logout_at.strftime("%H:%M:%S") if s.logout_at else "")
+                          login_time=tehran_time_str(s.login_at),
+                          logout_time=tehran_time_str(s.logout_at))
                      for s in sessions],
         "audits": [dict(a.to_dict(), created_at_j=to_jalali_str(a.created_at),
-                        time=a.created_at.strftime("%H:%M:%S"))
+                        time=tehran_time_str(a.created_at))
                    for a in audits],
         "recent_records": [{
             "id": r.id, "date": f"{r.j_year or ''}/{r.j_month or 0:02d}/{r.j_day or 0:02d}",
@@ -344,8 +346,8 @@ def all_sessions():
             .limit(size).offset((page - 1) * size).all())
     return ok([dict(s.to_dict(),
                     login_at_j=to_jalali_str(s.login_at),
-                    login_time=s.login_at.strftime("%H:%M:%S") if s.login_at else "",
-                    logout_time=s.logout_at.strftime("%H:%M:%S") if s.logout_at else "")
+                    login_time=tehran_time_str(s.login_at),
+                    logout_time=tehran_time_str(s.logout_at))
                for s in rows],
               total=total, page=page, page_size=size,
               pages=max(1, (total + size - 1) // size))

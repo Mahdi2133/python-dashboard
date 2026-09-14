@@ -248,9 +248,34 @@ def _demote_coercion_errors(errors, warnings):
             warnings[key] = errors.pop(key)
 
 
-def _check_required(record, payload, errors):
+def _hidden_by_condition(payload) -> set:
+    """Field names whose "visible_when" condition the payload does not meet.
+
+    Enforced on the server as well as in the browser: a contractor sent along
+    with مجری=امانی is dropped rather than stored, and a hidden field is never
+    treated as a missing required answer.
+    """
+    hidden = set()
+    for field in FormField.query.filter(FormField.visible_when.isnot(None),
+                                        FormField.is_active.is_(True)).all():
+        rule = (field.visible_when or "").strip()
+        if "=" not in rule:
+            continue
+        on, _, expected = rule.partition("=")
+        on, expected = on.strip(), expected.strip()
+        sent = payload.get(on)
+        if isinstance(sent, list):
+            sent = sent[0] if sent else ""
+        if normalize_text(sent) != normalize_text(expected):
+            hidden.add(field.field_name)
+    return hidden
+
+
+def _check_required(record, payload, errors, hidden=frozenset()):
     """Required-ness comes from the form definition, so the admin controls it."""
     for field in FormField.query.filter_by(is_required=True, is_active=True).all():
+        if field.field_name in hidden:
+            continue
         if field.field_name in ("op_jdate",):
             continue
         if field.model_attr and hasattr(record, field.model_attr):
@@ -343,12 +368,18 @@ def apply_payload(record: Record, payload: dict, create_missing=False,
             setattr(record, f"{name}_raw",
                     normalize_text(raw) or None if raw not in (None, "") else None)
 
+    hidden = _hidden_by_condition(payload)
+    for name in hidden:
+        field = FormField.query.filter_by(field_name=name).first()
+        if field and field.model_attr and hasattr(record, field.model_attr):
+            setattr(record, field.model_attr, None)
+
     _apply_tags(record, payload, create_missing)
     _apply_dynamic(record, payload, errors)
     if partial:
         _demote_coercion_errors(errors, warnings)
     else:
-        _check_required(record, payload, errors)
+        _check_required(record, payload, errors, hidden)
 
     record.import_warnings = warnings
     if errors:

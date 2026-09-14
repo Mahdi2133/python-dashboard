@@ -28,10 +28,12 @@
                 : '<span class="badge muted">غیرفعال</span>')
               + (w.is_verified ? '' : ' <span class="badge warn">تأییدنشده</span>') + '</td>'
             + '<td><div class="action-cell">'
-            + '<button class="btn-sm btn-edit" data-edit=\'' + A.esc(JSON.stringify(w)) + '\'>✏</button>'
-            + '<button class="btn-sm btn-view" data-merge=\'' + A.esc(JSON.stringify(w)) + '\'>🔗</button>'
-            + (w.is_active
-                ? '<button class="btn-sm btn-del" data-off="' + w.id + '">🗑</button>' : '')
+            + (A.can('well.manage')
+                ? '<button class="btn-sm btn-edit" data-edit=\'' + A.esc(JSON.stringify(w)) + '\'>✏</button>'
+                  + '<button class="btn-sm btn-view" data-merge=\'' + A.esc(JSON.stringify(w)) + '\'>🔗</button>'
+                  + (w.is_active
+                      ? '<button class="btn-sm btn-del" data-off="' + w.id + '">🗑</button>' : '')
+                : '')
             + '</div></td></tr>';
         }).join('');
       }
@@ -118,6 +120,10 @@
   }
 
   document.addEventListener('DOMContentLoaded', async function () {
+    if (!A.can('well.manage')) {
+      var newBtn = A.qs('#btn-new-well');
+      if (newBtn) newBtn.classList.add('hidden');
+    }
     try {
       var res = await A.api.get('/api/lookups/center');
       res.data.items.forEach(function (item) {

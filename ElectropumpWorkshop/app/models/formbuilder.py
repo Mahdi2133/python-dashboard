@@ -76,6 +76,10 @@ class FormField(db.Model):
     max_value = db.Column(db.Float)
     max_length = db.Column(db.Integer)
     step = db.Column(db.String(20))
+    # "field=value" — the field is only shown while that other field holds that
+    # value. Used for «نام پیمانکار», which is meaningless unless the work was
+    # done by a contractor (مجری = پیمانی).
+    visible_when = db.Column(db.String(120))
     show_in_table = db.Column(db.Boolean, nullable=False, default=False)
     table_order = db.Column(db.Integer, nullable=False, default=0)
     export_header = db.Column(db.String(200))
@@ -123,6 +127,7 @@ class FormField(db.Model):
             "sort_order": self.sort_order, "col_span": self.col_span,
             "min_value": self.min_value, "max_value": self.max_value,
             "max_length": self.max_length, "step": self.step,
+            "visible_when": self.visible_when,
             "show_in_table": self.show_in_table, "table_order": self.table_order,
             "export_header": self.export_header or self.label,
             "own_options": [o.to_dict() for o in opts],

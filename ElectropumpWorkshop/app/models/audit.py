@@ -39,8 +39,11 @@ class AuditLog(db.Model):
     ip_address = db.Column(db.String(60))
 
     def to_dict(self):
+        from ..services.jalali import to_tehran
         return {
-            "id": self.id, "created_at": self.created_at.isoformat(),
+            "id": self.id,
+            "created_at": to_tehran(self.created_at).isoformat()
+            if self.created_at else None,
             "user_id": self.user_id, "username": self.username, "action": self.action,
             "entity": self.entity, "entity_id": self.entity_id,
             "summary": self.summary, "details": self.details, "ip_address": self.ip_address,

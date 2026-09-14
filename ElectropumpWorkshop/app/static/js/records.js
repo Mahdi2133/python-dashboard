@@ -38,7 +38,8 @@
       });
     });
     fields.sort(function (a, b) { return (a.table_order || 99) - (b.table_order || 99); });
-    columns = fields.map(function (field) {
+    columns = [];
+    fields.forEach(function (field) {
       var key = field.field_name;
       if (key === 'op_jdate') key = 'date_display';
       else if (key === 'well') key = 'well';
@@ -47,9 +48,15 @@
         key = field.model_attr.endsWith('_id')
           ? field.model_attr.slice(0, -3) : field.model_attr;
       }
-      return { key: key, label: field.label,
-               sort: field.model_attr && !field.model_attr.endsWith('_id')
-                     ? field.model_attr : null };
+      columns.push({ key: key, label: field.label,
+                     sort: field.model_attr && !field.model_attr.endsWith('_id')
+                           ? field.model_attr : null });
+      /* The PM code and class identify the well, so they sit right beside the
+         name — which is what makes two wells sharing a name tellable apart. */
+      if (field.field_name === 'well') {
+        columns.push({ key: 'well_pm_code', label: 'کد PM', sort: null });
+        columns.push({ key: 'well_class', label: 'کلاسه چاه', sort: null });
+      }
     });
     A.qs('#table-head').innerHTML = '<th>#</th>'
       + columns.map(function (col) {
@@ -92,10 +99,13 @@
           + '<td>' + J.toFaDigits(offset + i + 1) + '</td>' + full
           + '<td><div class="action-cell">'
           + '<button class="btn-sm btn-view" data-view="' + row.id + '">👁</button>'
-          + '<a class="btn-sm btn-edit" href="/entry/' + row.id + '">✏</a>'
-          + (row.is_active
-              ? '<button class="btn-sm btn-del" data-del="' + row.id + '">🗑</button>'
-              : '<button class="btn-sm btn-view" data-restore="' + row.id + '">↩</button>')
+          + (A.can('record.edit')
+              ? '<a class="btn-sm btn-edit" href="/entry/' + row.id + '">✏</a>' : '')
+          + (A.can('record.delete')
+              ? (row.is_active
+                  ? '<button class="btn-sm btn-del" data-del="' + row.id + '">🗑</button>'
+                  : '<button class="btn-sm btn-view" data-restore="' + row.id + '">↩</button>')
+              : '')
           + '</div></td></tr>';
       }).join('');
       renderPagination(res);
@@ -159,6 +169,7 @@
       });
       A.qs('#detail-body').innerHTML = rows.join('') || '<p>مقداری ثبت نشده است.</p>';
       A.qs('#detail-edit').href = '/entry/' + id;
+      A.qs('#detail-edit').classList.toggle('hidden', !A.can('record.edit'));
       A.openModal('detail-modal');
     } catch (err) { A.toast(err.message, 'error'); }
   }
@@ -251,6 +262,9 @@
       }
     });
 
+    if (!A.can('record.export')) {
+      A.qsa('[data-export]').forEach(function (b) { b.classList.add('hidden'); });
+    }
     A.qsa('[data-export]').forEach(function (button) {
       button.addEventListener('click', function () {
         A.download('/api/export.' + button.dataset.export + '?' + A.serializeQuery(filters()));

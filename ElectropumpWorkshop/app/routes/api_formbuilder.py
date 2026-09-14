@@ -71,7 +71,18 @@ def get_schema():
                 for s in query.all()]
     lookups = items_by_category(active_only=active_only)
     lookups["__months__"] = _month_options()
+    # Flattened "show this field only while that one holds this value" rules,
+    # so the form can evaluate them without re-walking the section tree.
+    conditional = []
+    for section in sections:
+        for field in section["fields"]:
+            rule = (field.get("visible_when") or "").strip()
+            if "=" in rule:
+                on, _, value = rule.partition("=")
+                conditional.append({"field": field["field_name"],
+                                    "on": on.strip(), "value": value.strip()})
     return ok({"sections": sections, "lookups": lookups,
+               "conditional": conditional,
                "field_types": list(FIELD_TYPES)})
 
 
@@ -191,6 +202,7 @@ def create_field():
         show_in_table=payload.get("show_in_table") in (True, "true", "1", 1),
         table_order=int(payload.get("table_order") or 0),
         export_header=payload.get("export_header") or label,
+        visible_when=normalize_text(payload.get("visible_when")) or None,
     )
     db.session.add(field)
     db.session.flush()
@@ -216,10 +228,10 @@ def update_field(field_id):
         editable = {"label", "placeholder", "help_text", "default_value", "is_required",
                     "is_active", "sort_order", "col_span", "min_value", "max_value",
                     "step", "show_in_table", "table_order", "export_header",
-                    "allow_other", "section_id"}
+                    "allow_other", "section_id", "visible_when"}
         payload = {k: v for k, v in payload.items() if k in editable}
     for attr in ("label", "placeholder", "help_text", "default_value", "export_header",
-                 "step", "lookup_category", "field_type", "field_name"):
+                 "step", "lookup_category", "field_type", "field_name", "visible_when"):
         if attr in payload:
             setattr(field, attr, normalize_text(payload[attr]) or None)
     for attr in ("sort_order", "col_span", "table_order", "section_id", "max_length"):

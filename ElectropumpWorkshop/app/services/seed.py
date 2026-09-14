@@ -8,10 +8,9 @@ import logging
 
 from ..extensions import db
 from ..models import (FormField, FormSection, LookupAlias, LookupCategory,
-                      LookupItem, Well)
+                      LookupItem, Record, Well, WellAlias)
 from .seed_data import FORM_SECTIONS, LOOKUP_CATEGORIES
-from .seed_well_pm import WELL_PM_DATA
-from .seed_wells import ALL_WELLS
+from .seed_wells import WELLS_REFERENCE
 
 log = logging.getLogger(__name__)
 
@@ -62,59 +61,110 @@ def seed_lookups() -> dict:
 
 
 def seed_wells() -> dict:
-    existing = {row[0] for row in db.session.query(Well.name).all()}
-    added = 0
-    for name in ALL_WELLS:
-        # ALL_WELLS is transcribed from the HTML and repeats a couple of names.
-        if name in existing:
-            continue
-        existing.add(name)
-        db.session.add(Well(name=name, is_active=True, is_verified=True))
-        added += 1
-    db.session.commit()
-    return {"wells": added}
+    """Load the well register, then make sure no two wells share a name.
 
-
-def seed_well_pm() -> dict:
-    """Attach PM code / class / address to wells, matching on name.
-
-    A well named in the PM workbook but missing from the well list is created:
-    it is a real well the workshop simply had not logged work on yet. Existing
-    values are left alone so a correction made in the UI survives the next
-    startup.
+    The register is matched to what is already stored with the Persian fold, so
+    a well the operations sheet spelled «ازاد شهر 2» is recognised as the
+    reference's «آزاد شهر 2» and gains its PM code instead of becoming a second
+    row. Fields already filled in by hand are left alone; only blanks are
+    completed from the reference.
     """
-    from .lookups import fold_persian, normalize_text
+    from .lookups import fold_persian, resolve_id
 
-    # Names are matched with the Persian fold, so «ازاد شهر 2» in the
-    # operations sheet lines up with «آزاد شهر 2» in the PM workbook.
-    by_name = {}
+    existing = {}
     for well in Well.query.all():
-        by_name.setdefault(fold_persian(well.name), well)
+        existing.setdefault(fold_persian(well.name), []).append(well)
 
-    updated = created = 0
-    for name, pm_code, well_class, address in WELL_PM_DATA:
+    added = updated = 0
+    for name, pm_code, well_class, centre, kind, address in WELLS_REFERENCE:
         key = fold_persian(name)
-        well = by_name.get(key)
-        if well is None:
-            well = Well(name=normalize_text(name), is_active=True, is_verified=True,
-                        pm_code=pm_code, well_class=well_class,
-                        address=address or None)
+        matches = existing.get(key)
+        if not matches:
+            well = Well(name=name, pm_code=pm_code or None,
+                        well_class=well_class or None,
+                        center_id=resolve_id("center", centre) if centre else None,
+                        address=address or None, status=kind or "active",
+                        is_active=True, is_verified=True)
             db.session.add(well)
             db.session.flush()
-            by_name[key] = well
-            created += 1
+            existing[key] = [well]
+            added += 1
             continue
+        well = matches[0]
         changed = False
-        if not well.pm_code and pm_code:
-            well.pm_code, changed = pm_code, True
-        if not well.well_class and well_class:
-            well.well_class, changed = well_class, True
-        if not well.address and address:
-            well.address, changed = address, True
+        # These four come from the register and nowhere else — operators do not
+        # type PM codes — so the reference overwrites them. That is the point of
+        # designating it the reference: an earlier, less accurate import must
+        # not keep winning. The *name* is never touched.
+        for attr, value in (("pm_code", pm_code), ("well_class", well_class)):
+            if value and getattr(well, attr) != value:
+                setattr(well, attr, value)
+                changed = True
+        if address and not well.address:
+            well.address = address
+            changed = True
+        if centre:
+            centre_id = resolve_id("center", centre)
+            if centre_id and well.center_id != centre_id:
+                well.center_id = centre_id
+                changed = True
+        if not well.is_verified:
+            well.is_verified = True
+            changed = True
         if changed:
             updated += 1
     db.session.commit()
-    return {"wells_pm_updated": updated, "wells_pm_created": created}
+    return {"wells_added": added, "wells_updated": updated}
+
+
+def deduplicate_wells() -> dict:
+    """Fold wells whose names differ only in spelling into one row.
+
+    The operations spreadsheets spell the same well several ways, which is why
+    the picker used to show «ازاد شهر 2» and «آزاد شهر 2» side by side. The
+    survivor is the row the reference register recognises (it carries the PM
+    code); the others hand over their records, become aliases of the survivor
+    and are deactivated, so no history is lost and no name appears twice.
+    """
+    from .lookups import fold_persian
+
+    groups = {}
+    for well in Well.query.filter_by(is_active=True).all():
+        groups.setdefault(fold_persian(well.name), []).append(well)
+        # The PM code is the register's own unique key, so two rows carrying the
+        # same one are the same well however their names were spelled.
+        if well.pm_code:
+            groups.setdefault(("pm", well.pm_code), []).append(well)
+
+    merged = moved = 0
+    done = set()
+    for key, wells in groups.items():
+        wells = [w for w in wells if w.id not in done and w.is_active]
+        if len(wells) < 2:
+            continue
+        # Prefer the row with a PM code, then the one carrying the most work.
+        wells.sort(key=lambda w: (bool(w.pm_code), w.is_verified,
+                                  w.records.filter_by(is_active=True).count()),
+                   reverse=True)
+        keeper, others = wells[0], wells[1:]
+        for dup in others:
+            moved += Record.query.filter_by(well_id=dup.id).update(
+                {"well_id": keeper.id}, synchronize_session=False)
+            if (dup.name != keeper.name
+                    and not WellAlias.query.filter_by(alias=dup.name).first()):
+                db.session.add(WellAlias(well_id=keeper.id, alias=dup.name))
+            for attr in ("pm_code", "well_class", "address", "code", "center_id",
+                         "depth"):
+                if not getattr(keeper, attr) and getattr(dup, attr):
+                    setattr(keeper, attr, getattr(dup, attr))
+            dup.is_active = False
+            dup.notes = (dup.notes or "") + f" [در «{keeper.name}» ادغام شد]"
+            done.add(dup.id)
+            merged += 1
+    db.session.commit()
+    if merged:
+        log.info("Merged %s duplicate wells, moved %s records", merged, moved)
+    return {"wells_merged": merged, "records_moved": moved}
 
 
 def seed_form() -> dict:
@@ -146,6 +196,7 @@ def seed_form() -> dict:
                 sort_order=idx, col_span=fspec.get("col_span", 1),
                 min_value=fspec.get("min_value"), max_value=fspec.get("max_value"),
                 max_length=fspec.get("max_length"), step=fspec.get("step"),
+                visible_when=fspec.get("visible_when"),
                 show_in_table=fspec.get("show_in_table", False),
                 table_order=fspec.get("table_order", 0),
                 export_header=fspec.get("export_header"),
@@ -153,6 +204,44 @@ def seed_form() -> dict:
             added_fields += 1
     db.session.commit()
     return {"sections": added_sections, "fields": added_fields}
+
+
+# Corrections to built-in field definitions that must also reach databases
+# seeded by an earlier release. Each entry is applied only while the column
+# still holds the value the old release wrote, so an admin's own edit is never
+# overwritten.  field_name -> {attr: (expected_old, new)}
+_BUILTIN_FIXES = {
+    "contractor": {
+        # Only asked for when the work was contracted out, and therefore no
+        # longer mandatory for in-house jobs.
+        "visible_when": (None, "executor=پیمانی"),
+        "is_required": (True, False),
+        "sort_order": (3, 4),
+        "help_text": (None, "فقط وقتی مجری «پیمانی» باشد پرسیده می‌شود."),
+    },
+    "executor": {
+        "sort_order": (4, 3),
+        "help_text": ("از شیت «99-403» اکسل کارگاه: امانی یا پیمانی.",
+                      "کار توسط نیروی امانی انجام شده یا پیمانکار؟"),
+    },
+}
+
+
+def apply_builtin_field_fixes() -> dict:
+    changed = 0
+    for field_name, fixes in _BUILTIN_FIXES.items():
+        field = FormField.query.filter_by(field_name=field_name,
+                                          is_builtin=True).one_or_none()
+        if field is None:
+            continue
+        for attr, (old, new) in fixes.items():
+            if getattr(field, attr) == old:
+                setattr(field, attr, new)
+                changed += 1
+    if changed:
+        db.session.commit()
+        log.info("Applied %s corrections to built-in fields", changed)
+    return {"builtin_fixes": changed}
 
 
 def seed_admin() -> dict:
@@ -181,8 +270,9 @@ def seed_all(force: bool = False) -> dict:
     result.update(seed_admin())
     result.update(seed_lookups())
     result.update(seed_wells())
-    result.update(seed_well_pm())
+    result.update(deduplicate_wells())
     result.update(seed_form())
+    result.update(apply_builtin_field_fixes())
     result["changed"] = any(v for k, v in result.items() if isinstance(v, int))
     if result["changed"]:
         log.info("Seed applied: %s", result)

@@ -198,6 +198,7 @@ class AppUser(db.Model):
         return {page for page, perm in PAGE_PERMISSION.items() if self.can(perm)}
 
     def to_dict(self, include_permissions=True):
+        from ..services.jalali import to_tehran
         data = {
             "id": self.id, "username": self.username,
             "first_name": self.first_name, "last_name": self.last_name,
@@ -210,7 +211,8 @@ class AppUser(db.Model):
             "is_active": self.is_active,
             "must_change_password": self.must_change_password,
             "notes": self.notes,
-            "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
+            "last_login_at": (to_tehran(self.last_login_at).isoformat()
+                              if self.last_login_at else None),
             "last_login_ip": self.last_login_ip,
             "login_count": self.login_count,
             "is_locked": bool(self.locked_until and self.locked_until > datetime.utcnow()),
@@ -252,13 +254,16 @@ class UserSession(db.Model):
         return int((end - self.login_at).total_seconds())
 
     def to_dict(self):
+        from ..services.jalali import to_tehran
+        local = lambda v: to_tehran(v).isoformat() if v else None
         return {
             "id": self.id, "user_id": self.user_id,
             "username": self.user.username if self.user else None,
             "full_name": self.user.full_name if self.user else None,
-            "login_at": self.login_at.isoformat() if self.login_at else None,
-            "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
-            "logout_at": self.logout_at.isoformat() if self.logout_at else None,
+            # Local (Tehran) times: what the operator's own clock showed.
+            "login_at": local(self.login_at),
+            "last_seen_at": local(self.last_seen_at),
+            "logout_at": local(self.logout_at),
             "duration_seconds": self.duration_seconds,
             "ip_address": self.ip_address, "user_agent": self.user_agent,
             "end_reason": self.end_reason,

@@ -168,12 +168,47 @@ def parse_jalali_to_date(text) -> _dt.date | None:
         return None
 
 
+# Iran dropped daylight saving in 2022, so the offset is a constant +03:30.
+# Timestamps are stored in UTC (datetime.utcnow) and must be shifted before
+# they are shown, otherwise anything logged after 20:30 UTC displays on the
+# previous Jalali day.
+TEHRAN_OFFSET = _dt.timedelta(hours=3, minutes=30)
+TEHRAN_TZ = _dt.timezone(TEHRAN_OFFSET, "Asia/Tehran")
+
+
+def to_tehran(value):
+    """Convert a stored (naive UTC) datetime to Tehran local time."""
+    if value is None:
+        return None
+    if not isinstance(value, _dt.datetime):
+        return value
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=_dt.timezone.utc)
+    return value.astimezone(TEHRAN_TZ)
+
+
+def tehran_now() -> _dt.datetime:
+    return _dt.datetime.now(TEHRAN_TZ)
+
+
+def tehran_time_str(value, with_seconds: bool = True) -> str:
+    """HH:MM[:SS] in Tehran local time."""
+    local = to_tehran(value)
+    if local is None:
+        return ""
+    return local.strftime("%H:%M:%S" if with_seconds else "%H:%M")
+
+
 def to_jalali_str(value, with_month_name: bool = False, sep: str = "/") -> str:
-    """Jinja filter: render a stored Gregorian date in Jalali."""
+    """Jinja filter: render a stored Gregorian date in Jalali.
+
+    A datetime is treated as UTC and shifted to Tehran first, so the Jalali
+    day matches the day the operator actually saw on the clock.
+    """
     if value in (None, ""):
         return ""
     if isinstance(value, _dt.datetime):
-        value = value.date()
+        value = to_tehran(value).date()
     if not isinstance(value, _dt.date):
         return str(value)
     jy, jm, jd = gregorian_to_jalali(value)

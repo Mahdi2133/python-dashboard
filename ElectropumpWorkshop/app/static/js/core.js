@@ -46,6 +46,12 @@
     return payload;
   }
 
+  /* Mirrors AppUser.can() on the server: admins may do everything. */
+  function can(permission) {
+    if (window.IS_ADMIN) return true;
+    return (window.CAN || []).indexOf(permission) >= 0;
+  }
+
   var api = {
     get: function (url) { return request(url); },
     post: function (url, data) { return request(url, { method: 'POST', json: data }); },
@@ -209,6 +215,6 @@
     openModal: openModal, closeModal: closeModal, esc: esc, el: el, qs: qs, qsa: qsa,
     debounce: debounce, serializeQuery: serializeQuery, renderBarChart: renderBarChart,
     download: download, downloadPost: downloadPost, fmtNumber: fmtNumber,
-    csrfToken: csrfToken
+    csrfToken: csrfToken, can: can
   };
 })(window);

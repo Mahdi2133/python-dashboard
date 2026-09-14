@@ -9,6 +9,7 @@ import os
 import shutil
 import sys
 import tempfile
+from urllib.parse import quote
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -41,9 +42,7 @@ def main():
     check("پایگاه داده ساخته و متصل شد", sysinfo["database"]["connected"])
     check("حالت WAL فعال است", sysinfo["database"]["journal_mode"] == "wal",
           sysinfo["database"]["journal_mode"])
-    # 342 names from the HTML (339 unique) plus the wells that appear only in
-    # the PM workbook.
-    check("چاه‌ها درج شدند", sysinfo["counts"]["wells"] == 711,
+    check("چاه‌ها از رفرنس درج شدند", sysinfo["counts"]["wells"] == 864,
           str(sysinfo["counts"]["wells"]))
     check("۲۰۱ گزینه درج شد", sysinfo["counts"]["lookup_items"] == 201,
           str(sysinfo["counts"]["lookup_items"]))
@@ -96,6 +95,7 @@ def main():
 
     print("\n— نرمال‌سازی املا (نام مستعار) —")
     r = c.post("/api/records", json={**payload, "contractor": "سعدابادی",
+                                     "executor": "پیمانی",
                                      "center": "منزل اباد", "starter": "سفت"})
     d = r.get_json()["data"]
     check("«سعدابادی» → «سعدآبادی»", d["contractor"] == "سعدآبادی", d["contractor"])
@@ -287,10 +287,61 @@ def main():
           app.test_client().get("/api/records").status_code == 401)
 
     print("\n— کد PM و کلاسه چاه —")
-    wells = c.get("/api/wells?limit=1&q=10262").get_json()["data"]
-    check("جستجوی چاه با کد PM", bool(wells) and wells[0]["pm_code"] == "10262",
-          str(wells[:1]))
+    wells = c.get("/api/wells?limit=1&q=10/21/1").get_json()["data"]
+    check("جستجوی چاه با کد PM", bool(wells) and wells[0]["pm_code"] == "10/21/1",
+          str([w["name"] for w in wells]))
     check("نمایش ترکیبی نام و کد", "PM" in (wells[0]["display"] if wells else ""))
+    exact = c.get("/api/wells?limit=3&q=" + quote("کورده 1")).get_json()["data"]
+    check("تطابق دقیق در صدر نتایج", bool(exact) and exact[0]["name"] == "کورده 1",
+          str([w["name"] for w in exact[:3]]))
+    with app.app_context():
+        from app.models import Well
+        from app.services.lookups import fold_persian
+        actives = Well.query.filter_by(is_active=True).all()
+        folded = [fold_persian(w.name) for w in actives]
+        codes = [w.pm_code for w in actives if w.pm_code]
+        check("نام چاه تکراری وجود ندارد", len(folded) == len(set(folded)),
+              f"{len(folded)-len(set(folded))} تکراری")
+        check("کد PM تکراری وجود ندارد", len(codes) == len(set(codes)))
+        check("چاه‌ها مرکز دارند",
+              Well.query.filter(Well.center_id.isnot(None)).count() > 800)
+
+    print("\n— مرکز از روی چاه —")
+    w = c.get("/api/wells?limit=1&q=" + quote("کورده 1")).get_json()["data"][0]
+    check("چاه، مرکز خود را برمی‌گرداند", w["center_value"] == "سوران",
+          str(w["center_value"]))
+
+    print("\n— پیمانکار مشروط به مجری —")
+    rules = c.get("/api/form-builder").get_json()["data"]["conditional"]
+    check("قاعده نمایش پیمانکار تعریف شده",
+          {"field": "contractor", "on": "executor", "value": "پیمانی"} in rules,
+          str(rules))
+    base = dict(payload)
+    base.pop("dynamic", None)
+    r = c.post("/api/records", json=dict(base, executor="امانی", contractor="جوادی"))
+    check("با «امانی» پیمانکار ذخیره نمی‌شود",
+          r.get_json()["data"]["contractor"] is None)
+    c.delete(f"/api/records/{r.get_json()['data']['id']}?hard=1")
+    r = c.post("/api/records", json=dict(base, executor="پیمانی", contractor="جوادی"))
+    check("با «پیمانی» پیمانکار ذخیره می‌شود",
+          r.get_json()["data"]["contractor"] == "جوادی")
+    c.delete(f"/api/records/{r.get_json()['data']['id']}?hard=1")
+    r = c.post("/api/records", json=dict(base, executor="امانی"))
+    check("پیمانکار دیگر الزامی نیست", r.status_code == 200)
+    if r.get_json().get("ok"):
+        c.delete(f"/api/records/{r.get_json()['data']['id']}?hard=1")
+
+    print("\n— ساعت تهران —")
+    from app.services.jalali import tehran_time_str, to_jalali_str, to_tehran
+    import datetime as _dt
+    utc_late = _dt.datetime(2026, 9, 13, 21, 15)
+    check("ساعت به وقت تهران تبدیل می‌شود",
+          tehran_time_str(utc_late, with_seconds=False) == "00:45",
+          tehran_time_str(utc_late))
+    check("تاریخ شمسی با ساعت تهران می‌چرخد",
+          to_jalali_str(utc_late) == "1405/06/23", to_jalali_str(utc_late))
+    check("اختلاف ثابت +۳:۳۰",
+          to_tehran(utc_late).utcoffset() == _dt.timedelta(hours=3, minutes=30))
     with app.app_context():
         cols = [col["label"] for col in _export_headers(c)]
     check("ستون «کد PM» در خروجی", "کد PM" in cols)
@@ -327,6 +378,16 @@ def main():
     check("ویرایش گزینه‌های فیلد پایه ذخیره می‌شود", r.status_code == 200)
     after = c.get(f"/api/form-builder/fields/{builtin['id']}/options").get_json()["data"]
     check("برچسب جدید اعمال شد", after["options"][0]["label"] == "سوران ✓")
+
+    print("\n— ستون‌های جدول و خروجی —")
+    with app.app_context():
+        labels = [col["label"] for col in _export_headers(c)]
+    check("ستون «کد PM» در خروجی", "کد PM" in labels)
+    check("ستون «کلاسه چاه» در خروجی", "کلاسه چاه" in labels)
+    rec = c.get("/api/records?page_size=1").get_json()["data"]
+    check("رکورد کد PM چاه را حمل می‌کند",
+          bool(rec) and "well_pm_code" in rec[0])
+    check("رکورد کلاسه چاه را حمل می‌کند", bool(rec) and "well_class" in rec[0])
 
     print("\n— ترتیب تب‌ها —")
     check("صفحه اصلی، ثبت اطلاعات است",

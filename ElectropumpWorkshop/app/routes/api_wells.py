@@ -27,7 +27,25 @@ def list_wells():
                                     Well.pm_code.ilike(like),
                                     Well.well_class.ilike(like),
                                     Well.aliases.any(WellAlias.alias.ilike(like))))
-    wells = query.order_by(Well.name).limit(limit).all()
+    if q:
+        # Relevance before alphabet: an exact name, then names that start with
+        # what was typed, then the rest — otherwise typing "کورده 1" offers
+        # "چاه کورده 14" first purely because it sorts earlier. Within each
+        # band, wells from the official register (they carry a PM code) come
+        # before ones that only ever appeared in an operations spreadsheet.
+        rank = db.case(
+            (Well.name == q, 0),
+            (Well.pm_code == q, 0),
+            (Well.name.ilike(f"{q}%"), 1),
+            (Well.well_class == q, 1),
+            else_=2,
+        )
+        wells = (query.order_by(rank, Well.pm_code.is_(None),
+                                db.func.length(Well.name), Well.name)
+                 .limit(limit).all())
+    else:
+        wells = (query.order_by(Well.pm_code.is_(None), Well.name)
+                 .limit(limit).all())
     return ok([w.to_dict() for w in wells])
 
 
