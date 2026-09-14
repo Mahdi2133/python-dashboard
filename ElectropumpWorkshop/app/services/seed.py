@@ -125,6 +125,63 @@ def seed_wells() -> dict:
     return {"wells_added": added, "wells_updated": updated}
 
 
+def _absorb_well(keeper: Well, dup: Well) -> int:
+    """Move ``dup``'s work onto ``keeper`` and retire it. Returns records moved."""
+    moved = Record.query.filter_by(well_id=dup.id).update(
+        {"well_id": keeper.id}, synchronize_session=False)
+    if (dup.name != keeper.name
+            and not WellAlias.query.filter_by(alias=dup.name).first()):
+        db.session.add(WellAlias(well_id=keeper.id, alias=dup.name))
+    for attr in ("pm_code", "well_class", "address", "code", "center_id", "depth"):
+        if not getattr(keeper, attr) and getattr(dup, attr):
+            setattr(keeper, attr, getattr(dup, attr))
+    dup.is_active = False
+    dup.notes = (dup.notes or "") + f" [در «{keeper.name}» ادغام شد]"
+    return moved
+
+
+def _merge_qualifier_variants(done: set) -> tuple:
+    """Fold «امامیه 17 (جدید)» and «امامیه 17 (قدیم)» back into «امامیه 17».
+
+    Operators annotate a well as قدیم or جدید while typing, and each spelling
+    became its own row, so the picker offered three entries for one well.
+
+    Only an *unregistered* row is folded away — no PM code and not verified,
+    which is what marks a name that data entry invented rather than one the
+    register published. A well the register itself names «گلشهر9 جدید» keeps
+    its own row: there the qualifier is part of the well's real name, and its
+    PM code says so.
+    """
+    from .lookups import qualifier_base_key, well_key
+
+    actives = [w for w in Well.query.filter_by(is_active=True).all()
+               if w.id not in done]
+    by_key = {}
+    for well in actives:
+        by_key.setdefault(well_key(well.name), []).append(well)
+
+    merged = moved = 0
+    for well in actives:
+        if well.pm_code or well.is_verified or well.id in done:
+            continue
+        base = qualifier_base_key(well.name)
+        if not base:
+            continue
+        targets = [t for t in by_key.get(base, [])
+                   if t.id != well.id and t.id not in done and t.is_active]
+        if not targets:
+            continue
+        # The register's row wins; failing that, whichever carries more work.
+        targets.sort(key=lambda t: (bool(t.pm_code), t.is_verified,
+                                    t.records.filter_by(is_active=True).count()),
+                     reverse=True)
+        moved += _absorb_well(targets[0], well)
+        done.add(well.id)
+        merged += 1
+        log.info("Merged qualifier variant %r into %r", well.name, targets[0].name)
+    return merged, moved
+
+
 def deduplicate_wells() -> dict:
     """Fold wells whose names differ only in spelling into one row.
 
@@ -184,19 +241,13 @@ def deduplicate_wells() -> dict:
                    reverse=True)
         keeper, others = wells[0], wells[1:]
         for dup in others:
-            moved += Record.query.filter_by(well_id=dup.id).update(
-                {"well_id": keeper.id}, synchronize_session=False)
-            if (dup.name != keeper.name
-                    and not WellAlias.query.filter_by(alias=dup.name).first()):
-                db.session.add(WellAlias(well_id=keeper.id, alias=dup.name))
-            for attr in ("pm_code", "well_class", "address", "code", "center_id",
-                         "depth"):
-                if not getattr(keeper, attr) and getattr(dup, attr):
-                    setattr(keeper, attr, getattr(dup, attr))
-            dup.is_active = False
-            dup.notes = (dup.notes or "") + f" [در «{keeper.name}» ادغام شد]"
+            moved += _absorb_well(keeper, dup)
             done.add(dup.id)
             merged += 1
+
+    q_merged, q_moved = _merge_qualifier_variants(done)
+    merged += q_merged
+    moved += q_moved
     db.session.commit()
     if merged:
         log.info("Merged %s duplicate wells, moved %s records", merged, moved)

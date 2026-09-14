@@ -72,6 +72,23 @@ _NAME_SUFFIXES = {fold_persian(s) for s in ("قدیم", "قدیمی", "جدید"
 _PUNCT = re.compile(r"[()\[\]{}«»\"'`.,،؛;:/\\|]+")
 
 
+def qualifier_base_key(value) -> str:
+    """The key of ``value`` with a trailing قدیم/جدید stripped, or "".
+
+    Returns "" when the name carries no such qualifier, so a caller can tell
+    «امامیه 17 (جدید)» (a note on a well) from «امامیه 17» (the well).
+    """
+    from .jalali import normalize_digits
+
+    text = _PUNCT.sub(" ", normalize_digits(normalize_text(value)))
+    tokens = [t for t in text.split() if t]
+    stripped = False
+    while len(tokens) > 1 and fold_persian(tokens[-1]) in _NAME_SUFFIXES:
+        tokens.pop()
+        stripped = True
+    return well_key(" ".join(tokens)) if stripped else ""
+
+
 def pm_digits(code) -> str:
     """A PM code reduced to its digits, for comparing across spellings.
 

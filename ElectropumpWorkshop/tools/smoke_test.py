@@ -356,6 +356,37 @@ def main():
         check("کلاسه متفاوت مانع ادغام می‌شود",
               Well.query.filter_by(name="چاه ناهمسان").one().is_active)
 
+    print("\n— «قدیم» و «جدید» —")
+    with app.app_context():
+        from app.models import Well
+        from app.extensions import db as _db
+        from app.services.seed import deduplicate_wells
+        from app.services.lookups import qualifier_base_key
+        check("پسوند «جدید» شناسایی می‌شود",
+              qualifier_base_key("امامیه 17( جدید )") == qualifier_base_key("امامیه 17( قدیم )")
+              != "", qualifier_base_key("امامیه 17( جدید )"))
+        check("نام بدون پسوند، پایه ندارد", qualifier_base_key("امامیه 17") == "")
+        base = Well.query.filter_by(name="امامیه 17").one()
+        _db.session.add_all([
+            Well(name="امامیه 17( جدید )", is_active=True, is_verified=False),
+            Well(name="امامیه 17( قدیم )", is_active=True, is_verified=False),
+            # Registered under a qualified name: that IS its name, keep it.
+            Well(name="امامیه 90 جدید", pm_code="10/26/990", well_class="900090",
+                 is_active=True, is_verified=True),
+        ])
+        _db.session.commit()
+        deduplicate_wells()
+        for variant in ("امامیه 17( جدید )", "امامیه 17( قدیم )"):
+            check(f"«{variant}» حذف شد",
+                  not Well.query.filter_by(name=variant).one().is_active)
+        check("رکوردها به چاه اصلی رسیدند", Well.query.filter_by(name="امامیه 17")
+              .one().is_active)
+        check("نام‌های قبلی به‌عنوان نام مستعار ماندند",
+              {"امامیه 17( جدید )", "امامیه 17( قدیم )"} <=
+              {a.alias for a in Well.query.filter_by(name="امامیه 17").one().aliases})
+        check("چاهِ ثبت‌شده با نام «جدید» دست‌نخورده می‌ماند",
+              Well.query.filter_by(name="امامیه 90 جدید").one().is_active)
+
     print("\n— جستجوی چاه بدون تکرار —")
     with app.app_context():
         from app.models import Well
