@@ -3,7 +3,7 @@ from flask import Blueprint
 
 from ..extensions import db
 from ..models import Record
-from ..services.auth import permission_required
+from ..services.auth import edit_window_closed, permission_required
 from ..services.records import (ValidationError, create_record, deactivate_record,
                                 search_query, serialize_record, update_record)
 from ._helpers import body, fail, ok, paging, query_params
@@ -52,6 +52,9 @@ def put_record(record_id):
     record = db.session.get(Record, record_id)
     if record is None:
         return fail("رکورد یافت نشد.", 404)
+    expired = edit_window_closed(record)
+    if expired:
+        return fail(expired, 403)
     try:
         update_record(record, body())
     except ValidationError as exc:
@@ -65,6 +68,9 @@ def delete_record(record_id):
     record = db.session.get(Record, record_id)
     if record is None:
         return fail("رکورد یافت نشد.", 404)
+    expired = edit_window_closed(record)
+    if expired:
+        return fail(expired, 403)
     hard = str(query_params().get("hard", "")).lower() in ("1", "true")
     deactivate_record(record, hard=hard)
     return ok(message="رکورد حذف قطعی شد." if hard else "رکورد غیرفعال شد.")
@@ -76,6 +82,9 @@ def restore_record(record_id):
     record = db.session.get(Record, record_id)
     if record is None:
         return fail("رکورد یافت نشد.", 404)
+    expired = edit_window_closed(record)
+    if expired:
+        return fail(expired, 403)
     record.is_active = True
     db.session.commit()
     return ok(serialize_record(record), message="رکورد بازیابی شد.")

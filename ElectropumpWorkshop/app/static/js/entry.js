@@ -458,6 +458,26 @@
     applyConditionalFields();
   }
 
+  /* مهلت ویرایش گذشته: فرم فقط‌خواندنی می‌شود. سرور هم درخواست را رد می‌کند —
+     این کار فقط زودتر و روشن‌تر به کاربر می‌گوید چرا نمی‌تواند ذخیره کند. */
+  function lockForm(record) {
+    var until = record.edit_deadline_j
+      ? 'مهلت ویرایش این رکورد تا <b>' + A.esc(record.edit_deadline_j) + '</b>'
+        + (record.edit_deadline_time
+            ? ' ساعت <b>' + A.esc(record.edit_deadline_time) + '</b>' : '')
+        + ' بود و به پایان رسیده است.'
+      : 'مهلت ویرایش این رکورد به پایان رسیده است.';
+    A.qs('#form-alert').innerHTML = '<div class="alert error">🔒 ' + until
+      + '<br>برای تغییر این رکورد با <b>مدیر سیستم</b> هماهنگ کنید.</div>';
+    A.qsa('#form-grid input, #form-grid textarea, #form-grid select')
+      .forEach(function (el) { el.disabled = true; });
+    var save = A.qs('#btn-save');
+    save.disabled = true;
+    save.title = 'مهلت ویرایش به پایان رسیده است.';
+    A.qs('#btn-clear').classList.add('hidden');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   function clearForm() {
     A.qsa('#form-grid input, #form-grid textarea, #form-grid select').forEach(function (el) {
       if (el.type === 'radio' || el.type === 'checkbox') el.checked = false;
@@ -530,6 +550,7 @@
         A.qs('#btn-cancel').classList.remove('hidden');
         var rec = await A.api.get('/api/records/' + editingId);
         populate(rec.data);
+        if (rec.data.can_edit === false) lockForm(rec.data);
       }
     } catch (err) {
       A.qs('#form-grid').innerHTML = '<div class="alert error">'

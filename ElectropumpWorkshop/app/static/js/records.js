@@ -99,13 +99,7 @@
           + '<td>' + J.toFaDigits(offset + i + 1) + '</td>' + full
           + '<td><div class="action-cell">'
           + '<button class="btn-sm btn-view" data-view="' + row.id + '">👁</button>'
-          + (A.can('record.edit')
-              ? '<a class="btn-sm btn-edit" href="/entry/' + row.id + '">✏</a>' : '')
-          + (A.can('record.delete')
-              ? (row.is_active
-                  ? '<button class="btn-sm btn-del" data-del="' + row.id + '">🗑</button>'
-                  : '<button class="btn-sm btn-view" data-restore="' + row.id + '">↩</button>')
-              : '')
+          + editControls(row)
           + '</div></td></tr>';
       }).join('');
       renderPagination(res);
@@ -113,6 +107,26 @@
       body.innerHTML = '<tr><td colspan="' + (columns.length + 2)
         + '" class="table-empty">' + A.esc(err.message) + '</td></tr>';
     }
+  }
+
+  /* مهلت ویرایش: پس از پایان مهلت، دکمه‌ها جای خود را به یک نشانه می‌دهند.
+     سرور در هر حال درخواست را رد می‌کند؛ این فقط برای روشن‌بودن تکلیف کاربر است. */
+  function editControls(row) {
+    if (row.can_edit === false) {
+      var until = row.edit_deadline_j
+        ? 'مهلت ویرایش تا ' + row.edit_deadline_j
+            + (row.edit_deadline_time ? ' ساعت ' + row.edit_deadline_time : '')
+            + ' بود؛ برای تغییر با مدیر سیستم هماهنگ کنید.'
+        : 'مهلت ویرایش این رکورد به پایان رسیده است.';
+      return '<span class="btn-sm btn-locked" title="' + A.esc(until) + '">🔒</span>';
+    }
+    return (A.can('record.edit')
+        ? '<a class="btn-sm btn-edit" href="/entry/' + row.id + '">✏</a>' : '')
+      + (A.can('record.delete')
+          ? (row.is_active
+              ? '<button class="btn-sm btn-del" data-del="' + row.id + '">🗑</button>'
+              : '<button class="btn-sm btn-view" data-restore="' + row.id + '">↩</button>')
+          : '');
   }
 
   function renderPagination(res) {
@@ -169,7 +183,8 @@
       });
       A.qs('#detail-body').innerHTML = rows.join('') || '<p>مقداری ثبت نشده است.</p>';
       A.qs('#detail-edit').href = '/entry/' + id;
-      A.qs('#detail-edit').classList.toggle('hidden', !A.can('record.edit'));
+      A.qs('#detail-edit').classList.toggle(
+        'hidden', !A.can('record.edit') || rec.can_edit === false);
       A.openModal('detail-modal');
     } catch (err) { A.toast(err.message, 'error'); }
   }

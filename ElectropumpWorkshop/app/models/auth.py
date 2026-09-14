@@ -11,7 +11,7 @@ import hashlib
 import hmac
 import os
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from ..services.jalali import local_now
 
@@ -136,6 +136,11 @@ class AppUser(db.Model):
     must_change_password = db.Column(db.Boolean, nullable=False, default=False)
     notes = db.Column(db.Text)
 
+    # How long after a record is written this user may still change it, in
+    # hours. NULL means no limit, which is what every existing account keeps on
+    # upgrade — the admin opts a user in. The admin role ignores it entirely.
+    edit_window_hours = db.Column(db.Integer)
+
     last_login_at = db.Column(db.DateTime)
     last_login_ip = db.Column(db.String(60))
     login_count = db.Column(db.Integer, nullable=False, default=0)
@@ -195,6 +200,32 @@ class AppUser(db.Model):
     def role_label(self):
         return ROLES.get(self.role, {}).get("label", self.role)
 
+    # ── record edit window ──────────────────────────────────────────────────
+    @property
+    def has_edit_window(self) -> bool:
+        """Whether this user's edits expire. Admins are never limited."""
+        return self.role != "admin" and bool(self.edit_window_hours)
+
+    @property
+    def edit_window_label(self) -> str:
+        hours = self.edit_window_hours
+        if self.role == "admin" or not hours:
+            return "نامحدود"
+        if hours % 24 == 0:
+            days = hours // 24
+            return "۱ روز" if days == 1 else f"{days} روز"
+        return f"{hours} ساعت"
+
+    def edit_deadline(self, created_at):
+        """When this user's window on a record written at ``created_at`` shuts.
+
+        ``None`` means it never shuts — either the user has no window or the
+        record carries no creation time (rows imported before this release).
+        """
+        if not self.has_edit_window or created_at is None:
+            return None
+        return created_at + timedelta(hours=self.edit_window_hours)
+
     @property
     def allowed_pages(self) -> set:
         return {page for page, perm in PAGE_PERMISSION.items() if self.can(perm)}
@@ -218,6 +249,8 @@ class AppUser(db.Model):
             "last_login_ip": self.last_login_ip,
             "login_count": self.login_count,
             "is_locked": bool(self.locked_until and self.locked_until > local_now()),
+            "edit_window_hours": self.edit_window_hours,
+            "edit_window_label": self.edit_window_label,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
         if include_permissions:

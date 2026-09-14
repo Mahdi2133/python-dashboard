@@ -11,8 +11,9 @@ from ..extensions import db
 from ..models import (FormField, LookupItem, Record, RecordDynamicValue,
                       RecordTag, Well, WellAlias)
 from .audit import diff_fields, record_audit
-from .jalali import (MONTHS_FA, jalali_parts_to_date, normalize_digits,
-                     parse_jalali, parse_jalali_to_date, to_jalali_str)
+from .jalali import (MONTHS_FA, jalali_parts_to_date, local_now,
+                     normalize_digits, parse_jalali, parse_jalali_to_date,
+                     tehran_time_str, to_jalali_str)
 from .lookups import (fold_persian, normalize_text, resolve_id,
                       resolve_item, well_key)
 
@@ -491,7 +492,34 @@ def serialize_record(record: Record, verbose: bool = True) -> dict:
                            if v.field}
         data["created_at"] = record.created_at.isoformat() if record.created_at else None
         data["updated_at"] = record.updated_at.isoformat() if record.updated_at else None
+        data.update(_edit_window(record))
     return data
+
+
+def _edit_window(record) -> dict:
+    """How long the signed-in user still has to change this record.
+
+    The table hides its edit and delete buttons on this, and the form shows the
+    deadline; the API refuses the write regardless, so this is a courtesy, not
+    the guard.
+    """
+    from .auth import current_user
+    from flask import has_request_context
+
+    if not has_request_context():
+        return {"can_edit": True, "edit_deadline_j": None, "edit_deadline_time": None}
+    user = current_user()
+    if user is None or not user.has_edit_window:
+        return {"can_edit": user is not None and user.can("record.edit"),
+                "edit_deadline_j": None, "edit_deadline_time": None}
+    deadline = user.edit_deadline(record.created_at)
+    open_now = deadline is None or local_now() <= deadline
+    return {
+        "can_edit": bool(user.can("record.edit") and open_now),
+        "edit_deadline_j": to_jalali_str(deadline) if deadline else None,
+        "edit_deadline_time": (tehran_time_str(deadline, with_seconds=False)
+                               if deadline else None),
+    }
 
 
 def search_query(params: dict):

@@ -286,6 +286,77 @@ def main():
     check("بدون ورود، API بسته است",
           app.test_client().get("/api/records").status_code == 401)
 
+    print("\n— مهلت ویرایش رکورد —")
+    # A recorder who may fix their own work, but only for a day.
+    r = c.post("/api/users", json={
+        "username": "win_op", "password": "window123", "role": "operator",
+        "first_name": "مهلت", "last_name": "دار", "edit_window_hours": 24,
+        "permissions": ["record.create", "record.view", "record.edit",
+                        "record.delete", "well.view"]})
+    win_id = r.get_json()["data"]["id"]
+    check("مهلت ویرایش ذخیره می‌شود",
+          r.get_json()["data"]["edit_window_hours"] == 24)
+    check("برچسب فارسی مهلت", r.get_json()["data"]["edit_window_label"] == "۱ روز",
+          r.get_json()["data"]["edit_window_label"])
+    r = c.put(f"/api/users/{win_id}", json={"edit_window_hours": "abc"})
+    check("مهلت نامعتبر رد می‌شود", r.status_code == 422)
+    r = c.put(f"/api/users/{win_id}", json={"edit_window_hours": 99999})
+    check("مهلت خارج از بازه رد می‌شود", r.status_code == 422)
+    c.put(f"/api/users/{win_id}", json={"edit_window_hours": 24})
+
+    c.post("/api/logout")
+    c.post("/api/login", json={"username": "win_op", "password": "window123"})
+    r = c.post("/api/records", json=payload)
+    own = r.get_json()["data"]
+    check("کاربر مهلت‌دار می‌تواند ثبت کند", r.status_code == 200)
+    check("رکورد تازه قابل ویرایش است", own["can_edit"] is True, str(own["can_edit"]))
+    check("تاریخ پایان مهلت برگردانده می‌شود", bool(own["edit_deadline_j"]),
+          str(own["edit_deadline_j"]))
+    r = c.put(f"/api/records/{own['id']}", json={"description": "داخل مهلت"})
+    check("ویرایش داخل مهلت انجام می‌شود", r.status_code == 200)
+
+    # Age the record past the window; the clock is the only thing that changed.
+    with app.app_context():
+        from app.models import Record
+        from app.extensions import db as _db
+        from app.services.jalali import local_now
+        import datetime as _d
+        rec = _db.session.get(Record, own["id"])
+        rec.created_at = local_now() - _d.timedelta(hours=25)
+        _db.session.commit()
+    r = c.get(f"/api/records/{own['id']}")
+    check("پس از مهلت، can_edit خاموش می‌شود",
+          r.get_json()["data"]["can_edit"] is False)
+    r = c.put(f"/api/records/{own['id']}", json={"description": "بعد از مهلت"})
+    check("ویرایش پس از مهلت رد می‌شود", r.status_code == 403)
+    check("پیام، کاربر را به مدیر ارجاع می‌دهد",
+          "مدیر سیستم" in r.get_json()["error"], r.get_json()["error"])
+    check("مقدار قبلی دست‌نخورده مانده",
+          c.get(f"/api/records/{own['id']}").get_json()["data"]["description"]
+          == "داخل مهلت")
+    # Delete must be shut too, or the window is trivially sidestepped.
+    r = c.delete(f"/api/records/{own['id']}")
+    check("حذف پس از مهلت هم رد می‌شود", r.status_code == 403)
+    r = c.post(f"/api/records/{own['id']}/restore")
+    check("بازیابی پس از مهلت هم رد می‌شود", r.status_code == 403)
+
+    c.post("/api/logout")
+    c.post("/api/login", json={"username": "admin", "password": "admin"})
+    r = c.put(f"/api/records/{own['id']}", json={"description": "مدیر آزاد است"})
+    check("مدیر سیستم محدود نمی‌شود", r.status_code == 200)
+    check("مدیر همیشه can_edit دارد",
+          c.get(f"/api/records/{own['id']}").get_json()["data"]["can_edit"] is True)
+    # Lifting the limit hands the record back without the admin touching it.
+    c.put(f"/api/users/{win_id}", json={"edit_window_hours": None})
+    c.post("/api/logout")
+    c.post("/api/login", json={"username": "win_op", "password": "window123"})
+    r = c.put(f"/api/records/{own['id']}", json={"description": "مهلت برداشته شد"})
+    check("با برداشتن مهلت، کاربر دوباره می‌تواند ویرایش کند", r.status_code == 200)
+    c.post("/api/logout")
+    c.post("/api/login", json={"username": "admin", "password": "admin"})
+    c.delete(f"/api/records/{own['id']}?hard=1")
+    c.delete(f"/api/users/{win_id}")
+
     print("\n— کد PM و کلاسه چاه —")
     wells = c.get("/api/wells?limit=1&q=10/21/1").get_json()["data"]
     check("جستجوی چاه با کد PM", bool(wells) and wells[0]["pm_code"] == "10/21/1",

@@ -92,6 +92,24 @@
         <span class="hint">حداقل ۶ نویسه و نه فقط عدد. برای تغییرندادن، خالی بگذارید.</span></div>
       <div class="field"><label>تغییر رمز در اولین ورود</label>
         <select id="u-mustchange"><option value="1">بله</option><option value="0">خیر</option></select></div>
+      <div class="field"><label>مهلت ویرایش رکورد</label>
+        <select id="u-editwindow">
+          <option value="">نامحدود</option>
+          <option value="6">۶ ساعت</option>
+          <option value="12">۱۲ ساعت</option>
+          <option value="24">۱ روز</option>
+          <option value="48">۲ روز</option>
+          <option value="72">۳ روز</option>
+          <option value="168">۱ هفته</option>
+          <option value="336">۲ هفته</option>
+          <option value="720">۱ ماه</option>
+          <option value="custom">مقدار دلخواه (ساعت)…</option>
+        </select>
+        <input type="number" id="u-editwindow-custom" class="hidden mt-1" min="1"
+               max="8760" placeholder="تعداد ساعت">
+        <span class="hint">کاربر فقط تا این مدت پس از <b>ثبت</b> هر رکورد می‌تواند
+          آن را ویرایش یا حذف کند؛ پس از آن باید به مدیر سیستم مراجعه کند.
+          مدیر سیستم هیچ‌وقت محدود نمی‌شود.</span></div>
     </div>
 
     <div class="section-title mt-2">🛡 سطح دسترسی</div>

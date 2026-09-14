@@ -223,6 +223,10 @@ input:disabled, select:disabled { background:#eef2f5; color:var(--text-muted); }
 .btn-del:hover { background:var(--danger); color:#fff; }
 .btn-view { background:#eafaf1; color:var(--success); border-color:#c6ecd7; }
 .btn-view:hover { background:var(--success); color:#fff; }
+/* Shown in place of edit/delete once a user's edit window on a record shuts. */
+.btn-locked { background:var(--bg); color:var(--text-muted); border-color:var(--border);
+  cursor:not-allowed; }
+button:disabled, .btn-primary:disabled { opacity:.55; cursor:not-allowed; }
 .form-actions { display:flex; gap:10px; justify-content:center; margin-top:18px;
   padding:16px; background:var(--card); border-radius:var(--radius);
   box-shadow:var(--shadow); border:1px solid var(--border); flex-wrap:wrap;

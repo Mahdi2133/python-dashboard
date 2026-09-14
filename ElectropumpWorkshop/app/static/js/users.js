@@ -129,6 +129,7 @@
     A.qs('#u-active').value = user && !user.is_active ? '0' : '1';
     A.qs('#u-mustchange').value = user
       ? (user.must_change_password ? '1' : '0') : '1';
+    setEditWindow(user ? user.edit_window_hours : null);
     A.qs('#u-pass-label').innerHTML = user
       ? 'رمز عبور جدید' : 'رمز عبور <span class="req">*</span>';
     A.qs('#u-disable').classList.toggle('hidden', !user || !user.is_active);
@@ -139,6 +140,27 @@
     setPermissionBoxes(user ? user.permissions : (roleByKey('operator') || {}).permissions || []);
     applyCustomToggle();
     A.openModal('user-modal');
+  }
+
+  /* مهلت ویرایش: یکی از گزینه‌های آماده، وگرنه «مقدار دلخواه» با ورودی ساعت. */
+  function setEditWindow(hours) {
+    var select = A.qs('#u-editwindow');
+    var custom = A.qs('#u-editwindow-custom');
+    var known = A.qsa('#u-editwindow option').some(function (o) {
+      return o.value === String(hours || '');
+    });
+    if (!hours) { select.value = ''; custom.value = ''; }
+    else if (known) { select.value = String(hours); custom.value = ''; }
+    else { select.value = 'custom'; custom.value = hours; }
+    custom.classList.toggle('hidden', select.value !== 'custom');
+  }
+
+  function readEditWindow() {
+    var select = A.qs('#u-editwindow');
+    if (select.value === 'custom') {
+      return parseInt(A.qs('#u-editwindow-custom').value, 10) || null;
+    }
+    return select.value ? parseInt(select.value, 10) : null;
   }
 
   function collect() {
@@ -158,6 +180,7 @@
       role: selectedRole(),
       is_active: A.qs('#u-active').value === '1',
       must_change_password: A.qs('#u-mustchange').value === '1',
+      edit_window_hours: readEditWindow(),
       permissions: A.qs('#u-custom').checked
         ? A.qsa('[data-perm]:checked').map(function (b) { return b.dataset.perm; })
         : 'default'
@@ -306,6 +329,9 @@
     A.qs('#u-save').addEventListener('click', save);
     A.qs('#u-q').addEventListener('input', A.debounce(function () { page = 1; loadUsers(); }, 320));
     A.qs('#u-active-only').addEventListener('change', function () { page = 1; loadUsers(); });
+    A.qs('#u-editwindow').addEventListener('change', function () {
+      A.qs('#u-editwindow-custom').classList.toggle('hidden', this.value !== 'custom');
+    });
     A.qs('#u-custom').addEventListener('change', applyCustomToggle);
     A.qs('#u-roles').addEventListener('change', function () {
       showRoleDescription(selectedRole());

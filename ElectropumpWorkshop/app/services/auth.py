@@ -170,5 +170,24 @@ def permission_required(permission):
     return decorator
 
 
+def edit_window_closed(record) -> str | None:
+    """Persian reason the signed-in user may no longer change ``record``.
+
+    Returns ``None`` when they may. The window runs from when the record was
+    written, so a user cannot sidestep it by deleting a record and entering it
+    again — which is why delete and restore consult this too, not just edit.
+    """
+    user = current_user()
+    if user is None or not user.has_edit_window:
+        return None
+    deadline = user.edit_deadline(getattr(record, "created_at", None))
+    if deadline is None or local_now() <= deadline:
+        return None
+    from .jalali import tehran_time_str, to_jalali_str
+    return (f"مهلت ویرایش این رکورد در {to_jalali_str(deadline)} ساعت "
+            f"{tehran_time_str(deadline, with_seconds=False)} به پایان رسیده است. "
+            f"برای تغییر آن با مدیر سیستم هماهنگ کنید.")
+
+
 def admin_required(view):
     return permission_required("user.manage")(view)

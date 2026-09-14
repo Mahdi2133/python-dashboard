@@ -180,6 +180,19 @@ def _apply_user_payload(user, payload, creating=False):
         else:
             return "فهرست مجوزها باید آرایه باشد."
 
+    if "edit_window_hours" in payload:
+        raw = payload["edit_window_hours"]
+        if raw in (None, "", "0", 0, "unlimited"):
+            user.edit_window_hours = None       # no limit
+        else:
+            try:
+                hours = int(raw)
+            except (TypeError, ValueError):
+                return "مهلت ویرایش باید عدد (ساعت) باشد."
+            if hours < 1 or hours > 8760:
+                return "مهلت ویرایش باید بین ۱ تا ۸۷۶۰ ساعت (یک سال) باشد."
+            user.edit_window_hours = hours
+
     if "is_active" in payload:
         user.is_active = payload["is_active"] in (True, "true", "1", 1)
     if "must_change_password" in payload:
