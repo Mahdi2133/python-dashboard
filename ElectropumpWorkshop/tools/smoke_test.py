@@ -296,15 +296,80 @@ def main():
           str([w["name"] for w in exact[:3]]))
     with app.app_context():
         from app.models import Well
-        from app.services.lookups import fold_persian
+        from app.services.lookups import fold_persian, well_key
         actives = Well.query.filter_by(is_active=True).all()
         folded = [fold_persian(w.name) for w in actives]
+        keys = [well_key(w.name) for w in actives]
         codes = [w.pm_code for w in actives if w.pm_code]
         check("نام چاه تکراری وجود ندارد", len(folded) == len(set(folded)),
               f"{len(folded)-len(set(folded))} تکراری")
+        from collections import Counter as _C
+        _dupes = [k for k, n in _C(keys).items() if n > 1]
+        check("نام چاه با ایندکس حرفی هم تکراری نیست", not _dupes,
+              str([[w.name for w in actives if well_key(w.name) == k]
+                   for k in _dupes]))
         check("کد PM تکراری وجود ندارد", len(codes) == len(set(codes)))
         check("چاه‌ها مرکز دارند",
               Well.query.filter(Well.center_id.isnot(None)).count() > 800)
+        # The index may be written as a digit or as a word — one well, not two.
+        check("«یک» و «1» یک چاه‌اند",
+              well_key("ده غیبی یک") == well_key("ده غیبی 1"))
+        check("«دو» و «2» یک چاه‌اند",
+              well_key("مرکز تحقیقات دو") == well_key("مرکز تحقیقات 2"))
+        check("ارقام فارسی هم یکی می‌شوند",
+              well_key("الهیه ۳") == well_key("الهیه 3"))
+        check("پرانتز و نقطه‌گذاری نادیده گرفته می‌شود",
+              well_key("امرغان توس ( قدیم )") == well_key("امرغان توس قدیم"))
+        check("ایندکس پیش از «قدیم» هم شناخته می‌شود",
+              well_key("ابوطالب یک قدیم") == well_key("ابوطالب 1 قدیم"))
+        # A number word that is part of the name must NOT be folded away.
+        for a, b in (("ده سرخ", "10 سرخ"), ("چهار فصل", "4 فصل"),
+                     ("سه راه دانش", "3 راه دانش"), ("جمال ده", "جمال 10")):
+            check(f"«{a}» با «{b}» یکی نمی‌شود", well_key(a) != well_key(b))
+
+    print("\n— کد PM با دو املا —")
+    with app.app_context():
+        from app.models import Well, Record
+        from app.extensions import db as _db
+        from app.services.seed import deduplicate_wells
+        from app.services.lookups import pm_digits
+        check("ارقام کد PM یکسان می‌شوند",
+              pm_digits("10/24/41") == pm_digits("102441") == "102441")
+        a = Well(name="چاه دوقلو", pm_code="10/99/7", well_class="900001",
+                 is_active=True, is_verified=True)
+        b = Well(name="چاه دوقلو (BOT)", pm_code="10997", well_class="900001",
+                 is_active=True)
+        # Same digits but a different کلاسه: a real second well, never merged.
+        d = Well(name="چاه ناهمسان", pm_code="10997", well_class="900002",
+                 is_active=True)
+        _db.session.add_all([a, b, d])
+        _db.session.commit()
+        res = deduplicate_wells()
+        check("دو املای یک کد PM ادغام می‌شوند",
+              not Well.query.filter_by(name="چاه دوقلو (BOT)").one().is_active,
+              str(res))
+        check("املای رسمی «10/99/7» باقی می‌ماند",
+              Well.query.filter_by(name="چاه دوقلو").one().is_active)
+        check("املای قدیمی به‌عنوان نام مستعار می‌ماند",
+              "چاه دوقلو (BOT)" in [al.alias for al in
+                                    Well.query.filter_by(name="چاه دوقلو").one().aliases])
+        check("کلاسه متفاوت مانع ادغام می‌شود",
+              Well.query.filter_by(name="چاه ناهمسان").one().is_active)
+
+    print("\n— جستجوی چاه بدون تکرار —")
+    with app.app_context():
+        from app.models import Well
+        from app.extensions import db as _db
+        _db.session.add(Well(name="آماده سازی یک", is_active=True))
+        _db.session.commit()
+    hits = c.get("/api/wells?limit=20&q=" + quote("آماده سازی")).get_json()["data"]
+    names = [w["name"] for w in hits]
+    check("چاه هم‌نام دوباره در نتایج نمی‌آید",
+          "آماده سازی یک" not in names and "آماده سازی 1" in names, str(names))
+    r = c.post("/api/wells", json={"name": "آماده سازی 1"})
+    check("افزودن چاه تکراری رد می‌شود", r.status_code == 409, r.get_json().get("error"))
+    r = c.post("/api/wells", json={"name": "آماده سازی هفت"})
+    check("چاه واقعاً جدید پذیرفته می‌شود", r.status_code == 200)
 
     print("\n— مرکز از روی چاه —")
     w = c.get("/api/wells?limit=1&q=" + quote("کورده 1")).get_json()["data"][0]
@@ -331,17 +396,24 @@ def main():
     if r.get_json().get("ok"):
         c.delete(f"/api/records/{r.get_json()['data']['id']}?hard=1")
 
-    print("\n— ساعت تهران —")
-    from app.services.jalali import tehran_time_str, to_jalali_str, to_tehran
+    print("\n— ساعت محلی —")
+    from app.services.jalali import (local_now, tehran_time_str, to_jalali_str,
+                                     to_tehran)
     import datetime as _dt
-    utc_late = _dt.datetime(2026, 9, 13, 21, 15)
-    check("ساعت به وقت تهران تبدیل می‌شود",
-          tehran_time_str(utc_late, with_seconds=False) == "00:45",
-          tehran_time_str(utc_late))
-    check("تاریخ شمسی با ساعت تهران می‌چرخد",
-          to_jalali_str(utc_late) == "1405/06/23", to_jalali_str(utc_late))
-    check("اختلاف ثابت +۳:۳۰",
-          to_tehran(utc_late).utcoffset() == _dt.timedelta(hours=3, minutes=30))
+    # Timestamps are stored on the wall clock, so what is written is what is
+    # shown — no offset arithmetic that a mis-set Windows timezone can break.
+    stamp = _dt.datetime(2026, 9, 13, 21, 15, 30)
+    check("ساعت همان‌طور که ثبت شده نمایش داده می‌شود",
+          tehran_time_str(stamp, with_seconds=False) == "21:15",
+          tehran_time_str(stamp))
+    check("تاریخ شمسی با ساعت محلی می‌خواند",
+          to_jalali_str(stamp) == "1405/06/22", to_jalali_str(stamp))
+    check("ساعت ثبت‌شده با ساعت سیستم یکی است",
+          abs((local_now() - _dt.datetime.now()).total_seconds()) < 2)
+    aware = stamp.replace(tzinfo=_dt.timezone.utc)
+    check("مقدار دارای منطقه‌زمانی به وقت تهران می‌آید",
+          to_tehran(aware).strftime("%H:%M") == "00:45",
+          to_tehran(aware).strftime("%H:%M"))
     with app.app_context():
         cols = [col["label"] for col in _export_headers(c)]
     check("ستون «کد PM» در خروجی", "کد PM" in cols)
@@ -388,6 +460,33 @@ def main():
     check("رکورد کد PM چاه را حمل می‌کند",
           bool(rec) and "well_pm_code" in rec[0])
     check("رکورد کلاسه چاه را حمل می‌کند", bool(rec) and "well_class" in rec[0])
+
+    print("\n— تاریخ در حالت ویرایش —")
+    r = c.post("/api/records", json={**payload, "prev_install_date": "1403/07/14",
+                                     "test_date": "1405/06/01"})
+    dated = r.get_json()["data"]
+    check("تاریخ میلادی برای ماشین نگه داشته می‌شود",
+          dated["prev_install_date"] == "2024-10-05", str(dated["prev_install_date"]))
+    check("تاریخ شمسی برای فرم برگردانده می‌شود",
+          dated["prev_install_date_j"] == "1403/07/14",
+          str(dated.get("prev_install_date_j")))
+    check("تاریخ آزمایش هم شمسی برمی‌گردد",
+          dated["test_date_j"] == "1405/06/01", str(dated.get("test_date_j")))
+    # A dynamic (admin-built) date field must round-trip in Jalali too, or
+    # reopening the record shows 2024-10-05 where 1403/07/14 was typed.
+    r = c.post("/api/form-builder/sections", json={"code": "dt_s", "title": "تاریخ"})
+    dsid = r.get_json()["data"]["id"]
+    r = c.post("/api/form-builder/fields",
+               json={"field_name": "extra_date", "label": "تاریخ اضافه",
+                     "field_type": "jalali_date", "section_id": dsid})
+    check("فیلد تاریخ سفارشی ساخته شد", r.status_code == 200)
+    r = c.put(f"/api/records/{dated['id']}",
+              json={"dynamic": {"extra_date": "1404/02/03"}})
+    back = c.get(f"/api/records/{dated['id']}").get_json()["data"]
+    check("تاریخ فیلد سفارشی شمسی برمی‌گردد",
+          back["dynamic"].get("extra_date") == "1404/02/03",
+          str(back["dynamic"].get("extra_date")))
+    c.delete(f"/api/records/{dated['id']}?hard=1")
 
     print("\n— ترتیب تب‌ها —")
     check("صفحه اصلی، ثبت اطلاعات است",

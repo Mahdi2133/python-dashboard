@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import functools
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from flask import g, jsonify, redirect, render_template, request, session, url_for
 
 from ..extensions import db
 from ..models.auth import AppUser, UserSession
 from .audit import record_audit
+from .jalali import local_now
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ def load_current_user():
     if record is None:
         session.pop(SESSION_KEY, None)
         return
-    now = datetime.utcnow()
+    now = local_now()
     if now - record.last_seen_at > IDLE_TIMEOUT:
         _close(record, "expired")
         db.session.commit()
@@ -57,7 +58,7 @@ def current_user():
 
 
 def _close(record: UserSession, reason: str):
-    record.logout_at = datetime.utcnow()
+    record.logout_at = local_now()
     record.end_reason = reason
 
 
@@ -72,8 +73,8 @@ def attempt_login(username: str, password: str, ip=None, user_agent=None):
     if user is None:
         log.info("Login failed for unknown username %r from %s", username, ip)
         return None, generic
-    if user.locked_until and user.locked_until > datetime.utcnow():
-        remaining = int((user.locked_until - datetime.utcnow()).total_seconds() // 60) + 1
+    if user.locked_until and user.locked_until > local_now():
+        remaining = int((user.locked_until - local_now()).total_seconds() // 60) + 1
         return None, (f"این حساب به دلیل تلاش‌های ناموفق موقتاً قفل شده است. "
                       f"حدود {remaining} دقیقه دیگر دوباره تلاش کنید.")
     if not user.is_active:
@@ -81,7 +82,7 @@ def attempt_login(username: str, password: str, ip=None, user_agent=None):
     if not user.check_password(password):
         user.failed_attempts = (user.failed_attempts or 0) + 1
         if user.failed_attempts >= MAX_FAILED:
-            user.locked_until = datetime.utcnow() + timedelta(minutes=LOCK_MINUTES)
+            user.locked_until = local_now() + timedelta(minutes=LOCK_MINUTES)
             user.failed_attempts = 0
             log.warning("Account %s locked after repeated failures from %s",
                         user.username, ip)
@@ -90,7 +91,7 @@ def attempt_login(username: str, password: str, ip=None, user_agent=None):
 
     user.failed_attempts = 0
     user.locked_until = None
-    user.last_login_at = datetime.utcnow()
+    user.last_login_at = local_now()
     user.last_login_ip = ip
     user.login_count = (user.login_count or 0) + 1
 

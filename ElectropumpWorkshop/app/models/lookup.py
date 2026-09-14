@@ -12,6 +12,8 @@ without rewriting the source data.
 """
 from datetime import datetime
 
+from ..services.jalali import local_now
+
 from sqlalchemy import UniqueConstraint
 
 from ..extensions import db
@@ -66,7 +68,7 @@ class LookupItem(db.Model):
     # visible to the admin so they can merge it into a real option or keep it.
     is_adhoc = db.Column(db.Boolean, nullable=False, default=False)
     notes = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=local_now, nullable=False)
 
     category = db.relationship("LookupCategory", back_populates="items")
     aliases = db.relationship("LookupAlias", back_populates="item", cascade="all, delete-orphan")

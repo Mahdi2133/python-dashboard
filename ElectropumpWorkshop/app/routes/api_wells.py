@@ -6,7 +6,7 @@ from ..extensions import db
 from ..models import Record, Well, WellAlias
 from ..services.auth import permission_required
 from ..services.audit import record_audit
-from ..services.lookups import normalize_text, resolve_id
+from ..services.lookups import normalize_text, resolve_id, well_key
 from ._helpers import body, fail, ok, paging
 
 bp = Blueprint("api_wells", __name__, url_prefix="/api/wells")
@@ -42,11 +42,54 @@ def list_wells():
         )
         wells = (query.order_by(rank, Well.pm_code.is_(None),
                                 db.func.length(Well.name), Well.name)
-                 .limit(limit).all())
+                 # Fetched deep, then collapsed: the picker must still be able
+                 # to offer `limit` distinct wells after duplicates are dropped.
+                 .limit(limit * 4).all())
     else:
         wells = (query.order_by(Well.pm_code.is_(None), Well.name)
-                 .limit(limit).all())
-    return ok([w.to_dict() for w in wells])
+                 .limit(limit * 4).all())
+    return ok([w.to_dict() for w in _collapse(wells, limit)])
+
+
+def _collapse(wells, limit):
+    """Drop rows that are the same well spelled differently.
+
+    deduplicate_wells() merges these away at startup, but a well added by hand
+    or by an import since then can reintroduce a pair, and the operator must
+    never be asked to choose between «ده غیبی یک» and «ده غیبی 1». The list is
+    already in relevance order and puts registered wells first, so the first
+    row of each group is the one to keep. Wells whose PM codes differ are kept
+    apart: those are two real wells whose names happen to read alike.
+    """
+    seen, out = {}, []
+    for well in wells:
+        key = well_key(well.name)
+        if key not in seen:
+            seen[key] = {well.pm_code}
+        elif well.pm_code and well.pm_code not in seen[key]:
+            seen[key].add(well.pm_code)   # a second register entry, not a copy
+        else:
+            continue
+        out.append(well)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _same_well_as(name, exclude_id=None):
+    """The active well ``name`` would duplicate, if any.
+
+    Compared on ``well_key`` rather than the raw string, so adding «ده غیبی یک»
+    beside the register's «ده غیبی 1» is refused at the door instead of having
+    to be merged away later.
+    """
+    key = well_key(name)
+    if not key:
+        return None
+    query = Well.query.filter(Well.is_active.is_(True))
+    if exclude_id is not None:
+        query = query.filter(Well.id != exclude_id)
+    return next((w for w in query.all() if well_key(w.name) == key), None)
 
 
 @bp.get("/page")
@@ -80,8 +123,9 @@ def create_well():
     name = normalize_text(payload.get("name"))
     if not name:
         return fail("نام چاه الزامی است.", 422)
-    if Well.query.filter_by(name=name).first():
-        return fail("چاهی با این نام از قبل ثبت شده است.", 409)
+    clash = _same_well_as(name)
+    if clash is not None:
+        return fail(f"چاهی با این نام از قبل ثبت شده است: «{clash.name}».", 409)
     well = Well(
         name=name, code=normalize_text(payload.get("code")) or None,
         pm_code=normalize_text(payload.get("pm_code")) or None,
@@ -107,9 +151,9 @@ def update_well(well_id):
     payload = body()
     if payload.get("name"):
         new_name = normalize_text(payload["name"])
-        clash = Well.query.filter(Well.name == new_name, Well.id != well.id).first()
-        if clash:
-            return fail("نام تکراری است.", 409)
+        clash = _same_well_as(new_name, exclude_id=well.id)
+        if clash is not None:
+            return fail(f"نام تکراری است: «{clash.name}».", 409)
         well.name = new_name
     for attr in ("code", "notes", "status", "pm_code", "well_class", "address"):
         if attr in payload:

@@ -46,6 +46,72 @@ def _fold(value: str) -> str:
     return fold_persian(value)
 
 
+# ── well names ───────────────────────────────────────────────────────────────
+# Well registers spell the index of a well either as a digit or as a word, so
+# «ده غیبی 1» and «ده غیبی یک» are one well entered twice. Only a *trailing*
+# word is treated as an index: «ده سرخ», «چهار فصل» and «سه راه دانش» all carry
+# a number word that is part of the name itself, and folding those would merge
+# genuinely different wells.
+_INDEX_WORDS = {
+    "صفر": 0, "یک": 1, "اول": 1, "یکم": 1, "دو": 2, "دوم": 2, "سه": 3, "سوم": 3,
+    "چهار": 4, "چهارم": 4, "پنج": 5, "پنجم": 5, "شش": 6, "شیش": 6, "ششم": 6,
+    "هفت": 7, "هفتم": 7, "هشت": 8, "هشتم": 8, "نه": 9, "نهم": 9,
+    # «ده» is deliberately absent. In this register every tenth well is written
+    # «... 10»; the word only ever turns up meaning *village* — «ده سرخ»,
+    # «ده غیبی», «جمال ده» — so reading it as an index invents duplicates.
+    "یازده": 11, "دوازده": 12, "سیزده": 13, "چهارده": 14,
+    "پانزده": 15, "پونزده": 15, "شانزده": 16, "شونزده": 16, "هفده": 17,
+    "هیفده": 17, "هجده": 18, "هیجده": 18, "نوزده": 19, "بیست": 20,
+}
+_INDEX_WORDS = {fold_persian(k): v for k, v in _INDEX_WORDS.items()}
+
+# Qualifiers that sit *after* the index («ابوطالب یک قدیم»), so the index is
+# the last token before them rather than the last token outright.
+_NAME_SUFFIXES = {fold_persian(s) for s in ("قدیم", "قدیمی", "جدید", "نو")}
+
+_PUNCT = re.compile(r"[()\[\]{}«»\"'`.,،؛;:/\\|]+")
+
+
+def pm_digits(code) -> str:
+    """A PM code reduced to its digits, for comparing across spellings.
+
+    The register is published twice, once as «10/24/41» and once as «102441».
+    Only ever use this together with the کلاسه (see deduplicate_wells): on its
+    own the digits are not quite unique.
+    """
+    return re.sub(r"\D", "", str(code or ""))
+
+
+def well_key(value) -> str:
+    """The identity of a well name, for matching only — never for display.
+
+    On top of ``fold_persian`` this drops punctuation, turns Persian digits
+    into ASCII and rewrites a trailing index word as its digit, so the picker
+    cannot offer «ده غیبی یک» and «ده غیبی 1» as two different wells. It is
+    deliberately conservative: a name whose number word is not in the index
+    position is left alone, and callers still refuse to merge two wells whose
+    PM codes disagree, because the register's own key outranks any spelling
+    rule.
+    """
+    from .jalali import normalize_digits
+
+    text = _PUNCT.sub(" ", normalize_digits(normalize_text(value)))
+    tokens = [t for t in text.split() if t]
+    if not tokens:
+        return ""
+    last = len(tokens) - 1
+    while last > 0 and fold_persian(tokens[last]) in _NAME_SUFFIXES:
+        last -= 1
+    # ``last > 0`` keeps a well actually called «ده» from becoming «10».
+    if last > 0:
+        digit = _INDEX_WORDS.get(fold_persian(tokens[last]))
+        if digit is not None:
+            tokens[last] = str(digit)
+    return fold_persian(" ".join(tokens))
+
+
+
+
 def get_category(code: str) -> LookupCategory | None:
     return LookupCategory.query.filter_by(code=code).one_or_none()
 

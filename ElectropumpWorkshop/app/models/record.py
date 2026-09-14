@@ -13,6 +13,8 @@ the 51 fields of the original HTML form, with these structural corrections:
 """
 from datetime import datetime
 
+from ..services.jalali import local_now
+
 from ..extensions import db
 
 
@@ -117,8 +119,8 @@ class Record(db.Model):
     source_row = db.Column(db.Integer)
     import_batch_id = db.Column(db.Integer, db.ForeignKey("import_batches.id"), index=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+    created_at = db.Column(db.DateTime, default=local_now, nullable=False)
+    updated_at = db.Column(db.DateTime, default=local_now, onupdate=local_now,
                            nullable=False)
     created_by = db.Column(db.Integer, db.ForeignKey("app_users.id"), index=True)
     updated_by = db.Column(db.Integer, db.ForeignKey("app_users.id"), index=True)

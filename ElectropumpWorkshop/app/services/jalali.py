@@ -168,31 +168,51 @@ def parse_jalali_to_date(text) -> _dt.date | None:
         return None
 
 
-# Iran dropped daylight saving in 2022, so the offset is a constant +03:30.
-# Timestamps are stored in UTC (datetime.utcnow) and must be shifted before
-# they are shown, otherwise anything logged after 20:30 UTC displays on the
-# previous Jalali day.
+# Iran dropped daylight saving in 2022, so its offset is a constant +03:30.
 TEHRAN_OFFSET = _dt.timedelta(hours=3, minutes=30)
 TEHRAN_TZ = _dt.timezone(TEHRAN_OFFSET, "Asia/Tehran")
 
 
+def local_now() -> _dt.datetime:
+    """The moment to stamp on a row: the workshop PC's own wall clock.
+
+    Timestamps used to be written with ``datetime.utcnow()`` and shifted by
+    +03:30 when shown. That is only right while Windows' *timezone* is set to
+    Tehran — and on a workshop PC it often is not, even though the clock on the
+    taskbar reads correctly. The shift then lands the login hours away from
+    what the operator saw, which is exactly the 8pm login this replaces.
+
+    Storing the wall clock removes the dependency altogether: the number in the
+    database is the number on the clock, and displaying it needs no arithmetic
+    that could be wrong. This is a single-site application in one timezone
+    without daylight saving, so there is nothing an absolute UTC instant would
+    buy back.
+    """
+    return _dt.datetime.now()
+
+
 def to_tehran(value):
-    """Convert a stored (naive UTC) datetime to Tehran local time."""
+    """Render a stored timestamp on the clock it was written against.
+
+    Naive values are already wall-clock and pass straight through; an aware one
+    (an older row, or a caller that built its own) is converted to Tehran and
+    stripped, so everything downstream compares like with like.
+    """
     if value is None:
         return None
     if not isinstance(value, _dt.datetime):
         return value
     if value.tzinfo is None:
-        value = value.replace(tzinfo=_dt.timezone.utc)
-    return value.astimezone(TEHRAN_TZ)
+        return value
+    return value.astimezone(TEHRAN_TZ).replace(tzinfo=None)
 
 
 def tehran_now() -> _dt.datetime:
-    return _dt.datetime.now(TEHRAN_TZ)
+    return local_now()
 
 
 def tehran_time_str(value, with_seconds: bool = True) -> str:
-    """HH:MM[:SS] in Tehran local time."""
+    """HH:MM[:SS] on the local clock."""
     local = to_tehran(value)
     if local is None:
         return ""
@@ -202,8 +222,8 @@ def tehran_time_str(value, with_seconds: bool = True) -> str:
 def to_jalali_str(value, with_month_name: bool = False, sep: str = "/") -> str:
     """Jinja filter: render a stored Gregorian date in Jalali.
 
-    A datetime is treated as UTC and shifted to Tehran first, so the Jalali
-    day matches the day the operator actually saw on the clock.
+    A datetime is taken on the local clock, so the Jalali day matches the day
+    the operator actually saw.
     """
     if value in (None, ""):
         return ""

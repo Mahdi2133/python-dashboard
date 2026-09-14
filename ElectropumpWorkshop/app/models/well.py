@@ -1,6 +1,8 @@
 """Wells — the 342 names that used to be the hardcoded ``ALL_WELLS`` array."""
 from datetime import datetime
 
+from ..services.jalali import local_now
+
 from sqlalchemy import UniqueConstraint
 
 from ..extensions import db
@@ -26,7 +28,7 @@ class Well(db.Model):
     # row is kept (never discarded) but flagged for the admin to confirm.
     is_verified = db.Column(db.Boolean, nullable=False, default=True)
     notes = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=local_now, nullable=False)
 
     center = db.relationship("LookupItem", foreign_keys=[center_id])
     aliases = db.relationship("WellAlias", back_populates="well", cascade="all, delete-orphan")
@@ -90,7 +92,7 @@ class PumpCurvePoint(db.Model):
     return_flow = db.Column(db.Float)     # دبی برگشتی
     months_in_service = db.Column(db.Integer)
     note = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=local_now, nullable=False)
 
     def to_dict(self):
         drop = None

@@ -17,7 +17,7 @@ import re
 from ..extensions import db
 from ..models import ImportBatch, LookupItem, Record
 from .audit import record_audit
-from .jalali import normalize_digits, parse_jalali
+from .jalali import local_now, normalize_digits, parse_jalali
 from .lookups import normalize_text
 from .records import ValidationError, apply_payload, split_pump_type
 
@@ -390,7 +390,7 @@ def commit_import(path, sheet_name, mapping, data_start, skip_duplicates=True,
             log.warning("Import row %s failed: %s", row_no, exc)
 
     batch.inserted, batch.skipped, batch.failed = inserted, skipped, failed
-    batch.finished_at = dt.datetime.utcnow()
+    batch.finished_at = local_now()
     batch.status = "dry-run" if dry_run else "completed"
     batch.message = (f"{inserted} درج، {skipped} رد، {failed} خطا، "
                      f"{warnings} هشدار")
@@ -514,7 +514,7 @@ def import_localstorage(records: list, skip_duplicates=True) -> dict:
             errors.append({"row": idx + 1, "level": "error", "message": str(exc)[:200]})
 
     batch.inserted, batch.skipped, batch.failed = inserted, skipped, failed
-    batch.finished_at = dt.datetime.utcnow()
+    batch.finished_at = local_now()
     batch.status = "completed"
     batch.message = f"{inserted} درج، {skipped} رد، {failed} خطا"
     record_audit("import", "record", None,

@@ -69,16 +69,20 @@ def seed_wells() -> dict:
     row. Fields already filled in by hand are left alone; only blanks are
     completed from the reference.
     """
-    from .lookups import fold_persian, resolve_id
+    from .lookups import fold_persian, resolve_id, well_key
 
-    existing = {}
+    existing, loose = {}, {}
     for well in Well.query.all():
         existing.setdefault(fold_persian(well.name), []).append(well)
+        # A second index on the looser key, so the reference's «ده غیبی 1»
+        # recognises a stored «ده غیبی یک» as the same well instead of adding a
+        # duplicate beside it.
+        loose.setdefault(well_key(well.name), []).append(well)
 
     added = updated = 0
     for name, pm_code, well_class, centre, kind, address in WELLS_REFERENCE:
         key = fold_persian(name)
-        matches = existing.get(key)
+        matches = existing.get(key) or loose.get(well_key(name))
         if not matches:
             well = Well(name=name, pm_code=pm_code or None,
                         well_class=well_class or None,
@@ -88,9 +92,13 @@ def seed_wells() -> dict:
             db.session.add(well)
             db.session.flush()
             existing[key] = [well]
+            loose.setdefault(well_key(name), []).append(well)
             added += 1
             continue
-        well = matches[0]
+        # When the loose key matched several rows, the register's identifiers
+        # belong on the one already carrying this PM code, else the verified one.
+        well = next((w for w in matches if pm_code and w.pm_code == pm_code),
+                    next((w for w in matches if w.is_verified), matches[0]))
         changed = False
         # These four come from the register and nowhere else — operators do not
         # type PM codes — so the reference overwrites them. That is the point of
@@ -121,29 +129,57 @@ def deduplicate_wells() -> dict:
     """Fold wells whose names differ only in spelling into one row.
 
     The operations spreadsheets spell the same well several ways, which is why
-    the picker used to show «ازاد شهر 2» and «آزاد شهر 2» side by side. The
-    survivor is the row the reference register recognises (it carries the PM
-    code); the others hand over their records, become aliases of the survivor
-    and are deactivated, so no history is lost and no name appears twice.
+    the picker used to show «ازاد شهر 2» and «آزاد شهر 2» — and «ده غیبی یک»
+    and «ده غیبی 1» — side by side. ``well_key`` decides what "the same name"
+    means; the survivor is the row the reference register recognises (it
+    carries the PM code), and the others hand over their records, become
+    aliases of the survivor and are deactivated, so no history is lost and no
+    name appears twice.
+
+    Two wells that carry *different* PM codes are never merged however alike
+    their names read: the register's own key outranks any spelling rule, and a
+    wrong merge would move one well's operations onto another.
     """
-    from .lookups import fold_persian
+    from .lookups import pm_digits, well_key
 
     groups = {}
     for well in Well.query.filter_by(is_active=True).all():
-        groups.setdefault(fold_persian(well.name), []).append(well)
+        groups.setdefault(well_key(well.name), []).append(well)
         # The PM code is the register's own unique key, so two rows carrying the
         # same one are the same well however their names were spelled.
         if well.pm_code:
             groups.setdefault(("pm", well.pm_code), []).append(well)
+        # The two source workbooks write that key differently — «10/24/41» in
+        # one and «102441» in the other — which is how «گلشهر9 جدید» ended up
+        # beside «گلشهر9 جدید (BOT)», and «خاتم» beside «خاتم الانبیاء 1». The
+        # کلاسه must agree as well: on this register the digits alone could in
+        # principle collide (10/22/7 and 10/2/27 both read 10227), while the
+        # pair together identifies a well exactly.
+        if well.pm_code and well.well_class:
+            groups.setdefault(("pm+class", pm_digits(well.pm_code),
+                               well.well_class), []).append(well)
 
-    merged = moved = 0
+    merged = moved = kept_apart = 0
     done = set()
     for key, wells in groups.items():
         wells = [w for w in wells if w.id not in done and w.is_active]
         if len(wells) < 2:
             continue
-        # Prefer the row with a PM code, then the one carrying the most work.
-        wells.sort(key=lambda w: (bool(w.pm_code), w.is_verified,
+        codes = {pm_digits(w.pm_code) for w in wells if w.pm_code}
+        if len(codes) > 1 and not isinstance(key, tuple):
+            # Same spelling, two register entries: a real pair of wells whose
+            # names collide. Leave both — the picker shows the PM code beside
+            # the name, which is what tells them apart.
+            kept_apart += 1
+            log.warning("Not merging %s: conflicting PM codes %s",
+                        [w.name for w in wells], sorted(codes))
+            continue
+        # Prefer the row with a PM code, and among those the one spelling it
+        # the canonical way («10/24/41»): that is the row Well_Details — the
+        # register designated the authority — contributed. Then the one
+        # carrying the most work.
+        wells.sort(key=lambda w: (bool(w.pm_code), "/" in (w.pm_code or ""),
+                                  w.is_verified,
                                   w.records.filter_by(is_active=True).count()),
                    reverse=True)
         keeper, others = wells[0], wells[1:]
@@ -164,7 +200,8 @@ def deduplicate_wells() -> dict:
     db.session.commit()
     if merged:
         log.info("Merged %s duplicate wells, moved %s records", merged, moved)
-    return {"wells_merged": merged, "records_moved": moved}
+    return {"wells_merged": merged, "records_moved": moved,
+            "kept_apart": kept_apart}
 
 
 def seed_form() -> dict:

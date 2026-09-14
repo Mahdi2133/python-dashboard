@@ -7,6 +7,7 @@ The one thing this must never do is silently make a fresh database on top of
 an existing one, so the file is only created when it genuinely is not there,
 and an existing file is opened as-is.
 """
+import datetime as _dt
 import logging
 import sqlite3
 
@@ -159,6 +160,59 @@ def _add_missing_columns() -> list:
     return added
 
 
+# Key in app_meta recording which clock the stored timestamps are on.
+_CLOCK_KEY = "timestamp_clock"
+
+
+def _localise_timestamps(fresh_database: bool) -> dict:
+    """Bring an older database's timestamps onto the wall clock. Runs once.
+
+    Rows written before this release hold ``datetime.utcnow()``; the app now
+    stores what the clock reads (see ``jalali.local_now``) and prints it back
+    without arithmetic. Left alone, every historical login would suddenly
+    display 3.5 hours early, so each DateTime column is shifted by the offset
+    the machine is running at and the database is marked as converted.
+
+    Date columns are deliberately untouched: an operation date is a day on the
+    calendar, not an instant, and shifting it could move it to the day before.
+    """
+    from ..models.meta import AppMeta
+
+    if AppMeta.get(_CLOCK_KEY):
+        return {"converted": False, "reason": "already-local"}
+    if fresh_database:
+        AppMeta.set(_CLOCK_KEY, "local")
+        db.session.commit()
+        return {"converted": False, "reason": "new-database"}
+
+    offset = _dt.datetime.now() - _dt.datetime.utcnow()
+    seconds = round(offset.total_seconds())
+    shifted = []
+    if seconds:
+        insp = inspect(db.engine)
+        tables = set(insp.get_table_names())
+        for table in db.metadata.sorted_tables:
+            if table.name not in tables:
+                continue
+            columns = [c.name for c in table.columns
+                       if isinstance(c.type, db.DateTime)]
+            if not columns:
+                continue
+            with db.engine.begin() as conn:
+                for column in columns:
+                    result = conn.execute(text(
+                        f'UPDATE "{table.name}" '
+                        f'SET "{column}" = datetime("{column}", :shift) '
+                        f'WHERE "{column}" IS NOT NULL'), {"shift": f"{seconds} seconds"})
+                    if result.rowcount:
+                        shifted.append(f"{table.name}.{column}={result.rowcount}")
+    AppMeta.set(_CLOCK_KEY, "local")
+    db.session.commit()
+    log.warning("Converted stored timestamps to local time (%+d s): %s",
+                seconds, ", ".join(shifted) or "nothing to shift")
+    return {"converted": True, "offset_seconds": seconds, "columns": shifted}
+
+
 def ensure_database(app) -> dict:
     path = database_file()
     existed = path.exists() and path.stat().st_size > 0
@@ -180,6 +234,9 @@ def ensure_database(app) -> dict:
 
     status["columns_added"] = _add_missing_columns()
     status["tables_rebuilt"] = _rebuild_stale_fk_tables()
+    # A database with no tables at all before this run is brand new, so its
+    # timestamps are already local and must not be shifted.
+    status["clock"] = _localise_timestamps(fresh_database=not existed)
 
     from .seed import seed_all
     seeded = seed_all(force=False)

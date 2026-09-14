@@ -1,6 +1,8 @@
 """Audit trail, import batches and the (currently optional) user table."""
 from datetime import datetime
 
+from ..services.jalali import local_now
+
 from ..extensions import db
 
 AUDIT_ACTIONS = ("create", "update", "delete", "restore", "import", "export",
@@ -21,14 +23,14 @@ class User(db.Model):
     password_hash = db.Column(db.String(255))
     role = db.Column(db.String(40), default="admin")
     is_active = db.Column(db.Boolean, nullable=False, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=local_now, nullable=False)
 
 
 class AuditLog(db.Model):
     __tablename__ = "audit_logs"
 
     id = db.Column(db.Integer, primary_key=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=local_now, nullable=False, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("app_users.id"), index=True)
     username = db.Column(db.String(80))
     action = db.Column(db.String(40), nullable=False, index=True)
@@ -56,7 +58,7 @@ class ImportBatch(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(255))
     sheet_name = db.Column(db.String(120))
-    started_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    started_at = db.Column(db.DateTime, default=local_now, nullable=False)
     finished_at = db.Column(db.DateTime)
     total_rows = db.Column(db.Integer, default=0)
     inserted = db.Column(db.Integer, default=0)

@@ -14,7 +14,7 @@ from .audit import diff_fields, record_audit
 from .jalali import (MONTHS_FA, jalali_parts_to_date, normalize_digits,
                      parse_jalali, parse_jalali_to_date, to_jalali_str)
 from .lookups import (fold_persian, normalize_text, resolve_id,
-                      resolve_item)
+                      resolve_item, well_key)
 
 log = logging.getLogger(__name__)
 
@@ -92,9 +92,22 @@ def resolve_well(name_or_id, create_missing=False):
     if alias:
         return alias.well, raw
     folded = fold_persian(raw)
-    for candidate in Well.query.all():
+    candidates = Well.query.all()
+    for candidate in candidates:
         if fold_persian(candidate.name) == folded:
             return candidate, raw
+    # Last resort before inventing a well: the looser key, which also reads a
+    # spelled-out index as its digit. A sheet that writes «گلشهر یک» means the
+    # register's «گلشهر 1», and creating a second row for it is how the picker
+    # filled up with duplicates in the first place. Prefer a registered well
+    # when the key matches more than one.
+    loose = well_key(raw)
+    if loose:
+        matches = [w for w in candidates if well_key(w.name) == loose]
+        if matches:
+            matches.sort(key=lambda w: (bool(w.pm_code), w.is_active, w.is_verified),
+                         reverse=True)
+            return matches[0], raw
     if create_missing:
         well = Well(name=raw, is_active=True, is_verified=False,
                     notes="هنگام ورود داده ایجاد شد؛ نیازمند تأیید مدیر.")

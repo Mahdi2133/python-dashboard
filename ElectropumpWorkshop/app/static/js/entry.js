@@ -435,6 +435,14 @@
           var key = field.model_attr.endsWith('_id')
             ? field.model_attr.slice(0, -3) : field.model_attr;
           value = record[key];
+          // Dates are serialised twice: ISO for machines and `_j` in Jalali
+          // for people. A date input must be handed the Jalali one, or
+          // reopening a record shows 2024-10-05 where 1403/07/14 was typed.
+          if (field.field_type === 'jalali_date') {
+            // A sheet import can leave a partial date («1403/07») that has no
+            // Gregorian equivalent; `_raw` keeps it so editing does not eat it.
+            value = record[key + '_j'] || record[key + '_raw'] || '';
+          }
         } else {
           value = (record.dynamic || {})[name];
         }

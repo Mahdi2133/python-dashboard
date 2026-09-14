@@ -13,6 +13,8 @@ import os
 import secrets
 from datetime import datetime
 
+from ..services.jalali import local_now
+
 from ..extensions import db
 
 # ── the permission vocabulary ────────────────────────────────────────────────
@@ -140,7 +142,7 @@ class AppUser(db.Model):
     failed_attempts = db.Column(db.Integer, nullable=False, default=0)
     locked_until = db.Column(db.DateTime)
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=local_now, nullable=False)
     created_by = db.Column(db.Integer, db.ForeignKey("app_users.id"))
 
     sessions = db.relationship("UserSession", back_populates="user",
@@ -215,7 +217,7 @@ class AppUser(db.Model):
                               if self.last_login_at else None),
             "last_login_ip": self.last_login_ip,
             "login_count": self.login_count,
-            "is_locked": bool(self.locked_until and self.locked_until > datetime.utcnow()),
+            "is_locked": bool(self.locked_until and self.locked_until > local_now()),
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
         if include_permissions:
@@ -233,8 +235,8 @@ class UserSession(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("app_users.id", ondelete="CASCADE"),
                         nullable=False, index=True)
     token = db.Column(db.String(64), unique=True, nullable=False, index=True)
-    login_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
-    last_seen_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    login_at = db.Column(db.DateTime, default=local_now, nullable=False, index=True)
+    last_seen_at = db.Column(db.DateTime, default=local_now, nullable=False)
     logout_at = db.Column(db.DateTime)
     ip_address = db.Column(db.String(60))
     user_agent = db.Column(db.String(300))

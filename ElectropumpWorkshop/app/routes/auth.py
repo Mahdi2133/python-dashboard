@@ -12,7 +12,7 @@ from ..models.auth import (PERMISSIONS, PERMISSION_CODES, ROLES, AppUser,
 from ..services.audit import record_audit
 from ..services.auth import (admin_required, attempt_login, current_user,
                              end_sessions_for, login_required, logout_current)
-from ..services.jalali import (parse_jalali_to_date, tehran_time_str,
+from ..services.jalali import (local_now, parse_jalali_to_date, tehran_time_str,
                                to_jalali_str)
 from ..services.lookups import normalize_text
 from ._helpers import body, fail, ok, paging
@@ -361,7 +361,7 @@ def close_session(session_id):
         return fail("نشست یافت نشد.", 404)
     if record.logout_at is not None:
         return ok(message="این نشست از قبل بسته شده است.")
-    record.logout_at = dt.datetime.utcnow()
+    record.logout_at = local_now()
     record.end_reason = "closed_by_admin"
     record_audit("logout", "user", record.user_id,
                  summary=f"بستن نشست کاربر «{record.user.username}» توسط مدیر")

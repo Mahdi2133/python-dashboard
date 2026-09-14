@@ -11,6 +11,8 @@ anything the admin invents later is dynamic and still exportable.
 """
 from datetime import datetime
 
+from ..services.jalali import local_now
+
 from ..extensions import db
 
 FIELD_TYPES = (
@@ -174,15 +176,22 @@ class RecordDynamicValue(db.Model):
     value_text = db.Column(db.Text)
     value_num = db.Column(db.Float)
     value_date = db.Column(db.Date)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=local_now, nullable=False)
 
     record = db.relationship("Record", back_populates="dynamic_values")
     field = db.relationship("FormField")
 
     @property
     def value(self):
+        """The answer as the operator typed it.
+
+        A date comes back in Jalali, not ISO: this is what the edit form puts
+        straight back into a jalali_date input and what the exports print, and
+        an operator who entered ۱۴۰۵/۰۶/۲۳ must never be shown 2026-09-14.
+        """
         if self.value_date is not None:
-            return self.value_date.isoformat()
+            from ..services.jalali import to_jalali_str
+            return to_jalali_str(self.value_date)
         if self.value_num is not None:
             return self.value_num
         return self.value_text
