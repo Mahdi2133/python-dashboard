@@ -15,12 +15,46 @@ normalises "سعدابادی"/"سعد ابادی" onto one contractor without ed
 H, X = "html", "excel"
 
 
-def _o(value, label=None, icon=None, source=H, aliases=()):
+def _o(value, label=None, icon=None, source=H, aliases=(), locked=False):
     return {"value": value, "label": label or value, "icon": icon,
-            "source": source, "aliases": list(aliases)}
+            "source": source, "aliases": list(aliases), "locked": locked}
 
 
 LOOKUP_CATEGORIES = [
+    # ── process (فرایند) vocabularies ────────────────────────────────────────
+    {
+        # Step zero asks only this, and the whole process branches on it.
+        "code": "operation_kind", "name_fa": "نوع عملیات (شروع فرایند)",
+        "multiple": False, "is_system": True,
+        "items": [_o("کشیدن", "کشیدن", "🔼", locked=True),
+                  _o("نصب", "نصب", "🔽", locked=True)],
+    },
+    {
+        "code": "review_result", "name_fa": "نتیجه بررسی کارشناس",
+        "multiple": False,
+        "items": [_o("نیاز به کشیدن دارد", "نیاز به کشیدن دارد", "✅"),
+                  _o("نیاز به کشیدن ندارد", "نیاز به کشیدن ندارد", "⛔")],
+    },
+    {
+        "code": "required_action", "name_fa": "اقدام مورد نیاز",
+        "multiple": False,
+        "items": [_o("ویدئومتری", "ویدئومتری", "🎥"),
+                  _o("جمع آوری", "جمع‌آوری", "📦", aliases=["جمع اوری", "جمع‌آوری"]),
+                  _o("بهسازی", "بهسازی", "🛠"),
+                  # Only this one opens «اطلاعات چاه و نصب» at stage 4.
+                  _o("نصب الکتروپمپ جدید", "نصب الکتروپمپ جدید", "🆕", locked=True)],
+    },
+    {
+        "code": "yes_no", "name_fa": "بله / خیر", "multiple": False,
+        "items": [_o("بله", "بله", "✅"), _o("خیر", "خیر", "❌")],
+    },
+    {
+        # The نصب counterpart of «علت خرابی». Seeded with the one option the
+        # workshop named; the admin adds the rest in مدیریت گزینه‌ها.
+        "code": "install_relates", "name_fa": "نصب مرتبط با…",
+        "multiple": True,
+        "items": [_o("تجهیز چاه جدید", "تجهیز چاه جدید", "🆕")],
+    },
     {
         "code": "center", "name_fa": "مرکز", "multiple": False,
         "items": [
@@ -78,9 +112,13 @@ LOOKUP_CATEGORIES = [
         "items": [_o("امانی", source=X), _o("پیمانی", source=X)],
     },
     {
-        "code": "failure_reason", "name_fa": "شرح خرابی از نظر بهره‌بردار",
+        "code": "failure_reason", "name_fa": "علت خرابی",
         "multiple": True,
         "items": [
+            # Locked: pulling a well to decommission it is always a valid
+            # reason, so the option manager may relabel it but not remove it.
+            _o("جمع آوری", "جمع‌آوری", "📦",
+               aliases=["جمع اوری", "جمع‌آوری"], locked=True),
             _o("سوختن الکتروپمپ", icon="🔥", aliases=["سوختن الکترو پمپ"]),
             _o("سوختن الکتروموتور", icon="🔥",
                aliases=["سوختن الکترو موتور", "سوختن موتور", "سوختن"]),
@@ -248,6 +286,17 @@ def f(field_name, label, ftype, attr=None, cat=None, **kw):
 
 FORM_SECTIONS = [
     {
+        # Step zero of the process. One answer, and the whole chain branches
+        # on it: نصب skips straight to the workshop, کشیدن starts at the centre.
+        "code": "intake", "title": "شروع فرایند", "icon": "🚦", "columns": 2,
+        "fields": [
+            f("operation_kind", "نوع عملیات", "radio", cat="operation_kind",
+              help_text="کشیدن یا نصب — مسیر فرایند و فیلدهای بعدی بر همین "
+                        "اساس تعیین می‌شود.",
+              show_in_table=True, table_order=0, export_header="نوع عملیات"),
+        ],
+    },
+    {
         "code": "basic", "title": "اطلاعات پایه", "icon": "📌", "columns": 3,
         "fields": [
             f("op_jdate", "تاریخ عملیات", "jalali_date", attr="op_date", required=True,
@@ -268,9 +317,18 @@ FORM_SECTIONS = [
             f("operation", "عملیات انجام شده", "radio", attr="operation_id",
               cat="operation", required=True, show_in_table=True, table_order=5,
               export_header="كشيدن/نصب/جمع آوری /نصب جدید"),
-            f("failure", "شرح خرابی از نظر بهره‌بردار", "checkbox", cat="failure_reason",
+            f("failure", "علت خرابی", "checkbox", cat="failure_reason",
               allow_other=True, show_in_table=True, table_order=6,
+              visible_when="operation_kind=کشیدن",
+              help_text="فقط در عملیات «کشیدن» پرسیده می‌شود.",
               export_header="شرح خرابی از نظر بهره بردار"),
+            # The نصب counterpart: an installation has no fault to report, it
+            # relates to something instead.
+            f("install_relates_to", "نصب مرتبط با…", "checkbox",
+              cat="install_relates", allow_other=True,
+              visible_when="operation_kind=نصب",
+              help_text="فقط در عملیات «نصب» پرسیده می‌شود.",
+              export_header="نصب مرتبط با"),
             f("pm", "فرم نصب در PM", "radio", attr="pm_id", cat="pm_form",
               export_header="فرم نصب در PM"),
             f("executor", "مجری", "radio", attr="executor_id", cat="executor",
@@ -328,6 +386,34 @@ FORM_SECTIONS = [
               export_header="نو/تعمیری پمپ"),
             f("type_change", "تغییر تیپ", "radio", attr="type_change_id",
               cat="change_flag", export_header="تغییر تیپ"),
+        ],
+    },
+    {
+        # Stage 2: the engineer reads what the centre reported and rules on it.
+        "code": "review", "title": "بررسی کارشناس", "icon": "🔎", "columns": 2,
+        "fields": [
+            f("review_decision", "نتیجه بررسی", "radio", cat="review_result",
+              help_text="آیا این چاه نیاز به کشیدن دارد؟",
+              export_header="نتیجه بررسی کارشناس"),
+            f("review_note", "توضیحات کارشناس", "textarea", full_width=True,
+              placeholder="دلیل تصمیم و هر نکته‌ای که مرحله بعد باید بداند…",
+              export_header="توضیحات کارشناس"),
+        ],
+    },
+    {
+        # Stage 4 decides before it fills: what has to be done to this well?
+        "code": "action", "title": "اقدام مورد نیاز", "icon": "🎯", "columns": 2,
+        "fields": [
+            f("required_action", "اقدام مورد نیاز چیست؟", "radio",
+              cat="required_action",
+              help_text="جز «نصب الکتروپمپ جدید»، بقیه‌ی گزینه‌ها «اطلاعات چاه "
+                        "و نصب» را بایگانی می‌کنند و فرایند به مرحله بعد می‌رود.",
+              export_header="اقدام مورد نیاز"),
+            f("pump_type_now", "تیپ الکتروپمپ در این مرحله انتخاب می‌شود؟",
+              "radio", cat="yes_no",
+              visible_when="required_action=نصب الکتروپمپ جدید",
+              help_text="اگر «بله» باشد، «اطلاعات چاه و نصب» همین‌جا پر می‌شود.",
+              export_header="انتخاب تیپ در این مرحله"),
         ],
     },
     {
@@ -443,5 +529,70 @@ FORM_SECTIONS = [
               attr="reported_to_finance", help_text="ستون شیت ۱۴۰۲.",
               export_header="اعلام شده به مالی"),
         ],
+    },
+]
+
+
+# ── the process (فرایند) ─────────────────────────────────────────────────────
+# Stage 0 only asks کشیدن or نصب. After that the chain branches: نصب goes
+# straight to the workshop (stage 3), کشیدن starts at the water centre so the
+# fault is on record before anyone touches the well.
+#
+# «اطلاعات پایه» is attached to both stage 1 and stage 3 on purpose — whichever
+# runs first fills it, and the engine does not ask the second one again.
+#
+# ``items`` entries are (kind, code, applies_to, optional).
+WORKFLOW_CODE = "main"
+
+WORKFLOW_STAGES = [
+    {
+        "stage_number": 0, "title": "شروع فرایند", "applies_to": "both",
+        "hint": "متولی شروع فرایند",
+        "description": "تعیین اینکه عملیات «کشیدن» است یا «نصب». مسیر بقیه‌ی "
+                       "مراحل از همین‌جا مشخص می‌شود.",
+        "items": [("section", "intake", "both", False)],
+    },
+    {
+        "stage_number": 1, "title": "اعلام علت خرابی", "applies_to": "pull",
+        "hint": "مرکز آبرسانی",
+        "description": "مرکز آبرسانی علت خرابی را اعلام می‌کند. این مرحله فقط "
+                       "در عملیات «کشیدن» طی می‌شود.",
+        "items": [("section", "basic", "pull", False),
+                  ("field", "failure", "pull", False)],
+    },
+    {
+        "stage_number": 2, "title": "بررسی کارشناس", "applies_to": "pull",
+        "hint": "مهندس امین بزرگمهر",
+        "description": "بررسی گزارش مرکز و تصمیم‌گیری درباره‌ی نیاز چاه به "
+                       "کشیدن، سپس ارجاع به کارگاه.",
+        "items": [("section", "review", "pull", False)],
+    },
+    {
+        "stage_number": 3, "title": "کارگاه مکانیک", "applies_to": "both",
+        "hint": "مهندس مهدی یاقوتی‌نیا",
+        "description": "ثبت عملیات و خرابی، مشخصات موتور و پمپ، و در صورت "
+                       "نیاز جدار چاه.",
+        "items": [("section", "basic", "both", False),
+                  ("section", "operation", "both", False),
+                  ("section", "motor", "both", False),
+                  ("section", "pump", "both", False),
+                  ("section", "casing", "both", True)],
+    },
+    {
+        "stage_number": 4, "title": "اطلاعات چاه و نصب", "applies_to": "both",
+        "hint": "مهندس امین بزرگمهر",
+        "description": "تعیین اقدام مورد نیاز و — در صورت نصب الکتروپمپ جدید — "
+                       "ثبت اطلاعات چاه و نصب.",
+        "items": [("section", "action", "pull", False),
+                  ("section", "well_install", "both", False)],
+    },
+    {
+        "stage_number": 5, "title": "تکمیل و ثبت نهایی", "applies_to": "both",
+        "hint": "مهندس کاهانی",
+        "description": "آزمایش پمپاژ، کابل و راه‌انداز و جمع‌بندی. با ثبت این "
+                       "مرحله، رکورد در جدول رکوردها درج می‌شود.",
+        "items": [("section", "pumping_test", "pull", False),
+                  ("section", "cable_starter", "both", False),
+                  ("section", "result", "pull", False)],
     },
 ]

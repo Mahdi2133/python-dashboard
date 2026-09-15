@@ -214,11 +214,21 @@ def _apply_tags(record, payload, create_missing):
 
 
 def _apply_dynamic(record, payload, errors):
-    dyn = payload.get("dynamic") or {}
-    if not isinstance(dyn, dict) or not dyn:
-        return
+    """Store answers to fields that have no column of their own.
+
+    The entry form nests them under ``dynamic``; the workflow hands the merged
+    payload over flat, keyed by field name like everything else. Both are
+    accepted, so neither caller has to know which fields happen to be backed by
+    a column.
+    """
     fields = {f.field_name: f for f in
               FormField.query.filter(FormField.model_attr.is_(None)).all()}
+    dyn = dict(payload.get("dynamic") or {})
+    for name in fields:
+        if name not in dyn and name in payload and name not in Record.MULTI_FIELDS:
+            dyn[name] = payload[name]
+    if not dyn:
+        return
     existing = {v.field_id: v for v in record.dynamic_values}
     for name, raw in dyn.items():
         field = fields.get(name)
@@ -262,12 +272,37 @@ def _demote_coercion_errors(errors, warnings):
             warnings[key] = errors.pop(key)
 
 
-def _hidden_by_condition(payload) -> set:
-    """Field names whose "visible_when" condition the payload does not meet.
+_MISSING = object()
+
+
+def _stored_value_of(record, field_name):
+    """What ``record`` currently holds for ``field_name``, as a plain value."""
+    if record is None:
+        return None
+    field = FormField.query.filter_by(field_name=field_name).first()
+    if field is None:
+        return None
+    if field.model_attr:
+        value = getattr(record, field.model_attr, None)
+        return _label(value) if field.model_attr.endswith("_id") else value
+    if field_name in Record.MULTI_FIELDS:
+        return record.tag_values(Record.MULTI_FIELDS[field_name])
+    holder = next((v for v in record.dynamic_values
+                   if v.field and v.field.field_name == field_name), None)
+    return holder.value if holder is not None else None
+
+
+def _hidden_by_condition(payload, record=None) -> set:
+    """Field names whose "visible_when" condition is not met.
 
     Enforced on the server as well as in the browser: a contractor sent along
     with مجری=امانی is dropped rather than stored, and a hidden field is never
     treated as a missing required answer.
+
+    When the payload does not mention the field the rule keys on, the record's
+    own stored value decides. Without that, editing one unrelated field would
+    silently clear every conditional field on the record, because a partial
+    update carries no مجری and the rule would read it as "not پیمانی".
     """
     hidden = set()
     for field in FormField.query.filter(FormField.visible_when.isnot(None),
@@ -277,7 +312,11 @@ def _hidden_by_condition(payload) -> set:
             continue
         on, _, expected = rule.partition("=")
         on, expected = on.strip(), expected.strip()
-        sent = payload.get(on)
+        sent = payload.get(on, _MISSING)
+        if sent is _MISSING:
+            if record is None:
+                continue        # nothing to judge by; leave the field alone
+            sent = _stored_value_of(record, on)
         if isinstance(sent, list):
             sent = sent[0] if sent else ""
         if normalize_text(sent) != normalize_text(expected):
@@ -382,7 +421,7 @@ def apply_payload(record: Record, payload: dict, create_missing=False,
             setattr(record, f"{name}_raw",
                     normalize_text(raw) or None if raw not in (None, "") else None)
 
-    hidden = _hidden_by_condition(payload)
+    hidden = _hidden_by_condition(payload, record)
     for name in hidden:
         field = FormField.query.filter_by(field_name=name).first()
         if field and field.model_attr and hasattr(record, field.model_attr):

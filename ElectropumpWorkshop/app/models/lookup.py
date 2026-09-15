@@ -67,6 +67,10 @@ class LookupItem(db.Model):
     # Created automatically by the importer for a value not in the list. Kept
     # visible to the admin so they can merge it into a real option or keep it.
     is_adhoc = db.Column(db.Boolean, nullable=False, default=False)
+    # A locked option is part of the process rules rather than a preference:
+    # «جمع آوری» must always be offerable as a reason for pulling a well, so
+    # the option manager may reorder or relabel it but never remove it.
+    is_locked = db.Column(db.Boolean, nullable=False, default=False)
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=local_now, nullable=False)
 
@@ -80,6 +84,7 @@ class LookupItem(db.Model):
             "value": self.value, "label": self.label, "icon": self.icon,
             "sort_order": self.sort_order, "is_active": self.is_active,
             "is_default": self.is_default, "is_adhoc": self.is_adhoc,
+            "is_locked": self.is_locked,
             "notes": self.notes,
             "aliases": [a.alias for a in self.aliases],
         }

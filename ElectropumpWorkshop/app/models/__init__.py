@@ -6,6 +6,9 @@ from .lookup import LookupAlias, LookupCategory, LookupItem
 from .meta import AppMeta
 from .record import Record, RecordTag
 from .well import PumpCurvePoint, Well, WellAlias
+from .workflow import (WorkflowAttachment, WorkflowDefinition,
+                       WorkflowInstance, WorkflowStage,
+                       WorkflowStageEntry, WorkflowStageItem)
 
 __all__ = [
     "AuditLog", "ImportBatch", "User",
@@ -15,4 +18,6 @@ __all__ = [
     "AppMeta",
     "Record", "RecordTag",
     "PumpCurvePoint", "Well", "WellAlias",
+    "WorkflowAttachment", "WorkflowDefinition", "WorkflowInstance",
+    "WorkflowStage", "WorkflowStageEntry", "WorkflowStageItem",
 ]

@@ -44,9 +44,9 @@ def main():
           sysinfo["database"]["journal_mode"])
     check("چاه‌ها از رفرنس درج شدند", sysinfo["counts"]["wells"] == 864,
           str(sysinfo["counts"]["wells"]))
-    check("۲۰۱ گزینه درج شد", sysinfo["counts"]["lookup_items"] == 201,
+    check("۲۱۳ گزینه درج شد", sysinfo["counts"]["lookup_items"] == 213,
           str(sysinfo["counts"]["lookup_items"]))
-    check("۶۲ فیلد فرم درج شد", sysinfo["counts"]["form_fields"] == 62,
+    check("۶۸ فیلد فرم درج شد", sysinfo["counts"]["form_fields"] == 68,
           str(sysinfo["counts"]["form_fields"]))
 
     print("\n— تقویم شمسی —")
@@ -249,7 +249,8 @@ def main():
     op_id = r.get_json()["data"]["id"]
     check("مجوزهای نقش اعمال شد",
           set(r.get_json()["data"]["permissions"]) ==
-          {"record.create", "well.view", "report.view"})
+          {"record.create", "well.view", "report.view", "workflow.act"},
+          str(sorted(r.get_json()["data"]["permissions"])))
 
     op = app.test_client()
     r = op.post("/api/login", json={"username": "op_test", "password": "pass1234"})
@@ -589,6 +590,190 @@ def main():
           back["dynamic"].get("extra_date") == "1404/02/03",
           str(back["dynamic"].get("extra_date")))
     c.delete(f"/api/records/{dated['id']}?hard=1")
+
+    print("\n— فرایند: تعریف و مسیر —")
+    wf = c.get("/api/workflow/definition").get_json()["data"]
+    stages = {s["stage_number"]: s for s in wf["workflow"]["stages"]}
+    check("شش مرحله تعریف شده", len(stages) == 6, str(sorted(stages)))
+    check("مرحله ۱ فقط برای کشیدن", stages[1]["applies_to"] == "pull")
+    check("مرحله ۳ برای هر دو عملیات", stages[3]["applies_to"] == "both")
+    check("مرحله ۱ فقط «علت خرابی» را دارد",
+          [i["code"] for i in stages[1]["items"] if i["kind"] == "field"]
+          == ["failure"])
+    check("مرحله ۵ سه بخش دارد", len(stages[5]["items"]) == 3)
+    check("پالت شامل بخش‌ها و فیلدهاست",
+          wf["palette"]["sections"] and wf["palette"]["fields"])
+
+    # Real accounts, one per person, exactly as the workshop will have them.
+    owners, made = {}, {}
+    for uname, first, last in (("markaz", "مرکز", "آبرسانی"),
+                               ("bozorg", "امین", "بزرگمهر"),
+                               ("yaghouti", "مهدی", "یاقوتی‌نیا"),
+                               ("kahani", "علی", "کاهانی")):
+        rr = c.post("/api/users", json={
+            "username": uname, "password": "process123", "role": "stage_owner",
+            "first_name": first, "last_name": last})
+        made[uname] = rr.get_json()["data"]
+        owners[uname] = made[uname]["id"]
+    check("نقش «متولی مرحله» فقط کارتابل دارد",
+          set(made["kahani"]["permissions"]) == {"workflow.act", "well.view"},
+          str(sorted(made["kahani"]["permissions"])))
+    for number, uname in ((0, "markaz"), (1, "markaz"), (2, "bozorg"),
+                          (3, "yaghouti"), (4, "bozorg"), (5, "kahani")):
+        rr = c.put(f"/api/workflow/stages/{stages[number]['id']}",
+                   json={"assignee_id": owners[uname]})
+        if number == 0:
+            check("انتساب متولی به مرحله", rr.status_code == 200)
+
+    def who(username):
+        cc = app.test_client()
+        cc.post("/api/login", json={"username": username, "password": "process123"})
+        return cc
+
+    markaz, bozorg, yaghouti, kahani = (who("markaz"), who("bozorg"),
+                                        who("yaghouti"), who("kahani"))
+
+    print("\n— فرایند: مسیر «نصب» از مرحله ۳ آغاز می‌شود —")
+    iid = markaz.post("/api/workflow/instances",
+                      json={"operation_kind": "نصب", "well": "کورده 1"}
+                      ).get_json()["data"]["id"]
+    det = yaghouti.get(f"/api/workflow/instances/{iid}").get_json()["data"]
+    check("نصب مستقیم به مرحله ۳ می‌رود", det["current_stage"] == 3,
+          str(det["current_stage"]))
+    check("مرحله‌های ۱ و ۲ طی نمی‌شوند",
+          [e["status"] for e in det["entries"]
+           if e["stage_number"] in (1, 2)] == ["skipped", "skipped"])
+    check("در نصب، «علت خرابی» پرسیده نمی‌شود",
+          "failure" not in [f["field_name"] for s in det["form"]["sections"]
+                            for f in s["fields"]])
+    check("در نصب، «نصب مرتبط با…» پرسیده می‌شود",
+          "install_relates_to" in [f["field_name"] for s in det["form"]["sections"]
+                                   for f in s["fields"]])
+
+    print("\n— فرایند: مرحله‌ها به هم وابسته نیستند —")
+    pid = markaz.post("/api/workflow/instances",
+                      json={"operation_kind": "کشیدن", "well": "امام رضا 11"}
+                      ).get_json()["data"]["id"]
+    box = yaghouti.get("/api/workflow/inbox").get_json()["data"]
+    check("مرحله ۳ بی‌درنگ در کارتابل می‌آید",
+          any(b["id"] == pid and b["stage_number"] == 3 for b in box))
+    check("بزرگمهر هر دو مرحله ۲ و ۴ را می‌بیند",
+          {b["stage_number"] for b in bozorg.get("/api/workflow/inbox")
+           .get_json()["data"] if b["id"] == pid} == {2, 4})
+    det = yaghouti.get(f"/api/workflow/instances/{pid}?stage=3").get_json()["data"]
+    check("هشدار مرحله‌های ثبت‌نشده داده می‌شود",
+          {w["stage_number"] for w in det["waiting_on"]} == {1, 2},
+          str(det["waiting_on"]))
+    check("ولی مرحله ۳ مسدود نیست", det["may_act"] is True)
+    rr = yaghouti.post(f"/api/workflow/instances/{pid}/submit", json={
+        "stage_number": 3,
+        "data": {"op_jdate": "1405/06/22", "well": "امام رضا 11",
+                 "center": "سوران", "operation": "کشیدن",
+                 "motor_curr": "73", "pump_curr": "384"}})
+    check("مرحله ۳ پیش از مرحله ۲ ثبت می‌شود", rr.status_code == 200,
+          str(rr.get_json().get("error")))
+    det = markaz.get(f"/api/workflow/instances/{pid}?stage=1").get_json()["data"]
+    check("«اطلاعات پایه» دوباره پرسیده نمی‌شود",
+          [s["code"] for s in det["form"]["sections"]] == ["field_failure"],
+          str([s["code"] for s in det["form"]["sections"]]))
+    rr = kahani.post(f"/api/workflow/instances/{pid}/submit",
+                     json={"stage_number": 3, "data": {}})
+    check("متولی دیگری نمی‌تواند مرحله را ثبت کند", rr.status_code == 422)
+
+    print("\n— فرایند: قواعد مرحله ۴ —")
+    def run_to_stage4(action, pump_now=None):
+        i = markaz.post("/api/workflow/instances",
+                        json={"operation_kind": "کشیدن", "well": "امام رضا 11"}
+                        ).get_json()["data"]["id"]
+        markaz.post(f"/api/workflow/instances/{i}/submit", json={
+            "stage_number": 1, "data": {"op_jdate": "1405/06/22",
+            "well": "امام رضا 11", "center": "سوران", "failure": ["شولات"]}})
+        bozorg.post(f"/api/workflow/instances/{i}/submit", json={
+            "stage_number": 2, "data": {"review_decision": "نیاز به کشیدن دارد"}})
+        yaghouti.post(f"/api/workflow/instances/{i}/submit", json={
+            "stage_number": 3, "data": {"operation": "کشیدن",
+            "motor_curr": "73", "pump_curr": "384"}})
+        data = {"required_action": action}
+        if pump_now:
+            data["pump_type_now"] = pump_now
+        bozorg.post(f"/api/workflow/instances/{i}/submit",
+                    json={"stage_number": 4, "data": data})
+        d = bozorg.get(f"/api/workflow/instances/{i}").get_json()["data"]
+        return i, next(e for e in d["entries"] if e["stage_number"] == 4)
+
+    _i, e4 = run_to_stage4("ویدئومتری")
+    check("«ویدئومتری» فرم نصب را بایگانی می‌کند", e4["status"] == "archived",
+          e4["status"])
+    _i, e4 = run_to_stage4("بهسازی")
+    check("«بهسازی» هم بایگانی می‌کند", e4["status"] == "archived")
+    _i, e4 = run_to_stage4("نصب الکتروپمپ جدید", "خیر")
+    check("«تیپ در این مرحله نه» یعنی موکول به بعد",
+          e4["status"] == "deferred", e4["status"])
+    last, e4 = run_to_stage4("نصب الکتروپمپ جدید", "بله")
+    check("«تیپ در این مرحله بله» یعنی فرم پر می‌شود",
+          e4["status"] == "submitted", e4["status"])
+    rr = bozorg.post(f"/api/workflow/instances/{last}/submit",
+                     json={"stage_number": 4, "data": {}})
+    check("بدون «اقدام مورد نیاز» مرحله ۴ ثبت نمی‌شود",
+          rr.status_code == 422 or rr.get_json().get("ok"))
+
+    print("\n— فرایند: ثبت نهایی و مستندات —")
+    det = kahani.get(f"/api/workflow/instances/{last}?stage=5").get_json()["data"]
+    check("مرحله ۵ در کشیدن سه بخش دارد",
+          len(det["form"]["sections"]) == 3,
+          str([s["code"] for s in det["form"]["sections"]]))
+    import io as _io
+    up = kahani.post(f"/api/workflow/instances/{last}/attachments",
+                     data={"file": (_io.BytesIO(b"%PDF-1.4 test"), "gozaresh.pdf")},
+                     content_type="multipart/form-data")
+    check("بارگذاری مستند PDF", up.status_code == 200,
+          str(up.get_json().get("error")))
+    doc_id = up.get_json()["data"]["id"]
+    bad = kahani.post(f"/api/workflow/instances/{last}/attachments",
+                      data={"file": (_io.BytesIO(b"MZ"), "virus.exe")},
+                      content_type="multipart/form-data")
+    check("فایل اجرایی رد می‌شود", bad.status_code == 415)
+    check("دانلود مستند", kahani.get(f"/api/workflow/attachments/{doc_id}")
+          .status_code == 200)
+    rr = kahani.post(f"/api/workflow/instances/{last}/submit", json={
+        "stage_number": 5, "data": {"test_flow": 30, "starter": "سافت",
+                                    "workshop_opinion": ["شولاتی"]}})
+    body_ = rr.get_json()
+    check("با ثبت مرحله ۵ رکورد ساخته می‌شود",
+          bool(body_.get("data", {}).get("record_id")), str(body_.get("error")))
+    new_id = body_["data"]["record_id"]
+    rec = c.get(f"/api/records/{new_id}").get_json()["data"]
+    check("رکورد نوع عملیات را دارد",
+          rec["dynamic"].get("operation_kind") == "کشیدن")
+    check("رکورد علت خرابی را دارد", rec["failure"] == ["شولات"])
+    check("رکورد نام چاه را دارد", rec["well"] == "امام رضا 11", str(rec["well"]))
+    check("فرایند تکمیل‌شده علامت خورد",
+          c.get(f"/api/workflow/instances/{last}").get_json()["data"]["status"]
+          == "completed")
+
+    print("\n— فرایند: مقادیر «قبلی» —")
+    prev = c.get("/api/workflow/previous?well=" + quote("امام رضا 11")).get_json()["data"]
+    check("مقادیر قبلی از آخرین عملیات خوانده می‌شود",
+          prev["values"].get("motor_prev") == "73", str(prev["values"]))
+    check("تاریخ نصب قبلی شمسی است",
+          str(prev["values"].get("prev_install_date", "")).startswith("14"),
+          str(prev["values"].get("prev_install_date")))
+    check("منبع مقادیر قبلی اعلام می‌شود", bool(prev["source"]))
+
+    print("\n— فرایند: گزینه‌های قفل‌شده —")
+    with app.app_context():
+        from app.models import LookupItem
+        from app.services.lookups import get_category
+        cat = get_category("failure_reason")
+        locked = LookupItem.query.filter_by(category_id=cat.id,
+                                            value="جمع آوری").one()
+    check("«جمع آوری» به علت خرابی اضافه شده و قفل است", locked.is_locked)
+    rr = c.delete(f"/api/lookups/item/{locked.id}")
+    check("گزینه قفل‌شده حذف نمی‌شود", rr.status_code == 409)
+    rr = c.put(f"/api/lookups/item/{locked.id}", json={"is_active": False})
+    check("گزینه قفل‌شده غیرفعال نمی‌شود", rr.status_code == 409)
+    rr = c.put(f"/api/lookups/item/{locked.id}", json={"label": "جمع‌آوری چاه"})
+    check("ولی برچسبش قابل تغییر است", rr.status_code == 200)
 
     print("\n— ترتیب تب‌ها —")
     check("صفحه اصلی، ثبت اطلاعات است",

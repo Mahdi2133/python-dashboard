@@ -8,8 +8,10 @@ import logging
 
 from ..extensions import db
 from ..models import (FormField, FormSection, LookupAlias, LookupCategory,
-                      LookupItem, Record, Well, WellAlias)
-from .seed_data import FORM_SECTIONS, LOOKUP_CATEGORIES
+                      LookupItem, Record, Well, WellAlias,
+                      WorkflowDefinition, WorkflowStage, WorkflowStageItem)
+from .seed_data import (FORM_SECTIONS, LOOKUP_CATEGORIES, WORKFLOW_CODE,
+                        WORKFLOW_STAGES)
 from .seed_wells import WELLS_REFERENCE
 
 log = logging.getLogger(__name__)
@@ -36,13 +38,16 @@ def seed_lookups() -> dict:
                 item = LookupItem(
                     category_id=cat.id, value=item_spec["value"],
                     label=item_spec["label"], icon=item_spec.get("icon"),
-                    sort_order=idx,
+                    sort_order=idx, is_locked=item_spec.get("locked", False),
                     notes="منبع: " + ("فرم HTML" if item_spec["source"] == "html"
                                       else "اکسل کارگاه"),
                 )
                 db.session.add(item)
                 db.session.flush()
                 added_items += 1
+
+            if item_spec.get("locked") and not item.is_locked:
+                item.is_locked = True       # a rule added after this DB was made
 
             known = {a.alias for a in item.aliases}
             for alias in item_spec.get("aliases", []):
@@ -125,10 +130,45 @@ def seed_wells() -> dict:
     return {"wells_added": added, "wells_updated": updated}
 
 
+def _take_name(well: Well, better: str) -> bool:
+    """Rename ``well`` to ``better``, moving whoever holds that name aside.
+
+    ``wells.name`` is unique across active and retired rows alike, and the
+    better spelling is usually sitting on the retired duplicate we just merged
+    away. That row is parked under a suffixed name — it is history, not a well
+    anyone will look up — and its old name becomes an alias of the survivor.
+    """
+    if not better or better == well.name:
+        return False
+    holder = Well.query.filter(Well.name == better, Well.id != well.id).first()
+    if holder is not None:
+        if holder.is_active:
+            return False            # two live wells; not ours to rename
+        holder.name = f"{better} (ادغام‌شده #{holder.id})"
+        db.session.flush()
+    previous = well.name
+    well.name = better
+    db.session.flush()
+    if previous and not WellAlias.query.filter_by(alias=previous).first():
+        db.session.add(WellAlias(well_id=well.id, alias=previous))
+    # An alias equal to the name is noise, and makes the same well look like a
+    # match twice when the picker ranks aliases alongside names.
+    WellAlias.query.filter_by(well_id=well.id, alias=better).delete()
+    log.info("Well %r renamed to the better spelling %r", previous, better)
+    return True
+
+
 def _absorb_well(keeper: Well, dup: Well) -> int:
     """Move ``dup``'s work onto ``keeper`` and retire it. Returns records moved."""
+    from .lookups import best_name, well_key
+
     moved = Record.query.filter_by(well_id=dup.id).update(
         {"well_id": keeper.id}, synchronize_session=False)
+    # Which row survives is decided by the register's identifiers; what it is
+    # *called* is decided by which spelling reads better. «اسلام اباد 16»
+    # carries the official PM code, but the well is «اسلام آباد 16».
+    if well_key(dup.name) == well_key(keeper.name):
+        _take_name(keeper, best_name([keeper.name, dup.name]))
     if (dup.name != keeper.name
             and not WellAlias.query.filter_by(alias=dup.name).first()):
         db.session.add(WellAlias(well_id=keeper.id, alias=dup.name))
@@ -140,45 +180,81 @@ def _absorb_well(keeper: Well, dup: Well) -> int:
     return moved
 
 
+def normalize_well_names() -> dict:
+    """Adopt the best spelling each well is known by.
+
+    A candidate must be a name this well already answers to: either the same
+    name spelled differently («اسلام اباد 16» → «اسلام آباد 16») or the same
+    name without its قدیم/جدید tail («حجت 1 (جدید)» → «حجت 1», which it already
+    absorbed). It never invents a name, and «چهارراه گیتی» never becomes
+    «چهارراه گیتی (BOT)». The previous spelling stays as an alias, so anyone
+    searching the old way still finds the well and its records.
+    """
+    from .lookups import preferred_name, qualifier_base_key, well_key
+
+    renamed = 0
+    for well in Well.query.filter_by(is_active=True).all():
+        key = well_key(well.name)
+        base = qualifier_base_key(well.name)
+        candidates = [well.name] + [
+            a.alias for a in well.aliases
+            if well_key(a.alias) == key or (base and well_key(a.alias) == base)]
+        if len(candidates) < 2:
+            continue
+        if _take_name(well, preferred_name(candidates)):
+            renamed += 1
+    db.session.commit()
+    if renamed:
+        log.info("Adopted a better spelling for %s wells", renamed)
+    return {"wells_renamed": renamed}
+
+
 def _merge_qualifier_variants(done: set) -> tuple:
     """Fold «امامیه 17 (جدید)» and «امامیه 17 (قدیم)» back into «امامیه 17».
 
     Operators annotate a well as قدیم or جدید while typing, and each spelling
-    became its own row, so the picker offered three entries for one well.
+    became its own row, so the picker offered three entries for one well and
+    the records table listed the same well three ways.
 
-    Only an *unregistered* row is folded away — no PM code and not verified,
-    which is what marks a name that data entry invented rather than one the
-    register published. A well the register itself names «گلشهر9 جدید» keeps
-    its own row: there the qualifier is part of the well's real name, and its
-    PM code says so.
+    Wells are grouped by the name they share once a trailing قدیم/جدید is
+    taken off, so it works in either direction: the annotation may be the row
+    without a PM code («امام رضا 13 ( قدیم )» beside the register's «امام رضا
+    13») or the one with it («چهار برج قدیم» beside «چهاربرج»). A group whose
+    members carry *different* PM codes is left alone — those are two register
+    entries, not one well written twice — and the survivor takes the plainest
+    name in the group.
     """
-    from .lookups import qualifier_base_key, well_key
+    from .lookups import pm_digits, preferred_name, qualifier_base_key, well_key
 
-    actives = [w for w in Well.query.filter_by(is_active=True).all()
-               if w.id not in done]
-    by_key = {}
-    for well in actives:
-        by_key.setdefault(well_key(well.name), []).append(well)
+    groups = {}
+    for well in Well.query.filter_by(is_active=True).all():
+        if well.id in done:
+            continue
+        groups.setdefault(qualifier_base_key(well.name) or well_key(well.name),
+                          []).append(well)
 
     merged = moved = 0
-    for well in actives:
-        if well.pm_code or well.is_verified or well.id in done:
+    for key, wells in groups.items():
+        if len(wells) < 2:
             continue
-        base = qualifier_base_key(well.name)
-        if not base:
+        if not any(qualifier_base_key(w.name) for w in wells):
+            continue                    # nothing here is a qualified variant
+        codes = {pm_digits(w.pm_code) for w in wells if w.pm_code}
+        if len(codes) > 1:
+            log.warning("Not folding %s: they are separate register entries %s",
+                        [w.name for w in wells], sorted(codes))
             continue
-        targets = [t for t in by_key.get(base, [])
-                   if t.id != well.id and t.id not in done and t.is_active]
-        if not targets:
-            continue
-        # The register's row wins; failing that, whichever carries more work.
-        targets.sort(key=lambda t: (bool(t.pm_code), t.is_verified,
-                                    t.records.filter_by(is_active=True).count()),
-                     reverse=True)
-        moved += _absorb_well(targets[0], well)
-        done.add(well.id)
-        merged += 1
-        log.info("Merged qualifier variant %r into %r", well.name, targets[0].name)
+        wells.sort(key=lambda w: (bool(w.pm_code), w.is_verified,
+                                  w.records.filter_by(is_active=True).count()),
+                   reverse=True)
+        keeper, others = wells[0], wells[1:]
+        name = preferred_name([w.name for w in wells])
+        for dup in others:
+            moved += _absorb_well(keeper, dup)
+            done.add(dup.id)
+            merged += 1
+            log.info("Merged qualifier variant %r into %r", dup.name, keeper.name)
+        _take_name(keeper, name)
     return merged, moved
 
 
@@ -255,6 +331,61 @@ def deduplicate_wells() -> dict:
             "kept_apart": kept_apart}
 
 
+
+def seed_workflow() -> dict:
+    """Create the process definition, adding only what is missing.
+
+    Stage owners are left unassigned: the accounts for مرکز آبرسانی and the
+    engineers belong to the admin, not to a seed file, and a stage without an
+    owner is reported in the process builder rather than silently skipped.
+    Once the admin has arranged a stage, this never rearranges it again — only
+    a stage that does not exist yet is created.
+    """
+    workflow = WorkflowDefinition.query.filter_by(code=WORKFLOW_CODE).one_or_none()
+    created = False
+    if workflow is None:
+        workflow = WorkflowDefinition(
+            code=WORKFLOW_CODE, name="فرایند اصلی کارگاه الکتروپمپ",
+            description="از اعلام خرابی تا ثبت نهایی رکورد، در شش مرحله.",
+            is_active=True)
+        db.session.add(workflow)
+        db.session.flush()
+        created = True
+
+    sections = {s.code: s for s in FormSection.query.all()}
+    fields = {f.field_name: f for f in FormField.query.all()}
+    added_stages = added_items = 0
+
+    for spec in WORKFLOW_STAGES:
+        stage = WorkflowStage.query.filter_by(
+            workflow_id=workflow.id, stage_number=spec["stage_number"]).one_or_none()
+        if stage is not None:
+            continue                      # the admin owns it from here on
+        stage = WorkflowStage(
+            workflow_id=workflow.id, stage_number=spec["stage_number"],
+            title=spec["title"],
+            description=f"{spec['description']}\n\nمتولی پیشنهادی: {spec['hint']}",
+            applies_to=spec["applies_to"], is_active=True)
+        db.session.add(stage)
+        db.session.flush()
+        added_stages += 1
+        for order, (kind, code, applies, optional) in enumerate(spec["items"]):
+            target = sections.get(code) if kind == "section" else fields.get(code)
+            if target is None:
+                log.warning("Workflow stage %s refers to a missing %s %r",
+                            spec["stage_number"], kind, code)
+                continue
+            db.session.add(WorkflowStageItem(
+                stage_id=stage.id,
+                section_id=target.id if kind == "section" else None,
+                field_id=target.id if kind == "field" else None,
+                sort_order=order, applies_to=applies, is_optional=optional))
+            added_items += 1
+    db.session.commit()
+    return {"workflow_created": created, "stages_added": added_stages,
+            "stage_items_added": added_items}
+
+
 def seed_form() -> dict:
     added_sections = added_fields = 0
     for order, spec in enumerate(FORM_SECTIONS):
@@ -306,6 +437,13 @@ _BUILTIN_FIXES = {
         "is_required": (True, False),
         "sort_order": (3, 4),
         "help_text": (None, "فقط وقتی مجری «پیمانی» باشد پرسیده می‌شود."),
+    },
+    "failure": {
+        # Renamed when the process split the two branches apart: an install has
+        # no fault to report, so this became the کشیدن-only question.
+        "label": ("شرح خرابی از نظر بهره‌بردار", "علت خرابی"),
+        "visible_when": (None, "operation_kind=کشیدن"),
+        "help_text": (None, "فقط در عملیات «کشیدن» پرسیده می‌شود."),
     },
     "executor": {
         "sort_order": (4, 3),
@@ -359,8 +497,10 @@ def seed_all(force: bool = False) -> dict:
     result.update(seed_lookups())
     result.update(seed_wells())
     result.update(deduplicate_wells())
+    result.update(normalize_well_names())
     result.update(seed_form())
     result.update(apply_builtin_field_fixes())
+    result.update(seed_workflow())
     result["changed"] = any(v for k, v in result.items() if isinstance(v, int))
     if result["changed"]:
         log.info("Seed applied: %s", result)

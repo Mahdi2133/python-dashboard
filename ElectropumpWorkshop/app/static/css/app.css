@@ -507,3 +507,115 @@ tbody tr.inactive td:first-child::before { content:'⛔ '; }
   background:var(--success); margin-inline-end:5px; }
 .dot-offline { display:inline-block; width:8px; height:8px; border-radius:50%;
   background:#c3ced6; margin-inline-end:5px; }
+
+/* ── process (فرایند) ─────────────────────────────────────────────────── */
+/* Builder: a palette on one side, the stages as columns beside it. Under
+   dir=rtl the palette sits on the right, which is where the eye starts. */
+.wf-builder { display:grid; grid-template-columns:260px 1fr; gap:16px;
+  align-items:start; }
+.wf-palette { position:sticky; top:12px; max-height:calc(100vh - 90px);
+  overflow:auto; padding:12px; }
+.wf-palette input[type=search] { width:100%; margin-bottom:10px; }
+.pal-group-title { font-size:12px; color:var(--text-muted); margin:10px 0 6px;
+  font-weight:700; }
+.pal-list { display:flex; flex-direction:column; gap:6px; }
+.pal-item { background:var(--input-bg); border:1px solid var(--border);
+  border-radius:8px; padding:8px 10px; cursor:grab; font-size:13px;
+  display:flex; align-items:center; gap:6px; }
+.pal-item:hover { border-color:var(--primary-light); background:#eaf3fa; }
+.pal-item.small { font-size:12px; padding:6px 9px; }
+.pal-meta { margin-inline-start:auto; font-size:11px; color:var(--text-muted); }
+
+.wf-stages { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+  gap:14px; align-items:start; }
+.wf-stage { padding:12px; }
+.wf-stage.unassigned { border-color:#f0c36d; background:#fffdf5; }
+.wf-stage-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.wf-stage-badge { background:var(--primary); color:#fff; border-radius:20px;
+  padding:2px 10px; font-size:11.5px; white-space:nowrap; }
+.wf-stage-title { flex:1; font-weight:700; }
+.wf-stage-row { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+.wf-stage-row label { font-size:12px; color:var(--text-muted); min-width:44px; }
+.wf-stage-row select { flex:1; }
+.wf-stage-desc { white-space:pre-line; margin:6px 0; }
+
+.wf-drop { list-style:none; margin:8px 0; padding:8px; min-height:70px;
+  border:2px dashed var(--border); border-radius:10px; background:var(--bg);
+  display:flex; flex-direction:column; gap:6px; }
+.wf-drop.over { border-color:var(--primary-light); background:#eaf3fa; }
+.wf-drop-empty { color:var(--text-muted); font-size:12px; text-align:center;
+  padding:12px 4px; }
+.wf-drop-item { display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+  background:var(--card); border:1px solid var(--border); border-radius:8px;
+  padding:6px 8px; font-size:12.5px; cursor:grab; }
+.wf-drop-item.dragging { opacity:.45; }
+.wf-drop-item .grip { color:var(--text-muted); cursor:grab; }
+.wf-item-name { flex:1; min-width:110px; }
+select.mini { font-size:11px; padding:2px 4px; width:auto; }
+.mini-check { font-size:11px; display:flex; align-items:center; gap:3px;
+  color:var(--text-muted); }
+.mini-check input { width:auto; }
+.wf-stage-foot { display:flex; align-items:center; gap:8px; }
+.save-state { font-size:11.5px; color:var(--text-muted); }
+.save-state.dirty { color:#b8860b; }
+.save-state.ok { color:var(--success); }
+.save-state.err { color:var(--danger); }
+
+/* Inbox: the list of what you owe, and the stage form beside it. */
+.wf-layout { display:grid; grid-template-columns:320px 1fr; gap:16px;
+  align-items:start; }
+.wf-list { padding:10px; position:sticky; top:12px; max-height:calc(100vh - 90px);
+  overflow:auto; }
+.wf-item { display:block; width:100%; text-align:right; background:var(--input-bg);
+  border:1px solid var(--border); border-radius:10px; padding:9px 10px;
+  margin-bottom:7px; cursor:pointer; font-family:inherit; }
+.wf-item:hover { border-color:var(--primary-light); }
+.wf-item.active { border-color:var(--primary); background:#eaf3fa; }
+.wf-item-top { display:flex; align-items:center; gap:6px; }
+.wf-stage-no { background:var(--primary); color:#fff; border-radius:50%;
+  width:22px; height:22px; display:inline-flex; align-items:center;
+  justify-content:center; font-size:11.5px; flex:0 0 22px; }
+.wf-item-title { font-weight:700; font-size:13px; flex:1; }
+.wf-item-sub { font-size:11.5px; color:var(--text-muted); margin-top:4px;
+  line-height:1.7; }
+.wf-detail { padding:14px; }
+
+/* The path strip: every stage of this run and what became of it. */
+.wf-path { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 14px; }
+.wf-step { border:1px solid var(--border); border-radius:10px; padding:7px 10px;
+  background:var(--input-bg); min-width:150px; font-size:11.5px; flex:1 1 150px; }
+.wf-step.submitted { border-color:#bfe3cd; background:#f2fbf6; }
+.wf-step.archived { border-color:#d9d9d9; background:#f4f4f4; opacity:.8; }
+.wf-step.deferred { border-color:#f0c36d; background:#fffaf0; }
+.wf-step.skipped { opacity:.5; }
+.wf-step.here { border-color:var(--primary); box-shadow:0 0 0 2px #cfe2f0 inset; }
+.wf-step-no { display:inline-block; background:var(--primary); color:#fff;
+  border-radius:50%; width:19px; height:19px; text-align:center;
+  line-height:19px; font-size:11px; margin-inline-end:4px; }
+.wf-step-title { font-weight:700; }
+.wf-step-who, .wf-step-state, .wf-step-when { display:block;
+  color:var(--text-muted); margin-top:2px; }
+
+.wf-docs { margin-top:16px; padding-top:12px; border-top:1px solid var(--border); }
+.doc-list { display:flex; flex-direction:column; gap:6px; }
+.doc-row { display:flex; align-items:center; gap:8px; background:var(--input-bg);
+  border:1px solid var(--border); border-radius:8px; padding:6px 9px;
+  font-size:12.5px; flex-wrap:wrap; }
+.doc-name { font-weight:600; }
+.doc-meta { color:var(--text-muted); font-size:11px; margin-inline-start:auto; }
+
+.mon-card { margin-bottom:14px; padding:12px; }
+.mon-meta { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0; }
+.mon-foot { margin-top:8px; }
+.alert.warn { background:#fff8e6; border:1px solid #f0c36d; color:#7a5a00; }
+.alert.info { background:#eaf3fa; border:1px solid #cfe2f0; color:#14486b; }
+.badge.ok { background:#eafaf1; color:var(--success); border-color:#c6ecd7; }
+
+/* A field the system filled in for you — still editable, just flagged. */
+.field.auto-filled input, .field.auto-filled select { background:#fffbe6;
+  transition:background .8s; }
+
+@media (max-width: 900px) {
+  .wf-builder, .wf-layout { grid-template-columns:1fr; }
+  .wf-palette, .wf-list { position:static; max-height:none; }
+}

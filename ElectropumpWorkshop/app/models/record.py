@@ -145,7 +145,8 @@ class Record(db.Model):
         "starter_id": "starter", "cable_size_id": "cable_size",
     }
     MULTI_FIELDS = {"failure": "failure_reason", "workshop_opinion": "workshop_opinion",
-                    "desc_tags": "desc_tag"}
+                    "desc_tags": "desc_tag",
+                    "install_relates_to": "install_relates"}
 
     NUMERIC_FIELDS = (
         "well_depth", "prev_install_depth", "curr_install_depth", "static_level",

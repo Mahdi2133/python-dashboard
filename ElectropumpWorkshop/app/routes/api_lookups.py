@@ -97,7 +97,11 @@ def update_item(item_id):
     if "sort_order" in payload:
         item.sort_order = int(payload["sort_order"] or 0)
     if "is_active" in payload:
-        item.is_active = payload["is_active"] in (True, "true", "1", 1)
+        wanted = payload["is_active"] in (True, "true", "1", 1)
+        if item.is_locked and not wanted:
+            return fail(f"گزینه «{item.label}» بخشی از قواعد فرایند است و "
+                        f"غیرفعال نمی‌شود.", 409)
+        item.is_active = wanted
     if "is_adhoc" in payload:
         item.is_adhoc = payload["is_adhoc"] in (True, "true", "1", 1)
     record_audit("update", "lookup_item", item.id, summary=f"ویرایش گزینه «{item.value}»")
@@ -128,6 +132,12 @@ def deactivate_item(item_id):
     item = db.session.get(LookupItem, item_id)
     if item is None:
         return fail("گزینه یافت نشد.", 404)
+    if item.is_locked:
+        # Part of the process rules, not a preference — «جمع آوری» has to stay
+        # offerable. Relabelling and reordering it is still allowed.
+        return fail(f"گزینه «{item.label}» بخشی از قواعد فرایند است و "
+                    f"حذف یا غیرفعال نمی‌شود؛ فقط می‌توانید برچسب آن را "
+                    f"تغییر دهید.", 409)
     used = RecordTag.query.filter_by(item_id=item.id).count()
     if not used:
         for attr in Record.CHOICE_FIELDS:

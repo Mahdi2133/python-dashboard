@@ -89,6 +89,59 @@ def qualifier_base_key(value) -> str:
     return well_key(" ".join(tokens)) if stripped else ""
 
 
+# Marks of a well-spelled name, in the order they matter. Two rows for one
+# well often disagree only on typography, and the register is not always the
+# tidier of the two — «اسلام اباد13» carries the official PM code while
+# «اسلام آباد 13» is what a person would write.
+_MESSY = re.compile(r"[؛?؟!*_]|\s{2,}")
+_ANNOTATION = re.compile(r"\([^)]*\)|[A-Za-z]{2,}")
+
+
+def name_quality(name) -> tuple:
+    """How well-written a well name is. Bigger is better.
+
+    Ranks, in order: free of parenthetical notes and latin tags — «گلشهر9
+    جدید» over «گلشهر9 جدید (BOT)» — then proper آ rather than a bare ا, then
+    words separated rather than run together (and a trailing index split off),
+    then the longer spelling.
+    """
+    text = normalize_text(name)
+    tokens = text.split()
+    digit_split = 1 if re.search(r"[^\d\s]\s+\d+$", text) else 0
+    noise = len(_ANNOTATION.findall(text)) + len(_MESSY.findall(text))
+    return (
+        -noise,
+        text.count("آ"),
+        digit_split,
+        len(tokens),
+        len(text),
+    )
+
+
+def preferred_name(names) -> str:
+    """The name a merged well should carry.
+
+    A name that is another candidate plus a قدیم/جدید qualifier is set aside
+    first — the workshop wants one «امام رضا 13», not three — and the tidiest
+    of what is left wins.
+    """
+    candidates = [n for n in names if normalize_text(n)]
+    if not candidates:
+        return ""
+    keys = {well_key(n) for n in candidates}
+    plain = [n for n in candidates
+             if not (qualifier_base_key(n) and qualifier_base_key(n) in keys)]
+    return max(plain or candidates, key=name_quality)
+
+
+def best_name(names) -> str:
+    """The best-written spelling among several names for one well."""
+    candidates = [n for n in names if normalize_text(n)]
+    if not candidates:
+        return ""
+    return max(candidates, key=name_quality)
+
+
 def pm_digits(code) -> str:
     """A PM code reduced to its digits, for comparing across spellings.
 

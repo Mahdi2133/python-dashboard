@@ -15,12 +15,14 @@ bp = Blueprint("pages", __name__)
 # and it is the landing page the EXE points the browser at.
 NAV = [
     ("entry", "ثبت اطلاعات", "📝", "/"),
+    ("inbox", "کارتابل فرایند", "📬", "/inbox"),
     ("dashboard", "داشبورد", "📊", "/dashboard"),
     ("records", "رکوردها", "📋", "/records"),
     ("wells", "چاه‌ها", "🕳", "/wells"),
     ("reports", "گزارش‌ها", "📈", "/reports"),
     ("builder", "گزارش‌ساز", "🧩", "/report-builder"),
     ("formbuilder", "فرم‌ساز", "🛠", "/form-builder"),
+    ("workflow", "فرایندساز", "🔀", "/workflow"),
     ("options", "مدیریت گزینه‌ها", "🗂", "/options"),
     ("transfer", "ورود / خروج داده", "🔁", "/transfer"),
     ("users", "کاربران", "👤", "/users"),
@@ -105,6 +107,20 @@ def form_builder():
     return render_template("form_builder.html", active="formbuilder",
                            sections=FormSection.query.order_by(
                                FormSection.sort_order).all())
+
+
+@bp.get("/inbox")
+@permission_required("workflow.act")
+def inbox():
+    """The کارتابل: the stages this person owes, and the forms to fill them."""
+    return render_template("inbox.html", active="inbox")
+
+
+@bp.get("/workflow")
+@permission_required("workflow.manage")
+def workflow():
+    """The process builder, plus the map of every process in flight."""
+    return render_template("workflow.html", active="workflow")
 
 
 @bp.get("/options")

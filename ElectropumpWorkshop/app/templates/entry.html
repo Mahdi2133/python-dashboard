@@ -27,5 +27,6 @@
 {% endblock %}
 {% block scripts %}
 <script>window.RECORD_ID = {{ record_id or 'null' }};</script>
+<script src="{{ url_for('static', filename='js/formengine.js') }}"></script>
 <script src="{{ url_for('static', filename='js/entry.js') }}"></script>
 {% endblock %}

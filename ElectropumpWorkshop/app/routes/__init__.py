@@ -12,7 +12,9 @@ def register_blueprints(app):
     from .api_reports import bp as reports_bp
     from .api_transfer import bp as transfer_bp
     from .api_admin import bp as admin_bp
+    from .api_workflow import bp as workflow_bp
 
     for bp in (auth_bp, pages_bp, records_bp, wells_bp, lookups_bp, formbuilder_bp,
-               dashboard_bp, reports_bp, transfer_bp, admin_bp):
+               dashboard_bp, reports_bp, transfer_bp, admin_bp,
+               workflow_bp):
         app.register_blueprint(bp)
