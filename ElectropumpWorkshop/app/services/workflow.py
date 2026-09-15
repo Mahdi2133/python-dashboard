@@ -23,12 +23,13 @@ from ..models import (FormField, FormSection, Record, WorkflowAttachment,
                       WorkflowDefinition, WorkflowInstance, WorkflowStage,
                       WorkflowStageEntry, WorkflowStageItem)
 from ..models.workflow import (APPLIES_BOTH, ENTRY_ARCHIVED, ENTRY_DEFERRED,
+                               ENTRY_STATUS,
                                ENTRY_PENDING, ENTRY_SKIPPED, ENTRY_SUBMITTED,
                                INSTANCE_CANCELLED, INSTANCE_COMPLETED,
                                INSTANCE_OPEN, OPERATION_INSTALL, OPERATION_KINDS,
                                OPERATION_PULL)
 from .audit import record_audit
-from .jalali import local_now
+from .jalali import local_now, to_jalali_str
 from .lookups import normalize_text
 from .records import ValidationError, create_record, resolve_well
 
@@ -155,12 +156,13 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
     page has one thing to render rather than two.
     """
     def usable(fields):
-        """Drop fields this branch never asks.
+        """Drop fields this branch never asks, and lock the ones already settled.
 
         «علت خرابی» and «نصب مرتبط با…» sit in the same section, each bound to
-        one operation. The browser would hide the wrong one anyway and the
-        write path would clear it, but a stage should not be handed a question
-        it must not ask.
+        one operation; the branch decides here, once, rather than being decided
+        again in the browser from a second copy of the answer. The well is
+        chosen at step zero, so later stages are shown it rather than asked to
+        search for it again.
         """
         kept = []
         for field in fields:
@@ -169,6 +171,11 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
                 wanted = rule.split("=", 1)[1].strip()
                 if wanted != OPERATION_KINDS.get(instance.operation_kind):
                     continue
+            if field.get("field_name") == "well" and instance.well_id:
+                field = dict(field)
+                field["read_only"] = True
+                field["read_only_value"] = instance.well.name
+                field["help_text"] = "در شروع فرایند انتخاب شده است."
             kept.append(field)
         return kept
 
@@ -182,13 +189,16 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
             block["is_optional"] = item.is_optional
             blocks.append(block)
         elif item.field:
+            fields = usable([item.field.to_dict()])
+            if not fields:
+                continue
             blocks.append({
                 "id": None, "code": f"field_{item.field.field_name}",
                 "title": item.field.label, "icon": "◽", "columns": 1,
                 "full_width": True, "is_active": True,
                 "is_optional": item.is_optional,
                 "description": None,
-                "fields": [item.field.to_dict()],
+                "fields": fields,
             })
     return {
         "stage": stage.to_dict(),
@@ -199,6 +209,46 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
                                if stage.stage_number == STAGE_WELL_INSTALL
                                else None),
     }
+
+
+def submitted_summary(instance: WorkflowInstance, except_stage: int = None) -> list:
+    """What the other stages have already recorded, ready to show read-only.
+
+    Whoever is holding the process needs to see the work behind it — the
+    engineer at stage 5 signs off on what four people before him wrote — but
+    none of it is his to change, so it is handed over as labelled text rather
+    than as fields.
+    """
+    labels = {f.field_name: f.label for f in FormField.query.all()}
+    out = []
+    for entry in sorted(instance.entries, key=lambda e: e.stage_number):
+        if entry.stage_number == except_stage or entry.stage_number == STAGE_INTAKE:
+            continue
+        if entry.status not in (ENTRY_SUBMITTED, ENTRY_ARCHIVED, ENTRY_DEFERRED):
+            continue
+        values = []
+        for name, value in (entry.payload or {}).items():
+            if value in (None, "", [], False):
+                continue
+            if isinstance(value, list):
+                value = "، ".join(str(v) for v in value if v not in (None, ""))
+                if not value:
+                    continue
+            values.append({"label": labels.get(name, name), "value": str(value)})
+        if not values and not entry.note:
+            continue
+        out.append({
+            "stage_number": entry.stage_number,
+            "title": entry.stage.title if entry.stage else "",
+            "status": entry.status,
+            "status_label": ENTRY_STATUS.get(entry.status, entry.status),
+            "user_name": entry.user.full_name if entry.user else None,
+            "submitted_at_j": (to_jalali_str(entry.submitted_at)
+                               if entry.submitted_at else None),
+            "note": entry.note,
+            "values": values,
+        })
+    return out
 
 
 # ── running an instance ──────────────────────────────────────────────────────

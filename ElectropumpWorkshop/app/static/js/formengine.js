@@ -43,9 +43,19 @@
     function renderChoice(field, multiple) {
       var opts = optionsFor(field);
       var type = multiple ? 'checkbox' : 'radio';
+      /* Say what to do with the row of buttons. Without it a long list of
+         unselected options reads as a box that has not loaded — which is
+         exactly how «علت خرابی» was misread. */
+      var html = '<div class="choice-help">'
+        + (multiple ? 'روی هر مورد بزنید تا انتخاب شود — <b>چند مورد</b> '
+                      + 'قابل انتخاب است.'
+                    : 'یکی از گزینه‌ها را انتخاب کنید.')
+        + ' برای برداشتن، دوباره روی همان بزنید.'
+        + '<span class="choice-count" data-count="' + A.esc(field.field_name)
+        + '"></span></div>';
       /* No blank "—" button: an empty choice is not a choice. Clearing is done
          by clicking the selected option again. */
-      var html = '<div class="btn-group' + (opts.length > 14 ? ' compact' : '')
+      html += '<div class="btn-group' + (opts.length > 14 ? ' compact' : '')
         + '" data-field="' + A.esc(field.field_name) + '">';
       opts.forEach(function (opt) {
         html += '<label><input type="' + type + '" name="' + A.esc(field.field_name)
@@ -111,6 +121,14 @@
       else if (field.field_type === 'select') body = renderSelect(field);
       else body = renderInput(field);
 
+      /* Settled upstream: shown and filled so the stage can see it, but not
+         editable here — the well is chosen once, at step zero. */
+      if (field.read_only) {
+        body = '<input type="text" id="fld-' + A.esc(field.field_name) + '"'
+          + ' value="' + A.esc(field.read_only_value == null ? ''
+                               : String(field.read_only_value)) + '"'
+          + ' readonly disabled>';
+      }
       var span = field.col_span > 1 ? ' span-' + Math.min(field.col_span, 2) : '';
       /* Long option lists and free text need the whole row; squeezing 20
          buttons into a 180px column is what made the form look ragged. */
@@ -122,7 +140,8 @@
       } else if (field.field_type === 'radio' && count > 7) {
         wide = ' wide-choice';
       }
-      return '<div class="field' + span + wide + '" data-wrap="'
+      return '<div class="field' + span + wide
+        + (field.read_only ? ' read-only' : '') + '" data-wrap="'
         + A.esc(field.field_name) + '">'
         + labelHtml(field) + body
         + (field.help_text ? '<span class="hint">' + A.esc(field.help_text) + '</span>' : '')
@@ -148,10 +167,24 @@
       qsa('[data-autocomplete]').forEach(setupAutocomplete);
       enableRadioClearing();
       root.addEventListener('change', onFieldChanged);
+      root.addEventListener('change', updateChoiceCounts);
       applyDefaults();
       self.applyConditional();
+      updateChoiceCounts();
       return self;
     };
+
+    /* «۳ مورد انتخاب شده» beside the help line, so a long list still shows at
+       a glance whether anything was picked. */
+    function updateChoiceCounts() {
+      qsa('[data-count]').forEach(function (badge) {
+        var name = badge.dataset.count;
+        var n = qsa('input[name="' + name + '"]:checked').length;
+        badge.textContent = n ? ' ' + J.toFaDigits(n) + ' مورد انتخاب شده' : '';
+        badge.classList.toggle('has', !!n);
+      });
+    }
+    self.updateChoiceCounts = updateChoiceCounts;
 
     function applyDefaults() {
       if (options.skipDefaults) return;
@@ -191,15 +224,15 @@
       (schema.conditional || []).forEach(function (rule) {
         var wrap = qs('[data-wrap="' + rule.field + '"]');
         if (!wrap) return;
-        /* A rule whose source field is not on this form cannot be judged here.
-           In the workflow a stage often shows «علت خرابی» without «نوع عملیات»
-           beside it, and hiding it because the source is absent would empty
-           the one field the stage exists to collect. */
+        /* A rule can only be judged where its source field is. On a workflow
+           stage «علت خرابی» is drawn without «نوع عملیات» beside it, because
+           the server already decided the branch and either sent the field or
+           did not. Re-deciding it here from a second copy of the answer is how
+           the one field a stage exists to collect ended up hidden behind its
+           own heading. */
         var source = qs('[data-wrap="' + rule.on + '"]');
-        if (!source && !(options.context || {}).hasOwnProperty(rule.on)) return;
-        var current = source ? currentValueOf(rule.on)
-          : (options.context || {})[rule.on];
-        var show = String(current || '') === rule.value;
+        if (!source) return;
+        var show = String(currentValueOf(rule.on) || '') === rule.value;
         wrap.classList.toggle('hidden', !show);
         if (!show) {
           qsa('input[name="' + rule.field + '"]').forEach(function (i) {
@@ -405,7 +438,7 @@
       if (flat) {
         var out = {};
         self.eachField(function (field) {
-          if (hidden[field.field_name]) return;
+          if (hidden[field.field_name] || field.read_only) return;
           out[field.field_name] = readField(field);
         });
         var fOther = otherValue('failure');
@@ -415,7 +448,7 @@
       var payload = { dynamic: {} };
       self.eachField(function (field) {
         var name = field.field_name;
-        if (hidden[name]) return;
+        if (hidden[name] || field.read_only) return;
         var value = readField(field);
         if (field.model_attr) {
           if (name === 'op_jdate') { payload.op_jdate = value; return; }
@@ -482,6 +515,7 @@
         if (opts.flash) flash(qs('[data-wrap="' + name + '"]'));
       });
       self.applyConditional();
+      updateChoiceCounts();
     };
 
     self.clearErrors = function () {
@@ -514,6 +548,7 @@
       self.clearErrors();
       applyDefaults();
       self.applyConditional();
+      updateChoiceCounts();
     };
 
     self.lock = function () {

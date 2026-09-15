@@ -619,3 +619,45 @@ select.mini { font-size:11px; padding:2px 4px; width:auto; }
   .wf-builder, .wf-layout { grid-template-columns:1fr; }
   .wf-palette, .wf-list { position:static; max-height:none; }
 }
+
+/* What earlier stages recorded — read-only, above the form you must fill. */
+.wf-summary-wrap { border:1px solid var(--border); border-radius:10px;
+  background:var(--input-bg); padding:8px 12px; margin-bottom:14px; }
+.wf-summary-wrap > summary { cursor:pointer; font-weight:700; font-size:13px;
+  color:var(--primary); }
+.sum-block { border-top:1px solid var(--border); padding:8px 0; }
+.sum-block:first-of-type { border-top:0; }
+.sum-block.archived, .sum-block.deferred { opacity:.85; }
+.sum-head { display:flex; align-items:center; gap:7px; flex-wrap:wrap;
+  font-size:12.5px; margin-bottom:5px; }
+.sum-who { color:var(--text-muted); font-size:11.5px; margin-inline-start:auto; }
+.sum-note { font-size:11.5px; color:#7a5a00; background:#fffaf0;
+  border-radius:6px; padding:4px 8px; margin-bottom:5px; }
+.sum-values { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr));
+  gap:3px 10px; margin:0; font-size:12px; }
+.sum-values dt { color:var(--text-muted); display:inline; }
+.sum-values dd { margin:0 0 4px; font-weight:600; display:inline; }
+.sum-values dt::after { content:': '; }
+.sum-values dd::after { content:''; display:block; }
+/* A field settled upstream: visible, filled, and not this stage's to change. */
+.field.read-only input { background:#eef2f6; color:var(--text-muted);
+  cursor:not-allowed; }
+
+/* Tell the operator what the row of buttons is for. A long list of unselected
+   options otherwise reads as a box that failed to load. */
+.choice-help { font-size:11px; color:var(--text-muted); margin-bottom:5px;
+  line-height:1.7; }
+.choice-help b { color:var(--primary); }
+.choice-count { color:var(--success); font-weight:700; }
+.choice-count.has::before { content:' · '; color:var(--text-muted); }
+.btn-group.compact { max-height:none; }
+.wf-guide { line-height:1.9; }
+.wf-guide-desc { white-space:pre-line; font-size:12px; margin:4px 0;
+  color:var(--text-muted); }
+.wf-guide-todo { font-size:12px; margin-top:4px; }
+/* One header per process, so two stages of the same process sit together and
+   the same stage of two processes cannot be mistaken for a duplicate row. */
+.wf-group { font-size:11.5px; font-weight:700; color:var(--primary);
+  background:#eaf3fa; border:1px solid #cfe2f0; border-radius:8px;
+  padding:4px 9px; margin:10px 0 6px; }
+.wf-group:first-child { margin-top:0; }

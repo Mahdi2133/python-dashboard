@@ -21,6 +21,7 @@ from ..services.workflow import (WorkflowError, active_workflow,
                                  current_stage_of, may_act,
                                  pending_stages, previous_values_for,
                                  stage_by_number, stage_form, stages_of_user,
+                                 submitted_summary,
                                  start_instance, submit_stage, sync_entries,
                                  waiting_before)
 from ._helpers import body, fail, ok, paging
@@ -264,6 +265,11 @@ def get_instance(instance_id):
          "assignee": w.assignee.full_name if w.assignee else None}
         for w in (waiting_before(instance, stage.stage_number) if stage else [])]
     data["path"] = [s.to_dict() for s in applicable_stages(instance)]
+    # What everyone before has recorded, read-only: the stage holding the
+    # process has to see the work behind it before adding to it.
+    data["summary"] = submitted_summary(instance,
+                                        except_stage=stage.stage_number if stage
+                                        else None)
     return ok(data)
 
 

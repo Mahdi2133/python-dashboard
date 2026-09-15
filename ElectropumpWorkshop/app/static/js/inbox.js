@@ -22,26 +22,36 @@
         + 'شما نیست.</div>';
       return;
     }
+    var lastRef = null;
     box.innerHTML = items.map(function (it, i) {
-      var waiting = (it.waiting_on || []).length;
-      return '<button class="wf-item' + (current
-          && current.id === it.id
-          && current.stage_number === it.stage_number ? ' active' : '')
-        + '" data-i="' + i + '" type="button">'
-        + '<div class="wf-item-top">'
-        + '<span class="wf-stage-no">' + J.toFaDigits(it.stage_number) + '</span>'
-        + '<span class="wf-item-title">' + A.esc(it.stage_title) + '</span>'
-        + '<span class="badge ' + (it.operation_kind === 'pull' ? 'warn' : '')
-        + '">' + A.esc(it.operation_label) + '</span>'
-        + '</div>'
-        + '<div class="wf-item-sub">'
-        + (it.well ? '🕳 ' + A.esc(it.well) : '<i>چاه ثبت نشده</i>')
-        + ' · ' + A.esc(it.created_at_j || '')
-        + (it.unassigned ? ' · <span class="badge warn">بدون متولی</span>' : '')
-        + (waiting ? ' · <span class="badge warn">' + J.toFaDigits(waiting)
-            + ' مرحله عقب‌تر ثبت نشده</span>' : '')
-        + '</div></button>';
+      var header = '';
+      if (it.id !== lastRef) {
+        lastRef = it.id;
+        header = '<div class="wf-group">فرایند #' + J.toFaDigits(it.id)
+          + (it.well ? ' — ' + A.esc(it.well) : '') + '</div>';
+      }
+      return header + itemHtml(it, i);
     }).join('');
+  }
+
+  function itemHtml(it, i) {
+    var waiting = (it.waiting_on || []).length;
+    var active = current && current.id === it.id
+      && current.stage_number === it.stage_number;
+    return '<button class="wf-item' + (active ? ' active' : '')
+      + '" data-i="' + i + '" type="button">'
+      + '<div class="wf-item-top">'
+      + '<span class="wf-stage-no">' + J.toFaDigits(it.stage_number) + '</span>'
+      + '<span class="wf-item-title">' + A.esc(it.stage_title) + '</span>'
+      + '<span class="badge ' + (it.operation_kind === 'pull' ? 'warn' : '')
+      + '">' + A.esc(it.operation_label) + '</span>'
+      + '</div>'
+      + '<div class="wf-item-sub">'
+      + A.esc(it.created_at_j || '')
+      + (it.unassigned ? ' · <span class="badge warn">بدون متولی</span>' : '')
+      + (waiting ? ' · <span class="badge warn">' + J.toFaDigits(waiting)
+          + ' مرحله عقب‌تر ثبت نشده</span>' : '')
+      + '</div></button>';
   }
 
   async function loadInbox() {
@@ -74,6 +84,32 @@
     }).join('');
   }
 
+  /* What this stage is for and what to do with it, in the stage's own words —
+     the description the admin wrote in the process builder. */
+  function renderGuide(detail) {
+    var stage = detail.form && detail.form.stage;
+    var box = A.qs('#wf-guide');
+    if (!stage) { box.innerHTML = ''; return; }
+    var required = [];
+    (detail.form.sections || []).forEach(function (s) {
+      (s.fields || []).forEach(function (f) {
+        if (f.is_required && !f.read_only) required.push(f.label);
+      });
+    });
+    box.innerHTML = '<div class="alert info wf-guide">'
+      + '<b>مرحله ' + J.toFaDigits(stage.stage_number) + ' — '
+      + A.esc(stage.title) + '</b>'
+      + (stage.description
+          ? '<div class="wf-guide-desc">' + A.esc(stage.description) + '</div>'
+          : '')
+      + '<div class="wf-guide-todo">فرم زیر را پر کنید و دکمه‌ی '
+      + '<b>«ثبت و ارسال مرحله»</b> را بزنید تا فرایند به مرحله‌ی بعد برود.'
+      + (required.length
+          ? ' فیلدهای الزامی: <b>' + required.map(A.esc).join('، ') + '</b>.'
+          : '')
+      + '</div></div>';
+  }
+
   function renderWarning(detail) {
     var waiting = detail.waiting_on || [];
     var box = A.qs('#wf-warning');
@@ -88,6 +124,32 @@
         }).join('، ')
       + '.<br>می‌توانید مرحله‌ی خود را همین حالا تکمیل کنید؛ فرایند منتظر '
       + 'ترتیب مرحله‌ها نمی‌ماند.</div>';
+  }
+
+  /* Everything earlier stages recorded, shown locked. The stage owner reads
+     it, then adds their own part; none of it is theirs to change here. */
+  function renderSummary(detail) {
+    var box = A.qs('#wf-summary');
+    var blocks = detail.summary || [];
+    if (!blocks.length) {
+      box.innerHTML = '<div class="hint">هنوز مرحله‌ای پیش از این ثبت نشده است.</div>';
+      return;
+    }
+    box.innerHTML = blocks.map(function (b) {
+      return '<div class="sum-block ' + A.esc(b.status) + '">'
+        + '<div class="sum-head">'
+        + '<span class="wf-step-no">' + J.toFaDigits(b.stage_number) + '</span>'
+        + '<b>' + A.esc(b.title) + '</b>'
+        + '<span class="badge muted">' + A.esc(b.status_label) + '</span>'
+        + '<span class="sum-who">' + A.esc(b.user_name || '')
+        + (b.submitted_at_j ? ' · ' + A.esc(b.submitted_at_j) : '') + '</span>'
+        + '</div>'
+        + (b.note ? '<div class="sum-note">' + A.esc(b.note) + '</div>' : '')
+        + '<dl class="sum-values">' + b.values.map(function (v) {
+            return '<dt>' + A.esc(v.label) + '</dt><dd>' + A.esc(v.value) + '</dd>';
+          }).join('') + '</dl>'
+        + '</div>';
+    }).join('');
   }
 
   function renderAttachments(detail) {
@@ -117,7 +179,9 @@
         + (detail.well ? ' · ' + detail.well : '');
       A.qs('#wf-kind').textContent = detail.operation_label;
       renderPath(detail);
+      renderGuide(detail);
       renderWarning(detail);
+      renderSummary(detail);
       renderAttachments(detail);
 
       /* Everything the process already knows is filled in, so a stage can see
@@ -154,6 +218,12 @@
     });
     form.render();
     form.setValues(values || {});
+    /* Whichever stage owns «اطلاعات پایه» is the one that dates the operation,
+       so it gets today's date to start from — the entry page has always done
+       this, and a stage form that did not would send the process on with no
+       date and fail at the very last step. */
+    var date = A.qs('#fld-op_jdate');
+    if (date && !date.value) date.value = J.format.apply(null, J.today());
   }
 
   /* Stage 4's «اقدام مورد نیاز» decides whether «اطلاعات چاه و نصب» is even

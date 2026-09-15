@@ -701,6 +701,40 @@ def main():
                      json={"stage_number": 3, "data": {}})
     check("متولی دیگری نمی‌تواند مرحله را ثبت کند", rr.status_code == 422)
 
+    print("\n— فرایند: دیدن کار مرحله‌های قبل و قفل بودن چاه —")
+    seen = markaz.post("/api/workflow/instances",
+                       json={"operation_kind": "کشیدن", "well": "امام رضا 11"}
+                       ).get_json()["data"]["id"]
+    det = markaz.get(f"/api/workflow/instances/{seen}?stage=1").get_json()["data"]
+    wells = [f for s in det["form"]["sections"] for f in s["fields"]
+             if f["field_name"] == "well"]
+    check("چاه پس از مرحله صفر دوباره جستجو نمی‌شود",
+          bool(wells) and wells[0].get("read_only") is True,
+          str(wells and wells[0].get("read_only")))
+    check("و مقدارش نمایش داده می‌شود",
+          wells[0].get("read_only_value") == "امام رضا 11",
+          str(wells[0].get("read_only_value")))
+    markaz.post(f"/api/workflow/instances/{seen}/submit", json={
+        "stage_number": 1, "data": {"op_jdate": "1405/06/22", "center": "سوران",
+                                    "failure": ["شولات", "اهم دار"]}})
+    det = bozorg.get(f"/api/workflow/instances/{seen}?stage=2").get_json()["data"]
+    summary = det.get("summary") or []
+    check("مرحله ۲ کار مرحله ۱ را می‌بیند",
+          any(b["stage_number"] == 1 for b in summary), str(summary))
+    values = {v["label"]: v["value"] for b in summary for v in b["values"]}
+    check("علت خرابی ثبت‌شده را می‌بیند",
+          values.get("علت خرابی") == "شولات، اهم دار", str(values))
+    check("مرحله‌ی خودش در خلاصه تکرار نمی‌شود",
+          all(b["stage_number"] != 2 for b in summary))
+    check("خلاصه فقط خواندنی است (فیلد نیست)",
+          all("field_name" not in v for b in summary for v in b["values"]))
+    bozorg.post(f"/api/workflow/instances/{seen}/submit", json={
+        "stage_number": 2, "data": {"review_decision": "نیاز به کشیدن دارد"}})
+    det = yaghouti.get(f"/api/workflow/instances/{seen}?stage=3").get_json()["data"]
+    stages_seen = {b["stage_number"] for b in det.get("summary") or []}
+    check("مرحله ۳ کار مرحله‌های ۱ و ۲ را می‌بیند",
+          {1, 2} <= stages_seen, str(sorted(stages_seen)))
+
     print("\n— فرایند: قواعد مرحله ۴ —")
     def run_to_stage4(action, pump_now=None):
         i = markaz.post("/api/workflow/instances",
