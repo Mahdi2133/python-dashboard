@@ -755,6 +755,16 @@ def main():
           all(b["stage_number"] != 2 for b in summary))
     check("خلاصه فقط خواندنی است (فیلد نیست)",
           all("field_name" not in v for b in summary for v in b["values"]))
+    # The page can rebuild the same summary from the entries alone, so a
+    # browser running ahead of its server still shows the earlier stages.
+    entries = {e["stage_number"]: e for e in det["entries"]}
+    check("payload هر مرحله برای بازسازی خلاصه در دسترس است",
+          entries[1]["status"] == "submitted"
+          and entries[1]["payload"].get("failure") == ["شولات", "اهم دار"],
+          str(entries[1].get("payload"))[:70])
+    check("عنوان و ثبت‌کننده‌ی مرحله هم همراه payload می‌آید",
+          bool(entries[1].get("title")) and bool(entries[1].get("user_name")),
+          f"{entries[1].get('title')} / {entries[1].get('user_name')}")
     bozorg.post(f"/api/workflow/instances/{seen}/submit", json={
         "stage_number": 2, "data": {"review_decision": "نیاز به کشیدن دارد"}})
     det = yaghouti.get(f"/api/workflow/instances/{seen}?stage=3").get_json()["data"]
@@ -862,6 +872,18 @@ def main():
           str(prev["values"].get("prev_install_date", "")).startswith("14"),
           str(prev["values"].get("prev_install_date")))
     check("منبع مقادیر قبلی اعلام می‌شود", bool(prev["source"]))
+    # A well with no history is not a broken prefill; the page must be able to
+    # tell the two apart, which it does from an empty values map.
+    with app.app_context():
+        from app.models import Well
+        from app.extensions import db as _db
+        fresh = Well(name="چاه بدون سابقه", is_active=True, is_verified=True)
+        _db.session.add(fresh); _db.session.commit()
+        fresh_id = fresh.id
+    empty = c.get(f"/api/workflow/previous?well_id={fresh_id}").get_json()["data"]
+    check("چاه بدون سابقه مقادیر قبلی ندارد", not (empty.get("values") or {}),
+          str(empty))
+    check("و منبعی هم اعلام نمی‌شود", not empty.get("source"))
 
     print("\n— فرایند: گزینه‌های قفل‌شده —")
     with app.app_context():

@@ -22,6 +22,7 @@
   var PANELS = {
     'wf-path': { cls: 'wf-path' },
     'wf-guide': { cls: '' },
+    'wf-prev-note': { cls: '' },
     'wf-warning': { cls: '' },
     'wf-summary': {
       wrap: '<details class="wf-summary-wrap" open>'
@@ -177,8 +178,45 @@
 
   /* Everything earlier stages recorded, shown locked. The stage owner reads
      it, then adds their own part; none of it is theirs to change here. */
+  /* Field labels, so a summary built here reads like the form does. */
+  function fieldLabels() {
+    var labels = {};
+    (schema.sections || []).forEach(function (s) {
+      (s.fields || []).forEach(function (f) { labels[f.field_name] = f.label; });
+    });
+    return labels;
+  }
+
+  /* The same summary the server sends, rebuilt from the stage entries the
+     page already has. The کارتابل must not go blank just because the server
+     is a release behind this script — which is exactly what happens when a
+     desktop install is updated by copying some files and not others. */
+  function summaryFromEntries(detail) {
+    var labels = fieldLabels();
+    var keep = { submitted: 1, archived: 1, deferred: 1 };
+    return (detail.entries || []).filter(function (e) {
+      return e.stage_number > 0 && e.stage_number !== current.stage_number
+        && keep[e.status];
+    }).sort(function (a, b) { return a.stage_number - b.stage_number; })
+      .map(function (e) {
+        var values = [];
+        Object.keys(e.payload || {}).forEach(function (name) {
+          var v = e.payload[name];
+          if (Array.isArray(v)) v = v.filter(Boolean).join('، ');
+          if (v === null || v === undefined || v === '' || v === false) return;
+          values.push({ label: labels[name] || name, value: String(v) });
+        });
+        return {
+          stage_number: e.stage_number, title: e.title || '',
+          status: e.status, status_label: e.status_label,
+          user_name: e.user_name, submitted_at_j: e.submitted_at_j,
+          note: e.note, values: values,
+        };
+      }).filter(function (b) { return b.values.length || b.note; });
+  }
+
   function renderSummary(detail) {
-    var blocks = detail.summary || [];
+    var blocks = detail.summary || summaryFromEntries(detail);
     if (!blocks.length) {
       fill('#wf-summary',
            '<div class="hint">هنوز مرحله‌ای پیش از این ثبت نشده است.</div>');
@@ -305,20 +343,42 @@
               Object.assign({}, current.detail.payload || {}, answers));
   }, 250);
 
+  /* The «…قبلی» fields are read off the well's last operation. Whether that
+     worked has to be visible: a well with no history looks exactly like a
+     broken prefill, and the operator is left wondering which it was. */
   async function fillPrevious(wellName) {
-    if (!wellName) return;
+    if (!wellName || !form) return;
+    var wanted = [];
+    form.eachField(function (f) {
+      if (/_prev|prev_|old_install/.test(f.field_name)) wanted.push(f.field_name);
+    });
+    if (!wanted.length) { fill('#wf-prev-note', ''); return; }
     try {
       var res = await A.api.get('/api/workflow/previous?well='
                                 + encodeURIComponent(wellName));
       var data = res.data || {};
-      if (!data.values || !Object.keys(data.values).length) return;
-      /* Filled in, never locked: the operator can overwrite any of it. */
-      form.setValues(data.values, { onlyEmpty: true, flash: true });
-      if (data.source) {
-        A.toast('مقادیر «قبلی» از عملیات ' + (data.source.date || '')
-                + ' پر شد — قابل ویرایش است.', 'info');
+      var values = data.values || {};
+      var filled = wanted.filter(function (n) {
+        return Object.prototype.hasOwnProperty.call(values, n);
+      });
+      if (!filled.length) {
+        fill('#wf-prev-note', '<div class="alert warn">ℹ برای چاه «'
+          + A.esc(wellName) + '» عملیات قبلی‌ای در سامانه ثبت نشده است، '
+          + 'بنابراین فیلدهای «قبلی» خالی‌اند و باید دستی وارد شوند.</div>');
+        return;
       }
-    } catch (err) { /* nothing to prefill */ }
+      /* Filled in, never locked: the operator can overwrite any of it. */
+      form.setValues(values, { onlyEmpty: true, flash: true });
+      var src = data.source || {};
+      fill('#wf-prev-note', '<div class="alert info">✓ مقادیر «قبلی» از آخرین '
+        + 'عملیات این چاه'
+        + (src.date ? ' (<b>' + A.esc(src.date) + '</b>'
+            + (src.operation ? ' — ' + A.esc(src.operation) : '') + ')' : '')
+        + ' پر شد: <b>' + filled.length + ' فیلد</b>. '
+        + 'اگر درست نیست، همان‌جا ویرایش کنید.</div>');
+    } catch (err) {
+      fill('#wf-prev-note', '');
+    }
   }
 
   async function submitStage() {
