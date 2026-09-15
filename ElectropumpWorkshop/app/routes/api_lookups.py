@@ -7,7 +7,8 @@ from flask import Blueprint
 
 from ..extensions import db
 from ..models import LookupAlias, LookupCategory, LookupItem, Record, RecordTag
-from ..services.auth import permission_required
+from ..services.auth import (FORM_READERS, permission_required,
+                             permission_required_any)
 from ..services.audit import record_audit
 from ..services.lookups import items_by_category, normalize_text
 from ._helpers import body, fail, ok
@@ -16,7 +17,7 @@ bp = Blueprint("api_lookups", __name__, url_prefix="/api/lookups")
 
 
 @bp.get("")
-@permission_required("record.create")
+@permission_required_any(*FORM_READERS)
 def all_lookups():
     active_only = "all" not in (body() or {}) and True
     from flask import request
@@ -33,7 +34,7 @@ def categories():
 
 
 @bp.get("/<code>")
-@permission_required("record.create")
+@permission_required_any(*FORM_READERS)
 def category_items(code):
     cat = LookupCategory.query.filter_by(code=code).one_or_none()
     if cat is None:

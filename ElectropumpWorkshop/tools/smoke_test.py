@@ -616,7 +616,7 @@ def main():
         made[uname] = rr.get_json()["data"]
         owners[uname] = made[uname]["id"]
     check("نقش «متولی مرحله» فقط کارتابل دارد",
-          set(made["kahani"]["permissions"]) == {"workflow.act", "well.view"},
+          set(made["kahani"]["permissions"]) == {"workflow.act"},
           str(sorted(made["kahani"]["permissions"])))
     for number, uname in ((0, "markaz"), (1, "markaz"), (2, "bozorg"),
                           (3, "yaghouti"), (4, "bozorg"), (5, "kahani")):
@@ -632,6 +632,27 @@ def main():
 
     markaz, bozorg, yaghouti, kahani = (who("markaz"), who("bozorg"),
                                         who("yaghouti"), who("kahani"))
+
+    print("\n— فرایند: متولی بدون مجوز ثبت رکورد کار می‌کند —")
+    # A stage owner must be able to run their stage with workflow.act alone.
+    # Needing record.create for it would hand them the whole data-entry tab.
+    for label, path in (("صفحه کارتابل", "/inbox"),
+                        ("ساختار فرم", "/api/form-builder"),
+                        ("فهرست گزینه‌ها", "/api/lookups"),
+                        ("جستجوی چاه", "/api/wells?q=" + quote("امام")),
+                        ("کارتابل", "/api/workflow/inbox")):
+        check(f"متولی به {label} دسترسی دارد",
+              markaz.get(path).status_code == 200, path)
+    for label, path in (("ثبت اطلاعات", "/entry"), ("جدول رکوردها", "/records"),
+                        ("فرم‌ساز", "/form-builder"), ("کاربران", "/users"),
+                        ("فرایندساز", "/workflow")):
+        check(f"متولی به {label} دسترسی ندارد",
+              markaz.get(path).status_code == 403, path)
+    check("متولی نمی‌تواند رکورد مستقیم ثبت کند",
+          markaz.post("/api/records", json={"well": "امام رضا 11"}).status_code == 403)
+    check("متولی می‌تواند فرایند را شروع کند",
+          markaz.post("/api/workflow/instances",
+                      json={"operation_kind": "کشیدن"}).status_code == 200)
 
     print("\n— فرایند: مسیر «نصب» از مرحله ۳ آغاز می‌شود —")
     iid = markaz.post("/api/workflow/instances",

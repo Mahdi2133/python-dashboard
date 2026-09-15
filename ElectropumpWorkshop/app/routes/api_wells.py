@@ -4,7 +4,8 @@ from sqlalchemy import func
 
 from ..extensions import db
 from ..models import Record, Well, WellAlias
-from ..services.auth import permission_required
+from ..services.auth import (permission_required,
+                             permission_required_any)
 from ..services.audit import record_audit
 from ..services.lookups import normalize_text, resolve_id, well_key
 from ._helpers import body, fail, ok, paging
@@ -13,7 +14,7 @@ bp = Blueprint("api_wells", __name__, url_prefix="/api/wells")
 
 
 @bp.get("")
-@permission_required("well.view")
+@permission_required_any("well.view", "workflow.act")
 def list_wells():
     q = normalize_text(request.args.get("q", ""))
     limit = min(int(request.args.get("limit", 20) or 20), 500)
@@ -93,7 +94,7 @@ def _same_well_as(name, exclude_id=None):
 
 
 @bp.get("/page")
-@permission_required("well.view")
+@permission_required_any("well.view", "workflow.act")
 def paged_wells():
     page, size = paging()
     q = normalize_text(request.args.get("q", ""))

@@ -5,7 +5,8 @@ from ..extensions import db
 from ..models import (FormField, FormFieldOption, FormSection, LookupCategory,
                       LookupItem, RecordDynamicValue)
 from ..models.formbuilder import FIELD_TYPES
-from ..services.auth import permission_required
+from ..services.auth import (FORM_READERS, permission_required,
+                             permission_required_any)
 from ..services.audit import record_audit
 from ..services.jalali import MONTHS_FA
 from ..services.lookups import items_by_category, normalize_text
@@ -60,7 +61,7 @@ def _month_options():
 
 
 @bp.get("")
-@permission_required("record.create")
+@permission_required_any(*FORM_READERS)
 def get_schema():
     """Everything the data-entry page needs to render itself, in one call."""
     active_only = request.args.get("all") not in ("1", "true")

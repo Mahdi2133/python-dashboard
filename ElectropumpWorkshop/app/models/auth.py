@@ -66,7 +66,11 @@ ROLES = {
         "label": "متولی مرحله فرایند",
         "description": "فقط کارتابل فرایند: مرحله‌ی خودش را پر می‌کند و "
                        "می‌فرستد؛ به جدول رکوردها و بقیه تب‌ها کاری ندارد.",
-        "permissions": ["workflow.act", "well.view"],
+        # Deliberately just the one permission. Filling a stage needs the form
+        # schema, the option lists and the well picker, and all three now
+        # accept workflow.act — so a متولی never has to be handed the right to
+        # create records outright just to do their own job.
+        "permissions": ["workflow.act"],
     },
     "viewer": {
         "label": "فقط مشاهده",

@@ -170,6 +170,40 @@ def permission_required(permission):
     return decorator
 
 
+def permission_required_any(*permissions):
+    """Allow the view when the user holds **any** of ``permissions``.
+
+    Some endpoints are not owned by one job. The form schema and the option
+    lists are needed by whoever fills a form — the operator typing a record,
+    the stage owner filling their part of a process, the admin editing the
+    form itself. Tying them to a single permission is what made a متولی مرحله
+    unable to open their own کارتابل until they were given the unrelated right
+    to create records outright.
+    """
+    codes = [p for p in permissions if p]
+
+    def decorator(view):
+        @functools.wraps(view)
+        def wrapper(*args, **kwargs):
+            user = current_user()
+            if user is None:
+                return _deny("برای ادامه باید وارد سامانه شوید.", 401)
+            if not any(user.can(code) for code in codes):
+                log.info("User %s denied %s on %s", user.username,
+                         "|".join(codes), request.path)
+                return _deny("شما مجوز دسترسی به این بخش را ندارید. "
+                             "در صورت نیاز با مدیر سیستم هماهنگ کنید.", 403)
+            return view(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+# Reading the form definition is not the same as being allowed to use it for
+# any one purpose; everyone who fills or renders a form needs it.
+FORM_READERS = ("record.create", "record.view", "record.edit", "workflow.act",
+                "workflow.view", "form.manage", "report.view")
+
+
 def edit_window_closed(record) -> str | None:
     """Persian reason the signed-in user may no longer change ``record``.
 
