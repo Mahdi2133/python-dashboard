@@ -268,18 +268,48 @@ def _ensure_entry(instance: WorkflowInstance, stage: WorkflowStage):
     return entry
 
 
+def may_start(user) -> bool:
+    """Whether ``user`` is the one who opens processes.
+
+    Starting is step zero's job, not every stage owner's — otherwise each
+    person in the chain has a button that makes work for everybody else.
+    """
+    if user is None:
+        return False
+    if user.role == "admin" or user.can("workflow.manage"):
+        return True
+    workflow = active_workflow()
+    if workflow is None:
+        return False
+    intake = next((s for s in workflow.stages
+                   if s.stage_number == STAGE_INTAKE), None)
+    return bool(intake and intake.assignee_id == user.id)
+
+
 def start_instance(payload: dict, user) -> WorkflowInstance:
     """Answer step zero and open a process."""
     workflow = active_workflow()
     if workflow is None:
         raise WorkflowError("هیچ فرایند فعالی تعریف نشده است.")
+    if not may_start(user):
+        raise WorkflowError("شروع فرایند با متولی «شروع فرایند» (مرحله صفر) "
+                            "است. اگر لازم است شما آن را آغاز کنید، از مدیر "
+                            "سیستم بخواهید متولی مرحله صفر را تغییر دهد.")
     kind_value = normalize_text(payload.get("operation_kind") or "")
     kind = next((k for k, label in OPERATION_KINDS.items()
                  if normalize_text(label) == kind_value), None)
     if kind is None:
         raise WorkflowError("نوع عملیات را انتخاب کنید: کشیدن یا نصب.")
 
+    # The well is settled here and nowhere else: every later stage is shown it
+    # locked, so it must be a real well from the register before we start.
+    if not normalize_text(payload.get("well") or ""):
+        raise WorkflowError("نام چاه را انتخاب کنید؛ چاه در همین مرحله یک‌بار "
+                            "تعیین می‌شود و در مرحله‌های بعد تکرار نمی‌شود.")
     well, raw = resolve_well(payload.get("well"), create_missing=False)
+    if well is None:
+        raise WorkflowError(f"چاهی با نام «{raw}» در فهرست چاه‌ها نیست. "
+                            f"از فهرست پیشنهادی یک چاه را انتخاب کنید.")
     instance = WorkflowInstance(
         workflow_id=workflow.id, operation_kind=kind,
         well_id=well.id if well else None, well_name_raw=raw,

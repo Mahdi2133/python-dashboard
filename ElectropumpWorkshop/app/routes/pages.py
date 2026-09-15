@@ -18,6 +18,7 @@ NAV = [
     ("inbox", "کارتابل فرایند", "📬", "/inbox"),
     ("dashboard", "داشبورد", "📊", "/dashboard"),
     ("records", "رکوردها", "📋", "/records"),
+    ("documents", "مستندات", "📎", "/documents"),
     ("wells", "چاه‌ها", "🕳", "/wells"),
     ("reports", "گزارش‌ها", "📈", "/reports"),
     ("builder", "گزارش‌ساز", "🧩", "/report-builder"),
@@ -114,6 +115,13 @@ def form_builder():
 def inbox():
     """The کارتابل: the stages this person owes, and the forms to fill them."""
     return render_template("inbox.html", active="inbox")
+
+
+@bp.get("/documents")
+@permission_required("workflow.act")
+def documents():
+    """Every file attached to any process — admin and stage owners alike."""
+    return render_template("documents.html", active="documents")
 
 
 @bp.get("/workflow")

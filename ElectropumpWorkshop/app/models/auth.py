@@ -70,7 +70,7 @@ ROLES = {
         # schema, the option lists and the well picker, and all three now
         # accept workflow.act — so a متولی never has to be handed the right to
         # create records outright just to do their own job.
-        "permissions": ["workflow.act"],
+        "permissions": ["workflow.act", "record.view", "record.export"],
     },
     "viewer": {
         "label": "فقط مشاهده",
@@ -88,6 +88,7 @@ PAGE_PERMISSION = {
     "reports": "report.view",
     "builder": "report.build",
     "inbox": "workflow.act",
+    "documents": "workflow.act",
     "workflow": "workflow.manage",
     "formbuilder": "form.manage",
     "options": "form.manage",

@@ -11,16 +11,19 @@ from ..models import (AppUser, FormField, FormSection, WorkflowAttachment,
                       WorkflowDefinition, WorkflowInstance, WorkflowStage,
                       WorkflowStageEntry, WorkflowStageItem)
 from ..models.workflow import (APPLIES_TO, ENTRY_PENDING, INSTANCE_OPEN,
-                               OPERATION_KINDS)
+                               INSTANCE_STATUS, OPERATION_KINDS)
 from ..paths import instance_dir
 from ..services.audit import record_audit
-from ..services.auth import current_user, login_required, permission_required
+from ..services.auth import (current_user, login_required,
+                             permission_required,
+                             permission_required_any)
 from ..services.lookups import normalize_text
 from ..services.workflow import (WorkflowError, active_workflow,
                                  applicable_stages, cancel_instance,
                                  current_stage_of, may_act,
                                  pending_stages, previous_values_for,
-                                 stage_by_number, stage_form, stages_of_user,
+                                 may_start, stage_by_number, stage_form,
+                                 stages_of_user,
                                  submitted_summary,
                                  start_instance, submit_stage, sync_entries,
                                  waiting_before)
@@ -43,7 +46,10 @@ def _attachment_dir():
 
 # ── definition (فرایندساز) ───────────────────────────────────────────────────
 @bp.get("/definition")
-@permission_required("workflow.view")
+# A stage owner already sees the stage names on their own کارتابل path strip,
+# so reading the shape of the process tells them nothing new — and the
+# documents filter needs it.
+@permission_required_any("workflow.view", "workflow.act", "workflow.manage")
 def get_definition():
     """The process as it stands, plus everything droppable onto a stage."""
     workflow = active_workflow()
@@ -229,7 +235,8 @@ def inbox():
             })
             rows.append(data)
     db.session.commit()
-    return ok(rows, total=len(rows))
+    # Only step zero's owner opens processes, so only they get the button.
+    return ok(rows, total=len(rows), may_start=may_start(user))
 
 
 @bp.get("/instances/<int:instance_id>")
@@ -381,8 +388,56 @@ def upload_attachment(instance_id):
     return ok(attachment.to_dict(), message="مستند بارگذاری شد.")
 
 
+@bp.get("/attachments")
+@permission_required_any("workflow.act", "workflow.view")
+def list_attachments():
+    """Every document attached to any process, in one place.
+
+    The admin and the stage owners both need this: a photo of a plaque taken
+    at stage 3 is what stage 5 signs off against, and nobody should have to
+    open five processes to find it.
+    """
+    page, size = paging(default_size=50)
+    query = (db.session.query(WorkflowAttachment)
+             .join(WorkflowInstance,
+                   WorkflowAttachment.instance_id == WorkflowInstance.id))
+    if request.args.get("instance_id"):
+        query = query.filter(WorkflowAttachment.instance_id
+                             == int(request.args["instance_id"]))
+    if request.args.get("stage"):
+        query = query.filter(WorkflowAttachment.stage_number
+                             == int(request.args["stage"]))
+    if request.args.get("user_id"):
+        query = query.filter(WorkflowAttachment.uploaded_by
+                             == int(request.args["user_id"]))
+    term = normalize_text(request.args.get("q", ""))
+    if term:
+        query = query.filter(db.or_(
+            WorkflowAttachment.filename.ilike(f"%{term}%"),
+            WorkflowInstance.well_name_raw.ilike(f"%{term}%")))
+    total = query.count()
+    rows = (query.order_by(WorkflowAttachment.uploaded_at.desc())
+            .limit(size).offset((page - 1) * size).all())
+    data = []
+    for row in rows:
+        item = row.to_dict()
+        instance = row.instance
+        item["well"] = (instance.well.name if instance and instance.well
+                        else instance.well_name_raw if instance else None)
+        item["operation_label"] = instance.operation_label if instance else None
+        item["instance_status"] = (INSTANCE_STATUS.get(instance.status,
+                                                       instance.status)
+                                   if instance else None)
+        item["stage_title"] = next(
+            (s.title for s in (instance.workflow.stages if instance else [])
+             if s.stage_number == row.stage_number), None)
+        data.append(item)
+    return ok(data, total=total, page=page, page_size=size,
+              pages=max(1, (total + size - 1) // size))
+
+
 @bp.get("/attachments/<int:attachment_id>")
-@permission_required("workflow.act")
+@permission_required_any("workflow.act", "workflow.view")
 def download_attachment(attachment_id):
     attachment = db.session.get(WorkflowAttachment, attachment_id)
     if attachment is None:

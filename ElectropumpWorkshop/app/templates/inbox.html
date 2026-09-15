@@ -8,7 +8,7 @@
       برای پر کردن مرحله‌ی خود لازم نیست منتظر مرحله‌های قبل بمانید.</div>
   </div>
   <div class="toolbar-actions">
-    <button class="btn-primary" id="btn-new-process" type="button">➕ شروع فرایند جدید</button>
+    <button class="btn-primary hidden" id="btn-new-process" type="button">➕ شروع فرایند جدید</button>
     <button class="btn-ghost" id="btn-refresh" type="button">↻ به‌روزرسانی</button>
   </div>
 </div>
@@ -68,13 +68,14 @@
           با «نصب» مستقیم به کارگاه مکانیک می‌رود.</span>
       </div>
       <div class="field">
-        <label>نام چاه</label>
+        <label>نام چاه <span class="req">*</span></label>
         <div class="autocomplete-wrapper">
           <input type="text" id="np-well" autocomplete="off" data-autocomplete="wells"
                  placeholder="جستجوی نام چاه یا کد PM…">
           <div class="autocomplete-list"></div>
         </div>
-        <span class="hint">اختیاری — در مرحله‌ی اول هم می‌توان ثبت کرد.</span>
+        <span class="hint">چاه همین‌جا یک‌بار انتخاب می‌شود؛ در مرحله‌های بعد
+          قفل‌شده نمایش داده می‌شود و دوباره جستجو نمی‌شود.</span>
       </div>
     </div>
     <div class="modal-foot">

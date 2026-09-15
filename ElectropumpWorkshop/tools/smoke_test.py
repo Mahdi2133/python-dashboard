@@ -615,8 +615,9 @@ def main():
             "first_name": first, "last_name": last})
         made[uname] = rr.get_json()["data"]
         owners[uname] = made[uname]["id"]
-    check("نقش «متولی مرحله» فقط کارتابل دارد",
-          set(made["kahani"]["permissions"]) == {"workflow.act"},
+    check("نقش «متولی مرحله»: کارتابل، مشاهده رکوردها و خروجی",
+          set(made["kahani"]["permissions"])
+          == {"workflow.act", "record.view", "record.export"},
           str(sorted(made["kahani"]["permissions"])))
     for number, uname in ((0, "markaz"), (1, "markaz"), (2, "bozorg"),
                           (3, "yaghouti"), (4, "bozorg"), (5, "kahani")):
@@ -643,16 +644,42 @@ def main():
                         ("کارتابل", "/api/workflow/inbox")):
         check(f"متولی به {label} دسترسی دارد",
               markaz.get(path).status_code == 200, path)
-    for label, path in (("ثبت اطلاعات", "/entry"), ("جدول رکوردها", "/records"),
+    for label, path in (("جدول رکوردها", "/records"),
+                        ("مستندات", "/documents")):
+        check(f"متولی به {label} دسترسی دارد",
+              markaz.get(path).status_code == 200, path)
+    check("متولی خروجی اکسل می‌گیرد",
+          markaz.get("/api/export.xlsx").status_code == 200)
+    check("متولی خروجی CSV هم می‌گیرد",
+          markaz.get("/api/export.csv").status_code == 200)
+    for label, path in (("ثبت اطلاعات", "/entry"),
                         ("فرم‌ساز", "/form-builder"), ("کاربران", "/users"),
                         ("فرایندساز", "/workflow")):
         check(f"متولی به {label} دسترسی ندارد",
               markaz.get(path).status_code == 403, path)
+    check("متولی نمی‌تواند رکورد را ویرایش کند",
+          markaz.put("/api/records/1", json={"description": "x"}).status_code == 403)
     check("متولی نمی‌تواند رکورد مستقیم ثبت کند",
           markaz.post("/api/records", json={"well": "امام رضا 11"}).status_code == 403)
-    check("متولی می‌تواند فرایند را شروع کند",
+    check("متولی مرحله صفر می‌تواند فرایند را شروع کند",
           markaz.post("/api/workflow/instances",
-                      json={"operation_kind": "کشیدن"}).status_code == 200)
+                      json={"operation_kind": "کشیدن",
+                            "well": "امام رضا 11"}).status_code == 200)
+    check("و کارتابلش دکمه شروع را نشان می‌دهد",
+          markaz.get("/api/workflow/inbox").get_json().get("may_start") is True)
+    # Starting is step zero's job; the rest of the chain receives work.
+    rr = kahani.post("/api/workflow/instances",
+                     json={"operation_kind": "کشیدن", "well": "امام رضا 11"})
+    check("متولی مرحله‌های بعد نمی‌تواند فرایند شروع کند", rr.status_code == 422,
+          str(rr.get_json().get("error"))[:60])
+    check("و دکمه شروع برایش پنهان است",
+          kahani.get("/api/workflow/inbox").get_json().get("may_start") is False)
+    rr = markaz.post("/api/workflow/instances", json={"operation_kind": "کشیدن"})
+    check("بدون نام چاه فرایند شروع نمی‌شود", rr.status_code == 422,
+          str(rr.get_json().get("error"))[:50])
+    rr = markaz.post("/api/workflow/instances",
+                     json={"operation_kind": "کشیدن", "well": "چاه ناموجود ۹۹"})
+    check("چاه خارج از فهرست پذیرفته نمی‌شود", rr.status_code == 422)
 
     print("\n— فرایند: مسیر «نصب» از مرحله ۳ آغاز می‌شود —")
     iid = markaz.post("/api/workflow/instances",
@@ -805,6 +832,27 @@ def main():
     check("فرایند تکمیل‌شده علامت خورد",
           c.get(f"/api/workflow/instances/{last}").get_json()["data"]["status"]
           == "completed")
+
+    print("\n— فرایند: مرکز مستندات —")
+    listing = kahani.get("/api/workflow/attachments").get_json()
+    check("فهرست مستندات برای متولی باز است", listing.get("ok") is True)
+    docs = listing.get("data") or []
+    check("مستند بارگذاری‌شده در فهرست هست",
+          any(d["filename"] == "gozaresh.pdf" for d in docs), str(len(docs)))
+    if docs:
+        one = next(d for d in docs if d["filename"] == "gozaresh.pdf")
+        check("فرایند و چاه مستند مشخص است",
+              bool(one.get("instance_id")) and bool(one.get("well")),
+              f"{one.get('instance_id')} / {one.get('well')}")
+        check("مرحله‌ی بارگذاری مشخص است", one.get("stage_title") is not None,
+              str(one.get("stage_title")))
+        check("دانلود از مرکز مستندات کار می‌کند",
+              kahani.get(one["url"]).status_code == 200)
+    check("جستجوی مستند با نام فایل",
+          len((kahani.get("/api/workflow/attachments?q=gozaresh")
+               .get_json().get("data") or [])) >= 1)
+    check("مدیر هم همه‌ی مستندات را می‌بیند",
+          c.get("/api/workflow/attachments").get_json().get("ok") is True)
 
     print("\n— فرایند: مقادیر «قبلی» —")
     prev = c.get("/api/workflow/previous?well=" + quote("امام رضا 11")).get_json()["data"]

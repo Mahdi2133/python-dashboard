@@ -13,10 +13,56 @@
   var form = null;
   var schema = null;           // lookups + conditional rules, loaded once
 
+  /* Where each panel belongs, if the page is missing it. A desktop app is
+     updated by copying files, so the template and this script can end up a
+     version apart; rather than fail on the difference, the page builds what it
+     needs. These panels are context around the stage form — the form itself is
+     the point — so a missing one must never stand between the stage owner and
+     the fields they came to fill. */
+  var PANELS = {
+    'wf-path': { cls: 'wf-path' },
+    'wf-guide': { cls: '' },
+    'wf-warning': { cls: '' },
+    'wf-summary': {
+      wrap: '<details class="wf-summary-wrap" open>'
+            + '<summary>📋 اطلاعات ثبت‌شده در مرحله‌های قبل (فقط مشاهده)</summary>'
+            + '<div id="wf-summary"></div></details>',
+    },
+  };
+
+  function ensurePanel(id) {
+    var box = A.qs('#' + id);
+    if (box) return box;
+    var spec = PANELS[id];
+    var anchor = A.qs('#wf-form');
+    if (!spec || !anchor || !anchor.parentNode) return null;
+    var holder = document.createElement('div');
+    holder.innerHTML = spec.wrap
+      || '<div id="' + id + '"' + (spec.cls ? ' class="' + spec.cls + '"' : '')
+         + '></div>';
+    anchor.parentNode.insertBefore(holder.firstChild, anchor);
+    return A.qs('#' + id);
+  }
+
+  /* Fill a panel, making it first if the template predates it. */
+  function fill(selector, html) {
+    var box = A.qs(selector);
+    if (!box && selector.charAt(0) === '#') box = ensurePanel(selector.slice(1));
+    if (box) box.innerHTML = html;
+    return box;
+  }
+
+  function setText(selector, text) {
+    var box = A.qs(selector);
+    if (box) box.textContent = text;
+    return box;
+  }
+
   /* ── list ───────────────────────────────────────────────────────────── */
   function renderList() {
     var box = A.qs('#inbox-items');
-    A.qs('#inbox-count').textContent = J.toFaDigits(items.length);
+    setText('#inbox-count', J.toFaDigits(items.length));
+    if (!box) return;
     if (!items.length) {
       box.innerHTML = '<div class="table-empty">در حال حاضر کاری در کارتابل '
         + 'شما نیست.</div>';
@@ -58,10 +104,14 @@
     try {
       var res = await A.api.get('/api/workflow/inbox');
       items = res.data || [];
+      /* Starting a process is step zero's job. Everyone else in the chain
+         receives work; they do not create it. */
+      var start = A.qs('#btn-new-process');
+      if (start) start.classList.toggle('hidden', !res.may_start);
       renderList();
     } catch (err) {
-      A.qs('#inbox-items').innerHTML = '<div class="alert error">'
-        + A.esc(err.message) + '</div>';
+      fill('#inbox-items', '<div class="alert error">'
+           + A.esc(err.message) + '</div>');
     }
   }
 
@@ -69,7 +119,7 @@
   function renderPath(detail) {
     var done = {};
     (detail.entries || []).forEach(function (e) { done[e.stage_number] = e; });
-    A.qs('#wf-path').innerHTML = (detail.path || []).map(function (s) {
+    fill('#wf-path', (detail.path || []).map(function (s) {
       var entry = done[s.stage_number] || {};
       var state = entry.status || 'pending';
       var isHere = s.stage_number === current.stage_number;
@@ -81,22 +131,21 @@
         + '<span class="wf-step-state">'
         + A.esc(entry.status_label || 'در انتظار') + '</span>'
         + '</div>';
-    }).join('');
+    }).join(''));
   }
 
   /* What this stage is for and what to do with it, in the stage's own words —
      the description the admin wrote in the process builder. */
   function renderGuide(detail) {
     var stage = detail.form && detail.form.stage;
-    var box = A.qs('#wf-guide');
-    if (!stage) { box.innerHTML = ''; return; }
+    if (!stage) { fill('#wf-guide', ''); return; }
     var required = [];
     (detail.form.sections || []).forEach(function (s) {
       (s.fields || []).forEach(function (f) {
         if (f.is_required && !f.read_only) required.push(f.label);
       });
     });
-    box.innerHTML = '<div class="alert info wf-guide">'
+    fill('#wf-guide', '<div class="alert info wf-guide">'
       + '<b>مرحله ' + J.toFaDigits(stage.stage_number) + ' — '
       + A.esc(stage.title) + '</b>'
       + (stage.description
@@ -107,35 +156,35 @@
       + (required.length
           ? ' فیلدهای الزامی: <b>' + required.map(A.esc).join('، ') + '</b>.'
           : '')
-      + '</div></div>';
+      + '</div></div>');
   }
 
   function renderWarning(detail) {
     var waiting = detail.waiting_on || [];
-    var box = A.qs('#wf-warning');
-    if (!waiting.length) { box.innerHTML = ''; return; }
+    if (!waiting.length) { fill('#wf-warning', ''); return; }
     /* A warning, never a block — the stage owner may well have the numbers in
        hand before the paperwork upstream catches up. */
-    box.innerHTML = '<div class="alert warn">⚠ این مرحله‌ها هنوز ثبت نشده‌اند: '
+    fill('#wf-warning',
+      '<div class="alert warn">⚠ این مرحله‌ها هنوز ثبت نشده‌اند: '
       + waiting.map(function (w) {
           return '<b>مرحله ' + J.toFaDigits(w.stage_number) + ' — '
             + A.esc(w.title) + '</b>'
             + (w.assignee ? ' (' + A.esc(w.assignee) + ')' : '');
         }).join('، ')
       + '.<br>می‌توانید مرحله‌ی خود را همین حالا تکمیل کنید؛ فرایند منتظر '
-      + 'ترتیب مرحله‌ها نمی‌ماند.</div>';
+      + 'ترتیب مرحله‌ها نمی‌ماند.</div>');
   }
 
   /* Everything earlier stages recorded, shown locked. The stage owner reads
      it, then adds their own part; none of it is theirs to change here. */
   function renderSummary(detail) {
-    var box = A.qs('#wf-summary');
     var blocks = detail.summary || [];
     if (!blocks.length) {
-      box.innerHTML = '<div class="hint">هنوز مرحله‌ای پیش از این ثبت نشده است.</div>';
+      fill('#wf-summary',
+           '<div class="hint">هنوز مرحله‌ای پیش از این ثبت نشده است.</div>');
       return;
     }
-    box.innerHTML = blocks.map(function (b) {
+    fill('#wf-summary', blocks.map(function (b) {
       return '<div class="sum-block ' + A.esc(b.status) + '">'
         + '<div class="sum-head">'
         + '<span class="wf-step-no">' + J.toFaDigits(b.stage_number) + '</span>'
@@ -149,14 +198,17 @@
             return '<dt>' + A.esc(v.label) + '</dt><dd>' + A.esc(v.value) + '</dd>';
           }).join('') + '</dl>'
         + '</div>';
-    }).join('');
+    }).join(''));
   }
 
   function renderAttachments(detail) {
-    var box = A.qs('#wf-attachments');
     var list = detail.attachments || [];
-    if (!list.length) { box.innerHTML = '<div class="hint">هنوز مستندی بارگذاری نشده است.</div>'; return; }
-    box.innerHTML = '<div class="doc-list">' + list.map(function (a) {
+    if (!list.length) {
+      fill('#wf-attachments',
+           '<div class="hint">هنوز مستندی بارگذاری نشده است.</div>');
+      return;
+    }
+    fill('#wf-attachments', '<div class="doc-list">' + list.map(function (a) {
       return '<div class="doc-row">'
         + '<a href="' + A.esc(a.url) + '" class="doc-name">📄 ' + A.esc(a.filename) + '</a>'
         + '<span class="doc-meta">' + A.esc(a.size_label) + ' · '
@@ -164,7 +216,7 @@
         + ' مرحله ' + J.toFaDigits(a.stage_number) + '</span>'
         + '<button class="btn-sm btn-del" data-del-doc="' + a.id + '" type="button">🗑</button>'
         + '</div>';
-    }).join('') + '</div>';
+    }).join('') + '</div>');
   }
 
   async function openStage(entry) {
@@ -174,34 +226,43 @@
       var detail = res.data;
       current = { id: detail.id, stage_number: entry.stage_number, detail: detail };
       A.qs('#wf-detail').classList.remove('hidden');
-      A.qs('#wf-title').textContent = 'مرحله ' + J.toFaDigits(entry.stage_number)
+      setText('#wf-title', 'مرحله ' + J.toFaDigits(entry.stage_number)
         + ' — ' + (detail.form ? detail.form.stage.title : '')
-        + (detail.well ? ' · ' + detail.well : '');
-      A.qs('#wf-kind').textContent = detail.operation_label;
+        + (detail.well ? ' · ' + detail.well : ''));
+      setText('#wf-kind', detail.operation_label);
+      /* The form first. It is the point of this page, and everything after it
+         is context around it — so nothing that decorates the page can end up
+         standing between the stage owner and the fields they came to fill.
+         Everything the process already knows is filled in, so a stage can see
+         and correct what came before rather than typing it again. */
+      buildForm(detail.form ? detail.form.sections : [],
+                detail.operation_label, detail.payload || {});
+      if (detail.well) fillPrevious(detail.well);
+      var submit = A.qs('#wf-submit');
+      if (submit) {
+        submit.disabled = !detail.may_act;
+        submit.title = detail.may_act ? '' : 'این مرحله در اختیار شما نیست.';
+      }
+
       renderPath(detail);
       renderGuide(detail);
       renderWarning(detail);
       renderSummary(detail);
       renderAttachments(detail);
-
-      /* Everything the process already knows is filled in, so a stage can see
-         and correct what came before rather than typing it again. */
-      buildForm(detail.form ? detail.form.sections : [],
-                detail.operation_label, detail.payload || {});
-      if (detail.well) fillPrevious(detail.well);
-      A.qs('#wf-submit').disabled = !detail.may_act;
-      A.qs('#wf-submit').title = detail.may_act ? ''
-        : 'این مرحله در اختیار شما نیست.';
       renderList();
       A.qs('#wf-detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (err) {
       A.toast(err.message, 'error');
+      fill('#inbox-alert', '<div class="alert error">' + A.esc(err.message)
+           + '</div>');
     }
   }
 
   function buildForm(sections, operationLabel, values) {
+    var root = A.qs('#wf-form');
+    if (!root) return;
     form = window.FormEngine({
-      root: A.qs('#wf-form'),
+      root: root,
       schema: { sections: sections, lookups: schema.lookups,
                 conditional: schema.conditional },
       flat: true,
@@ -304,6 +365,11 @@
   async function startProcess() {
     var kind = A.qs('input[name="np_kind"]:checked');
     if (!kind) { A.toast('نوع عملیات را انتخاب کنید.', 'error'); return; }
+    if (!A.qs('#np-well').value.trim()) {
+      A.toast('نام چاه را انتخاب کنید — چاه فقط همین‌جا تعیین می‌شود.', 'error');
+      A.qs('#np-well').focus();
+      return;
+    }
     try {
       var res = await A.api.post('/api/workflow/instances', {
         operation_kind: kind.value,
