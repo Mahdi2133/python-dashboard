@@ -661,3 +661,8 @@ select.mini { font-size:11px; padding:2px 4px; width:auto; }
   background:#eaf3fa; border:1px solid #cfe2f0; border-radius:8px;
   padding:4px 9px; margin:10px 0 6px; }
 .wf-group:first-child { margin-top:0; }
+/* Step zero sits in the work list like every other stage, rather than as a
+   button hanging over every page of the کارتابل. */
+.wf-item-start { border-style:dashed; border-color:var(--primary-light);
+  background:#f5faff; }
+.wf-item-start:hover { background:#eaf3fa; }

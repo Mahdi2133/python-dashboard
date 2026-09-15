@@ -12,6 +12,7 @@
   var current = null;          // { instance, stage_number }
   var form = null;
   var schema = null;           // lookups + conditional rules, loaded once
+  var canStart = false;        // is this user the متولی of step zero?
 
   /* Where each panel belongs, if the page is missing it. A desktop app is
      updated by copying files, so the template and this script can end up a
@@ -64,13 +65,23 @@
     var box = A.qs('#inbox-items');
     setText('#inbox-count', J.toFaDigits(items.length));
     if (!box) return;
-    if (!items.length) {
+    if (!items.length && !canStart) {
       box.innerHTML = '<div class="table-empty">در حال حاضر کاری در کارتابل '
         + 'شما نیست.</div>';
       return;
     }
+    var html = canStart
+      ? '<div class="wf-group">مرحله ۰ — شروع فرایند</div>'
+        + '<button class="wf-item wf-item-start" data-start="1" type="button">'
+        + '<div class="wf-item-top">'
+        + '<span class="wf-stage-no">۰</span>'
+        + '<span class="wf-item-title">شروع فرایند جدید</span>'
+        + '<span class="badge">🚦</span></div>'
+        + '<div class="wf-item-sub">نوع عملیات و چاه را تعیین کنید تا فرایند '
+        + 'آغاز شود.</div></button>'
+      : '';
     var lastRef = null;
-    box.innerHTML = items.map(function (it, i) {
+    box.innerHTML = html + items.map(function (it, i) {
       var header = '';
       if (it.id !== lastRef) {
         lastRef = it.id;
@@ -105,10 +116,10 @@
     try {
       var res = await A.api.get('/api/workflow/inbox');
       items = res.data || [];
-      /* Starting a process is step zero's job. Everyone else in the chain
-         receives work; they do not create it. */
-      var start = A.qs('#btn-new-process');
-      if (start) start.classList.toggle('hidden', !res.may_start);
+      /* Step zero is a stage like any other, so it is a card in the work list
+         rather than a button hanging over every page. Only its owner gets it,
+         and only there does the «شروع فرایند» form exist. */
+      canStart = !!res.may_start;
       renderList();
     } catch (err) {
       fill('#inbox-items', '<div class="alert error">'
@@ -452,6 +463,7 @@
     await loadInbox();
 
     A.qs('#inbox-items').addEventListener('click', function (ev) {
+      if (ev.target.closest('[data-start]')) { A.openModal('new-process-modal'); return; }
       var button = ev.target.closest('[data-i]');
       if (button) openStage(items[Number(button.dataset.i)]);
     });
@@ -477,9 +489,6 @@
                                   + '?stage=' + current.stage_number);
         renderAttachments(res.data);
       } catch (err) { A.toast(err.message, 'error'); }
-    });
-    A.qs('#btn-new-process').addEventListener('click', function () {
-      A.openModal('new-process-modal');
     });
     A.qs('#np-start').addEventListener('click', startProcess);
     /* The well picker in the dialog is the same autocomplete the forms use,
