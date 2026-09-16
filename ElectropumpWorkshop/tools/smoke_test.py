@@ -591,18 +591,35 @@ def main():
           str(back["dynamic"].get("extra_date")))
     c.delete(f"/api/records/{dated['id']}?hard=1")
 
-    print("\n— فرایند: تعریف و مسیر —")
+    print("\n— نقشه فرایند: گره‌ها و پیکان‌ها —")
     wf = c.get("/api/workflow/definition").get_json()["data"]
-    stages = {s["stage_number"]: s for s in wf["workflow"]["stages"]}
-    check("شش مرحله تعریف شده", len(stages) == 6, str(sorted(stages)))
-    check("مرحله ۱ فقط برای کشیدن", stages[1]["applies_to"] == "pull")
-    check("مرحله ۳ برای هر دو عملیات", stages[3]["applies_to"] == "both")
-    check("مرحله ۱ فقط «علت خرابی» را دارد",
-          [i["code"] for i in stages[1]["items"] if i["kind"] == "field"]
-          == ["failure"])
-    check("مرحله ۵ سه بخش دارد", len(stages[5]["items"]) == 3)
+    nodes = {n["key"]: n for n in wf["graph"]["nodes"]}
+    edges = wf["graph"]["edges"]
+    check("نقشه گره شروع دارد",
+          any(n["node_type"] == "start" for n in nodes.values()),
+          str(sorted(nodes)))
+    check("نقشه گره پایان دارد",
+          any(n["node_type"] == "end" for n in nodes.values()))
+    check("نقشه گره تصمیم دارد",
+          any(n["node_type"] == "decision" for n in nodes.values()))
+    check("نقشه گره اقدام (ثبت رکورد) دارد",
+          any((n.get("config") or {}).get("action") == "create_record"
+              for n in nodes.values()))
+    check("پیکان‌ها کشیده شده‌اند", len(edges) >= 10, str(len(edges)))
+    branch = [e for e in edges if (e.get("condition") or {}).get("field")
+              == "operation_kind"]
+    check("مسیر بر اساس شرط روی پیکان انتخاب می‌شود", len(branch) >= 2,
+          str(len(branch)))
+    check("هر گره مختصات و اندازه دارد",
+          all(n.get("x") is not None and n.get("width") for n in nodes.values()))
     check("پالت شامل بخش‌ها و فیلدهاست",
           wf["palette"]["sections"] and wf["palette"]["fields"])
+    check("انواع گره، عملگرها و اقدام‌ها برای طراح فرستاده می‌شود",
+          len(wf["node_types"]) == 6 and wf["operators"] and wf["actions"])
+    start_node = next(n for n in nodes.values() if n["node_type"] == "start")
+    check("گره شروع، چاه و نوع عملیات را می‌پرسد",
+          {"intake", "well"} <= {i["code"] for i in start_node["items"]},
+          str([i["code"] for i in start_node["items"]]))
 
     # Real accounts, one per person, exactly as the workshop will have them.
     owners, made = {}, {}
@@ -615,16 +632,23 @@ def main():
             "first_name": first, "last_name": last})
         made[uname] = rr.get_json()["data"]
         owners[uname] = made[uname]["id"]
-    check("نقش «متولی مرحله»: کارتابل، مشاهده رکوردها و خروجی",
+    check("نقش «متولی مرحله»: کارتابل، نقشه، مشاهده رکوردها و خروجی",
           set(made["kahani"]["permissions"])
-          == {"workflow.act", "record.view", "record.export"},
+          == {"workflow.act", "workflow.map.view", "record.view",
+              "record.export"},
           str(sorted(made["kahani"]["permissions"])))
-    for number, uname in ((0, "markaz"), (1, "markaz"), (2, "bozorg"),
-                          (3, "yaghouti"), (4, "bozorg"), (5, "kahani")):
-        rr = c.put(f"/api/workflow/stages/{stages[number]['id']}",
-                   json={"assignee_id": owners[uname]})
-        if number == 0:
-            check("انتساب متولی به مرحله", rr.status_code == 200)
+
+    # Hand each node to its owner, the way the properties panel does.
+    for key, uname in (("start", "markaz"), ("center", "markaz"),
+                       ("review", "bozorg"), ("shop", "yaghouti"),
+                       ("action", "bozorg"), ("well_install", "bozorg"),
+                       ("final", "kahani")):
+        rr = c.put(f"/api/workflow/nodes/{nodes[key]['id']}", json={
+            "principals": [{"role": "assignee", "kind": "user",
+                            "user_id": owners[uname]}]})
+        if key == "start":
+            check("انتساب متولی به گره", rr.status_code == 200,
+                  str(rr.get_json().get("error")))
 
     def who(username):
         cc = app.test_client()
@@ -634,8 +658,23 @@ def main():
     markaz, bozorg, yaghouti, kahani = (who("markaz"), who("bozorg"),
                                         who("yaghouti"), who("kahani"))
 
+    def start_run(kind, well, client=None):
+        rr = (client or markaz).post("/api/workflow/instances", json={
+            "data": {"operation_kind": kind, "well": well}})
+        return rr
+
+    def send(client, iid, key, data, note=None):
+        return client.post(f"/api/workflow/instances/{iid}/submit",
+                           json={"node_key": key, "data": data, "note": note})
+
+    def detail(client, iid, key=None):
+        url = f"/api/workflow/instances/{iid}"
+        if key:
+            url += "?node=" + quote(key)
+        return client.get(url).get_json()["data"]
+
     print("\n— فرایند: متولی بدون مجوز ثبت رکورد کار می‌کند —")
-    # A stage owner must be able to run their stage with workflow.act alone.
+    # A stage owner must be able to run their phase with workflow.act alone.
     # Needing record.create for it would hand them the whole data-entry tab.
     for label, path in (("صفحه کارتابل", "/inbox"),
                         ("ساختار فرم", "/api/form-builder"),
@@ -645,7 +684,8 @@ def main():
         check(f"متولی به {label} دسترسی دارد",
               markaz.get(path).status_code == 200, path)
     for label, path in (("جدول رکوردها", "/records"),
-                        ("مستندات", "/documents")):
+                        ("مستندات", "/documents"),
+                        ("نقشه فرایند", "/workflow")):
         check(f"متولی به {label} دسترسی دارد",
               markaz.get(path).status_code == 200, path)
     check("متولی خروجی اکسل می‌گیرد",
@@ -653,165 +693,163 @@ def main():
     check("متولی خروجی CSV هم می‌گیرد",
           markaz.get("/api/export.csv").status_code == 200)
     for label, path in (("ثبت اطلاعات", "/entry"),
-                        ("فرم‌ساز", "/form-builder"), ("کاربران", "/users"),
-                        ("فرایندساز", "/workflow")):
+                        ("فرم‌ساز", "/form-builder"), ("کاربران", "/users")):
         check(f"متولی به {label} دسترسی ندارد",
               markaz.get(path).status_code == 403, path)
+    check("متولی نمی‌تواند نقشه را تغییر دهد",
+          markaz.put(f"/api/workflow/nodes/{nodes['final']['id']}",
+                     json={"title": "دستکاری"}).status_code == 403)
     check("متولی نمی‌تواند رکورد را ویرایش کند",
           markaz.put("/api/records/1", json={"description": "x"}).status_code == 403)
     check("متولی نمی‌تواند رکورد مستقیم ثبت کند",
           markaz.post("/api/records", json={"well": "امام رضا 11"}).status_code == 403)
-    check("متولی مرحله صفر می‌تواند فرایند را شروع کند",
-          markaz.post("/api/workflow/instances",
-                      json={"operation_kind": "کشیدن",
-                            "well": "امام رضا 11"}).status_code == 200)
+
+    rr = start_run("کشیدن", "امام رضا 11")
+    check("متولی گره شروع می‌تواند فرایند را آغاز کند", rr.status_code == 200,
+          str(rr.get_json().get("error")))
     check("و کارتابلش دکمه شروع را نشان می‌دهد",
           markaz.get("/api/workflow/inbox").get_json().get("may_start") is True)
-    # Starting is step zero's job; the rest of the chain receives work.
-    rr = kahani.post("/api/workflow/instances",
-                     json={"operation_kind": "کشیدن", "well": "امام رضا 11"})
-    check("متولی مرحله‌های بعد نمی‌تواند فرایند شروع کند", rr.status_code == 422,
+    rr = start_run("کشیدن", "امام رضا 11", client=kahani)
+    check("متولی گره‌های بعد نمی‌تواند فرایند شروع کند", rr.status_code == 422,
           str(rr.get_json().get("error"))[:60])
     check("و دکمه شروع برایش پنهان است",
           kahani.get("/api/workflow/inbox").get_json().get("may_start") is False)
-    rr = markaz.post("/api/workflow/instances", json={"operation_kind": "کشیدن"})
+    rr = markaz.post("/api/workflow/instances",
+                     json={"data": {"operation_kind": "کشیدن"}})
     check("بدون نام چاه فرایند شروع نمی‌شود", rr.status_code == 422,
           str(rr.get_json().get("error"))[:50])
-    rr = markaz.post("/api/workflow/instances",
-                     json={"operation_kind": "کشیدن", "well": "چاه ناموجود ۹۹"})
+    rr = start_run("کشیدن", "چاه ناموجود ۹۹")
     check("چاه خارج از فهرست پذیرفته نمی‌شود", rr.status_code == 422)
+    sf = markaz.get("/api/workflow/start-form").get_json()["data"]
+    check("فرم شروع از روی گره شروع ساخته می‌شود",
+          {"operation_kind", "well"}
+          <= {f["field_name"] for s in sf["sections"] for f in s["fields"]},
+          str([f["field_name"] for s in sf["sections"] for f in s["fields"]]))
 
-    print("\n— فرایند: مسیر «نصب» از مرحله ۳ آغاز می‌شود —")
-    iid = markaz.post("/api/workflow/instances",
-                      json={"operation_kind": "نصب", "well": "کورده 1"}
-                      ).get_json()["data"]["id"]
-    det = yaghouti.get(f"/api/workflow/instances/{iid}").get_json()["data"]
-    check("نصب مستقیم به مرحله ۳ می‌رود", det["current_stage"] == 3,
-          str(det["current_stage"]))
-    check("مرحله‌های ۱ و ۲ طی نمی‌شوند",
-          [e["status"] for e in det["entries"]
-           if e["stage_number"] in (1, 2)] == ["skipped", "skipped"])
+    print("\n— فرایند: شرط روی پیکان مسیر «نصب» را می‌برد —")
+    iid = start_run("نصب", "کورده 1").get_json()["data"]["id"]
+    det = detail(yaghouti, iid)
+    live = {n["key"]: n for n in det["map"]["nodes"]}
+    check("نصب مستقیم به کارگاه می‌رود", det["current_node"] == "shop",
+          str(det["current_node"]))
+    check("گره‌های مسیر کشیدن طی نمی‌شوند",
+          live["center"]["state"] == "skipped"
+          and live["review"]["state"] == "skipped",
+          f"{live['center']['state']} / {live['review']['state']}")
     check("در نصب، «علت خرابی» پرسیده نمی‌شود",
           "failure" not in [f["field_name"] for s in det["form"]["sections"]
                             for f in s["fields"]])
     check("در نصب، «نصب مرتبط با…» پرسیده می‌شود",
           "install_relates_to" in [f["field_name"] for s in det["form"]["sections"]
                                    for f in s["fields"]])
+    check("در نصب، «اطلاعات چاه و نصب» در مسیر هست",
+          live["well_install"]["reachable"] is True)
 
-    print("\n— فرایند: مرحله‌ها به هم وابسته نیستند —")
-    pid = markaz.post("/api/workflow/instances",
-                      json={"operation_kind": "کشیدن", "well": "امام رضا 11"}
-                      ).get_json()["data"]["id"]
+    print("\n— فرایند: فازها به هم وابسته نیستند —")
+    pid = start_run("کشیدن", "امام رضا 11").get_json()["data"]["id"]
     box = yaghouti.get("/api/workflow/inbox").get_json()["data"]
-    check("مرحله ۳ بی‌درنگ در کارتابل می‌آید",
-          any(b["id"] == pid and b["stage_number"] == 3 for b in box))
-    check("بزرگمهر هر دو مرحله ۲ و ۴ را می‌بیند",
-          {b["stage_number"] for b in bozorg.get("/api/workflow/inbox")
-           .get_json()["data"] if b["id"] == pid} == {2, 4})
-    det = yaghouti.get(f"/api/workflow/instances/{pid}?stage=3").get_json()["data"]
-    check("هشدار مرحله‌های ثبت‌نشده داده می‌شود",
-          {w["stage_number"] for w in det["waiting_on"]} == {1, 2},
+    check("کارگاه بی‌درنگ در کارتابل می‌آید",
+          any(b["id"] == pid and b["node_key"] == "shop" for b in box))
+    check("بزرگمهر هر سه گره خودش را می‌بیند",
+          {b["node_key"] for b in bozorg.get("/api/workflow/inbox")
+           .get_json()["data"] if b["id"] == pid} >= {"review", "action"})
+    det = detail(yaghouti, pid, "shop")
+    check("هشدار فازهای ثبت‌نشده داده می‌شود",
+          {w["node_key"] for w in det["waiting_on"]} == {"center", "review"},
           str(det["waiting_on"]))
-    check("ولی مرحله ۳ مسدود نیست", det["may_act"] is True)
-    rr = yaghouti.post(f"/api/workflow/instances/{pid}/submit", json={
-        "stage_number": 3,
-        "data": {"op_jdate": "1405/06/22", "well": "امام رضا 11",
-                 "center": "سوران", "operation": "کشیدن",
-                 "motor_curr": "73", "pump_curr": "384"}})
-    check("مرحله ۳ پیش از مرحله ۲ ثبت می‌شود", rr.status_code == 200,
+    check("ولی کارگاه مسدود نیست", det["may_act"] is True)
+    rr = send(yaghouti, pid, "shop",
+              {"op_jdate": "1405/06/22", "well": "امام رضا 11",
+               "center": "سوران", "operation": "کشیدن",
+               "motor_curr": "73", "pump_curr": "384"})
+    check("کارگاه پیش از فازهای قبل ثبت می‌شود", rr.status_code == 200,
           str(rr.get_json().get("error")))
-    det = markaz.get(f"/api/workflow/instances/{pid}?stage=1").get_json()["data"]
-    check("«اطلاعات پایه» دوباره پرسیده نمی‌شود",
-          [s["code"] for s in det["form"]["sections"]] == ["field_failure"],
-          str([s["code"] for s in det["form"]["sections"]]))
+    det = detail(markaz, pid, "center")
+    asked = {f["field_name"] for s in det["form"]["sections"] for f in s["fields"]}
+    check("«اطلاعات پایه» دوباره پرسیده نمی‌شود", "op_jdate" not in asked,
+          str(sorted(asked)))
+    check("ولی «علت خرابی» هنوز پرسیده می‌شود", "failure" in asked)
     rr = kahani.post(f"/api/workflow/instances/{pid}/submit",
-                     json={"stage_number": 3, "data": {}})
-    check("متولی دیگری نمی‌تواند مرحله را ثبت کند", rr.status_code == 422)
+                     json={"node_key": "shop", "data": {}})
+    check("فاز دیگری را نمی‌توان به‌جای متولی ثبت کرد", rr.status_code == 422,
+          str(rr.get_json().get("error"))[:60])
 
-    print("\n— فرایند: دیدن کار مرحله‌های قبل و قفل بودن چاه —")
-    seen = markaz.post("/api/workflow/instances",
-                       json={"operation_kind": "کشیدن", "well": "امام رضا 11"}
-                       ).get_json()["data"]["id"]
-    det = markaz.get(f"/api/workflow/instances/{seen}?stage=1").get_json()["data"]
+    print("\n— فرایند: دیدن کار فازهای قبل و قفل بودن چاه —")
+    seen = start_run("کشیدن", "امام رضا 11").get_json()["data"]["id"]
+    det = detail(markaz, seen, "center")
     wells = [f for s in det["form"]["sections"] for f in s["fields"]
              if f["field_name"] == "well"]
-    check("چاه پس از مرحله صفر دوباره جستجو نمی‌شود",
+    check("چاه پس از گره شروع دوباره جستجو نمی‌شود",
           bool(wells) and wells[0].get("read_only") is True,
           str(wells and wells[0].get("read_only")))
     check("و مقدارش نمایش داده می‌شود",
           wells[0].get("read_only_value") == "امام رضا 11",
           str(wells[0].get("read_only_value")))
-    markaz.post(f"/api/workflow/instances/{seen}/submit", json={
-        "stage_number": 1, "data": {"op_jdate": "1405/06/22", "center": "سوران",
-                                    "failure": ["شولات", "اهم دار"]}})
-    det = bozorg.get(f"/api/workflow/instances/{seen}?stage=2").get_json()["data"]
+    send(markaz, seen, "center",
+         {"op_jdate": "1405/06/22", "center": "سوران",
+          "failure": ["شولات", "اهم دار"]})
+    det = detail(bozorg, seen, "review")
     summary = det.get("summary") or []
-    check("مرحله ۲ کار مرحله ۱ را می‌بیند",
-          any(b["stage_number"] == 1 for b in summary), str(summary))
+    check("فاز بعدی کار فاز قبل را می‌بیند",
+          any(b["node_key"] == "center" for b in summary), str(summary))
     values = {v["label"]: v["value"] for b in summary for v in b["values"]}
     check("علت خرابی ثبت‌شده را می‌بیند",
           values.get("علت خرابی") == "شولات، اهم دار", str(values))
-    check("مرحله‌ی خودش در خلاصه تکرار نمی‌شود",
-          all(b["stage_number"] != 2 for b in summary))
+    check("فاز خودش در خلاصه تکرار نمی‌شود",
+          all(b["node_key"] != "review" for b in summary))
     check("خلاصه فقط خواندنی است (فیلد نیست)",
           all("field_name" not in v for b in summary for v in b["values"]))
     # The page can rebuild the same summary from the entries alone, so a
-    # browser running ahead of its server still shows the earlier stages.
-    entries = {e["stage_number"]: e for e in det["entries"]}
-    check("payload هر مرحله برای بازسازی خلاصه در دسترس است",
-          entries[1]["status"] == "submitted"
-          and entries[1]["payload"].get("failure") == ["شولات", "اهم دار"],
-          str(entries[1].get("payload"))[:70])
-    check("عنوان و ثبت‌کننده‌ی مرحله هم همراه payload می‌آید",
-          bool(entries[1].get("title")) and bool(entries[1].get("user_name")),
-          f"{entries[1].get('title')} / {entries[1].get('user_name')}")
-    bozorg.post(f"/api/workflow/instances/{seen}/submit", json={
-        "stage_number": 2, "data": {"review_decision": "نیاز به کشیدن دارد"}})
-    det = yaghouti.get(f"/api/workflow/instances/{seen}?stage=3").get_json()["data"]
-    stages_seen = {b["stage_number"] for b in det.get("summary") or []}
-    check("مرحله ۳ کار مرحله‌های ۱ و ۲ را می‌بیند",
-          {1, 2} <= stages_seen, str(sorted(stages_seen)))
+    # browser running ahead of its server still shows the earlier phases.
+    entries = {e["node_key"]: e for e in det["entries"]
+               if e["task_kind"] == "fill"}
+    check("payload هر فاز برای بازسازی خلاصه در دسترس است",
+          entries["center"]["status"] == "submitted"
+          and entries["center"]["payload"].get("failure") == ["شولات", "اهم دار"],
+          str(entries["center"].get("payload"))[:70])
+    check("عنوان و ثبت‌کننده‌ی فاز هم همراه payload می‌آید",
+          bool(entries["center"].get("title"))
+          and bool(entries["center"].get("user_name")),
+          f"{entries['center'].get('title')} / {entries['center'].get('user_name')}")
+    send(bozorg, seen, "review", {"review_decision": "نیاز به کشیدن دارد"})
+    det = detail(yaghouti, seen, "shop")
+    keys_seen = {b["node_key"] for b in det.get("summary") or []}
+    check("کارگاه کار دو فاز قبل را می‌بیند",
+          {"center", "review"} <= keys_seen, str(sorted(keys_seen)))
 
-    print("\n— فرایند: قواعد مرحله ۴ —")
-    def run_to_stage4(action, pump_now=None):
-        i = markaz.post("/api/workflow/instances",
-                        json={"operation_kind": "کشیدن", "well": "امام رضا 11"}
-                        ).get_json()["data"]["id"]
-        markaz.post(f"/api/workflow/instances/{i}/submit", json={
-            "stage_number": 1, "data": {"op_jdate": "1405/06/22",
-            "well": "امام رضا 11", "center": "سوران", "failure": ["شولات"]}})
-        bozorg.post(f"/api/workflow/instances/{i}/submit", json={
-            "stage_number": 2, "data": {"review_decision": "نیاز به کشیدن دارد"}})
-        yaghouti.post(f"/api/workflow/instances/{i}/submit", json={
-            "stage_number": 3, "data": {"operation": "کشیدن",
-            "motor_curr": "73", "pump_curr": "384"}})
+    print("\n— فرایند: شرط دوگانه، «اطلاعات چاه و نصب» را باز یا بسته می‌کند —")
+    def run_to_action(action, pump_now=None):
+        i = start_run("کشیدن", "امام رضا 11").get_json()["data"]["id"]
+        send(markaz, i, "center", {"op_jdate": "1405/06/22",
+                                   "well": "امام رضا 11", "center": "سوران",
+                                   "failure": ["شولات"]})
+        send(bozorg, i, "review", {"review_decision": "نیاز به کشیدن دارد"})
+        send(yaghouti, i, "shop", {"operation": "کشیدن", "motor_curr": "73",
+                                   "pump_curr": "384"})
         data = {"required_action": action}
         if pump_now:
             data["pump_type_now"] = pump_now
-        bozorg.post(f"/api/workflow/instances/{i}/submit",
-                    json={"stage_number": 4, "data": data})
-        d = bozorg.get(f"/api/workflow/instances/{i}").get_json()["data"]
-        return i, next(e for e in d["entries"] if e["stage_number"] == 4)
+        send(bozorg, i, "action", data)
+        d = detail(bozorg, i)
+        state = {n["key"]: n for n in d["map"]["nodes"]}["well_install"]
+        return i, state
 
-    _i, e4 = run_to_stage4("ویدئومتری")
-    check("«ویدئومتری» فرم نصب را بایگانی می‌کند", e4["status"] == "archived",
-          e4["status"])
-    _i, e4 = run_to_stage4("بهسازی")
-    check("«بهسازی» هم بایگانی می‌کند", e4["status"] == "archived")
-    _i, e4 = run_to_stage4("نصب الکتروپمپ جدید", "خیر")
-    check("«تیپ در این مرحله نه» یعنی موکول به بعد",
-          e4["status"] == "deferred", e4["status"])
-    last, e4 = run_to_stage4("نصب الکتروپمپ جدید", "بله")
-    check("«تیپ در این مرحله بله» یعنی فرم پر می‌شود",
-          e4["status"] == "submitted", e4["status"])
-    rr = bozorg.post(f"/api/workflow/instances/{last}/submit",
-                     json={"stage_number": 4, "data": {}})
-    check("بدون «اقدام مورد نیاز» مرحله ۴ ثبت نمی‌شود",
-          rr.status_code == 422 or rr.get_json().get("ok"))
+    _i, st = run_to_action("ویدئومتری")
+    check("«ویدئومتری» از فرم نصب عبور می‌کند", st["state"] == "skipped",
+          st["state"])
+    _i, st = run_to_action("بهسازی")
+    check("«بهسازی» هم از آن عبور می‌کند", st["state"] == "skipped")
+    _i, st = run_to_action("نصب الکتروپمپ جدید", "خیر")
+    check("«تیپ در این مرحله نه» یعنی عبور", st["state"] == "skipped",
+          st["state"])
+    last, st = run_to_action("نصب الکتروپمپ جدید", "بله")
+    check("«تیپ در این مرحله بله» یعنی فرم نصب باز می‌شود",
+          st["reachable"] is True and st["state"] != "skipped", st["state"])
+    send(bozorg, last, "well_install", {"well_depth": 150})
 
     print("\n— فرایند: ثبت نهایی و مستندات —")
-    det = kahani.get(f"/api/workflow/instances/{last}?stage=5").get_json()["data"]
-    check("مرحله ۵ در کشیدن سه بخش دارد",
+    det = detail(kahani, last, "final")
+    check("فاز پایانی در کشیدن سه بخش دارد",
           len(det["form"]["sections"]) == 3,
           str([s["code"] for s in det["form"]["sections"]]))
     import io as _io
@@ -827,11 +865,10 @@ def main():
     check("فایل اجرایی رد می‌شود", bad.status_code == 415)
     check("دانلود مستند", kahani.get(f"/api/workflow/attachments/{doc_id}")
           .status_code == 200)
-    rr = kahani.post(f"/api/workflow/instances/{last}/submit", json={
-        "stage_number": 5, "data": {"test_flow": 30, "starter": "سافت",
-                                    "workshop_opinion": ["شولاتی"]}})
+    rr = send(kahani, last, "final",
+              {"test_flow": 30, "starter": "سافت", "workshop_opinion": ["شولاتی"]})
     body_ = rr.get_json()
-    check("با ثبت مرحله ۵ رکورد ساخته می‌شود",
+    check("با ثبت فاز پایانی، گره اقدام رکورد می‌سازد",
           bool(body_.get("data", {}).get("record_id")), str(body_.get("error")))
     new_id = body_["data"]["record_id"]
     rec = c.get(f"/api/records/{new_id}").get_json()["data"]
@@ -839,9 +876,179 @@ def main():
           rec["dynamic"].get("operation_kind") == "کشیدن")
     check("رکورد علت خرابی را دارد", rec["failure"] == ["شولات"])
     check("رکورد نام چاه را دارد", rec["well"] == "امام رضا 11", str(rec["well"]))
-    check("فرایند تکمیل‌شده علامت خورد",
-          c.get(f"/api/workflow/instances/{last}").get_json()["data"]["status"]
-          == "completed")
+    done = c.get(f"/api/workflow/instances/{last}").get_json()["data"]
+    check("فرایند تکمیل‌شده علامت خورد", done["status"] == "completed")
+    endn = {n["key"]: n for n in done["map"]["nodes"]}
+    check("گره پایان سبز می‌شود", endn["end"]["status"] == "submitted",
+          endn["end"]["status"])
+    actions = [e for e in done["events"] if e["action"] == "action"]
+    check("سابقه، اجرای اقدام را ثبت کرده", len(actions) == 1, str(len(actions)))
+    check("سابقه شروع و تکمیل را هم دارد",
+          {"started", "completed"} <= {e["action"] for e in done["events"]})
+
+    print("\n— فرایند: تأیید چندنفره، رد و بازگشت —")
+    # An approval node the admin adds now, with two approvers and a quorum of
+    # two — nothing in the engine knows who they are or what they approve.
+    ap = c.post("/api/workflow/nodes", json={
+        "node_type": "approval", "title": "تأیید نهایی",
+        "x": 1360, "y": 430}).get_json()["data"]
+    c.put(f"/api/workflow/nodes/{ap['id']}", json={
+        "config": {"approval_mode": "quorum", "approval_quorum": 2},
+        "principals": [{"role": "approver", "kind": "user",
+                        "user_id": owners["bozorg"]},
+                       {"role": "approver", "kind": "user",
+                        "user_id": owners["kahani"]}]})
+    e_in = c.post("/api/workflow/edges", json={
+        "source_id": nodes["shop"]["id"], "target_id": ap["id"]}).get_json()["data"]
+    e_ok = c.post("/api/workflow/edges", json={
+        "source_id": ap["id"], "target_id": nodes["final"]["id"]}).get_json()["data"]
+    c.put(f"/api/workflow/edges/{e_ok['id']}",
+          json={"kind": "approved", "label": "تأیید شد"})
+    e_no = c.post("/api/workflow/edges", json={
+        "source_id": ap["id"], "target_id": nodes["shop"]["id"]}).get_json()["data"]
+    c.put(f"/api/workflow/edges/{e_no['id']}",
+          json={"kind": "rejected", "label": "اصلاح شود"})
+    check("افزودن گره تأیید و سه پیکان", bool(ap["id"]) and bool(e_in["id"]))
+
+    aid = start_run("کشیدن", "امام رضا 11").get_json()["data"]["id"]
+    box = [b for b in bozorg.get("/api/workflow/inbox").get_json()["data"]
+           if b["id"] == aid]
+    check("تأییدی که نوبتش نرسیده در کارتابل نمی‌آید",
+          all(b["node_key"] != ap["key"] for b in box), str(box))
+    send(yaghouti, aid, "shop", {"op_jdate": "1405/06/22",
+                                 "well": "امام رضا 11", "center": "سوران",
+                                 "operation": "کشیدن", "motor_curr": "73",
+                                 "pump_curr": "384"})
+    box = [b for b in bozorg.get("/api/workflow/inbox").get_json()["data"]
+           if b["id"] == aid and b["node_key"] == ap["key"]]
+    check("پس از ثبت فاز، تأیید در کارتابل می‌آید", len(box) == 1, str(box))
+    check("و به‌عنوان کار «تأیید» شناخته می‌شود",
+          box and box[0]["task_kind"] == "approve")
+    det = detail(bozorg, aid, ap["key"])
+    check("تأییدکننده داده‌های ثبت‌شده را می‌بیند",
+          any(b["node_key"] == "shop" for b in det.get("summary") or []))
+    check("و اجازه تأیید دارد", det["may_approve"] is True)
+    check("و گره تأیید، منتظر تصمیم نشان داده می‌شود",
+          {n["key"]: n for n in det["map"]["nodes"]}[ap["key"]]["state"]
+          == "awaiting_approval",
+          str({n["key"]: n for n in det["map"]["nodes"]}[ap["key"]]["state"]))
+    rr = bozorg.post(f"/api/workflow/instances/{aid}/decide",
+                     json={"node_key": ap["key"], "approved": False})
+    check("رد بدون دلیل پذیرفته نمی‌شود", rr.status_code == 422,
+          str(rr.get_json().get("error"))[:40])
+    rr = yaghouti.post(f"/api/workflow/instances/{aid}/decide",
+                       json={"node_key": ap["key"], "approved": True})
+    check("کسی که تأییدکننده نیست تأیید نمی‌کند", rr.status_code == 422)
+    bozorg.post(f"/api/workflow/instances/{aid}/decide",
+                json={"node_key": ap["key"], "approved": True,
+                      "comment": "موافقم"})
+    det = detail(bozorg, aid, ap["key"])
+    check("با یک تأیید از دو تأیید لازم، هنوز باز است",
+          {n["key"]: n for n in det["map"]["nodes"]}[ap["key"]]["state"]
+          == "awaiting_approval",
+          str({n["key"]: n for n in det["map"]["nodes"]}[ap["key"]]["state"]))
+    kahani.post(f"/api/workflow/instances/{aid}/decide",
+                json={"node_key": ap["key"], "approved": True})
+    det = detail(kahani, aid, "final")
+    check("با رسیدن به حد نصاب، مسیر تأیید باز می‌شود",
+          {n["key"]: n for n in det["map"]["nodes"]}[ap["key"]]["state"]
+          == "approved")
+    check("و فاز پس از تأیید در دسترس می‌آید",
+          {n["key"]: n for n in det["map"]["nodes"]}["final"]["reachable"] is True)
+    check("سابقه هر دو تأیید را دارد",
+          len([e for e in det["events"] if e["action"] == "approved"]) == 2)
+
+    rid = start_run("کشیدن", "امام رضا 11").get_json()["data"]["id"]
+    send(yaghouti, rid, "shop", {"op_jdate": "1405/06/22",
+                                 "well": "امام رضا 11", "center": "سوران",
+                                 "operation": "کشیدن", "motor_curr": "73",
+                                 "pump_curr": "384"})
+    bozorg.post(f"/api/workflow/instances/{rid}/decide",
+                json={"node_key": ap["key"], "approved": False,
+                      "comment": "پلاک نمی‌خواند"})
+    kahani.post(f"/api/workflow/instances/{rid}/decide",
+                json={"node_key": ap["key"], "approved": False,
+                      "comment": "موافق ردم"})
+    det = detail(yaghouti, rid, "shop")
+    check("رد، فرایند را به فاز قبل برمی‌گرداند",
+          det["status"] == "returned", det["status"])
+    check("و آن فاز دوباره باز می‌شود",
+          {n["key"]: n for n in det["map"]["nodes"]}["shop"]["status"]
+          == "pending")
+    back = [e for e in det["events"] if e["action"] == "reopened"]
+    check("سابقه بازگشت و دلیلش را نگه می‌دارد",
+          bool(back) and "پلاک" in (back[0]["comment"] or ""),
+          str(back[:1]))
+
+    print("\n— فرایند: نسخه‌ها و ایمنی نقشه —")
+    ver = c.post(f"/api/workflow/templates/{wf['workflow']['id']}/version",
+                 json={}).get_json()["data"]
+    check("ساخت نسخه جدید از نقشه", ver["version"] == 2, str(ver["version"]))
+    check("نسخه جدید همه‌ی گره‌ها را دارد",
+          ver["node_count"] == len(nodes) + 1, str(ver["node_count"]))
+    check("نسخه جدید پیش‌فرض فعال نیست", ver["is_active"] is False)
+    running = detail(kahani, aid)
+    check("فرایند در جریان روی نسخه‌ی خودش می‌ماند",
+          running["template_version"] == 1, str(running["template_version"]))
+    # Redrawing must not move a run that is already going.
+    rr = c.delete(f"/api/workflow/nodes/{nodes['review']['id']}")
+    check("گره‌ای که سابقه دارد حذف نمی‌شود، از نقشه برداشته می‌شود",
+          rr.status_code == 200 and "سابقه" in (rr.get_json().get("message") or ""),
+          str(rr.get_json().get("message"))[:40])
+    still = detail(bozorg, seen)
+    check("و در فرایندهای قبلی همچنان دیده می‌شود",
+          any(n["key"] == "review" for n in still["map"]["nodes"]))
+    check("با عنوان و داده‌های خودش",
+          any(b["node_key"] == "review" for b in still.get("summary") or []))
+    rr = c.delete(f"/api/workflow/templates/{wf['workflow']['id']}")
+    check("فرایندی که اجرا داشته حذف نمی‌شود، بایگانی می‌شود",
+          rr.status_code == 200
+          and (rr.get_json().get("data") or {}).get("status") == "archived",
+          str((rr.get_json().get("data") or {}).get("status")))
+    c.put(f"/api/workflow/templates/{wf['workflow']['id']}",
+          json={"status": "published", "is_active": True})
+
+    print("\n— فرایند: یک فرایند کاملاً تازه، بدون یک خط کد —")
+    fresh_wf = c.post("/api/workflow/templates", json={
+        "name": "درخواست مرخصی", "code": "leave"}).get_json()["data"]
+    fresh = c.get(f"/api/workflow/definition?workflow_id={fresh_wf['id']}"
+                  ).get_json()["data"]
+    fnodes = {n["key"]: n for n in fresh["graph"]["nodes"]}
+    check("فرایند تازه با گره شروع و پایان ساخته می‌شود",
+          {"start", "end"} <= set(fnodes), str(sorted(fnodes)))
+    mid = c.post("/api/workflow/nodes", json={
+        "workflow_id": fresh_wf["id"], "node_type": "phase",
+        "title": "بررسی کارگزینی", "x": 300, "y": 200}).get_json()["data"]
+    c.post("/api/workflow/edges", json={"source_id": fnodes["start"]["id"],
+                                        "target_id": mid["id"]})
+    c.post("/api/workflow/edges", json={"source_id": mid["id"],
+                                        "target_id": fnodes["end"]["id"]})
+    c.put(f"/api/workflow/nodes/{fnodes['start']['id']}", json={
+        "principals": [{"role": "assignee", "kind": "user",
+                        "user_id": owners["kahani"]}]})
+    c.put(f"/api/workflow/nodes/{mid['id']}", json={
+        "principals": [{"role": "assignee", "kind": "user",
+                        "user_id": owners["bozorg"]}]})
+    c.put(f"/api/workflow/templates/{fresh_wf['id']}",
+          json={"status": "published", "is_active": True})
+    opts = kahani.get("/api/workflow/inbox").get_json().get("start_options") or []
+    check("فرایند تازه در فهرست «شروع فرایند» می‌آید",
+          any(o["code"] == "leave" for o in opts), str(opts))
+    rr = kahani.post("/api/workflow/instances",
+                     json={"workflow_code": "leave", "data": {}})
+    check("و بدون هیچ تغییری در کد اجرا می‌شود", rr.status_code == 200,
+          str(rr.get_json().get("error")))
+    lid = rr.get_json()["data"]["id"]
+    ldet = detail(bozorg, lid)
+    check("فرایند تازه هیچ چاهی لازم ندارد", ldet["well"] is None,
+          str(ldet["well"]))
+    check("و کار به متولی گره میانی می‌رسد", ldet["current_node"] == mid["key"],
+          str(ldet["current_node"]))
+    send(bozorg, lid, mid["key"], {})
+    ldet = detail(bozorg, lid)
+    check("و تا پایان می‌رود", ldet["status"] == "completed", ldet["status"])
+    check("بدون ساختن رکورد — چون گره اقدامی ندارد",
+          ldet["record_id"] is None, str(ldet["record_id"]))
 
     print("\n— فرایند: مرکز مستندات —")
     listing = kahani.get("/api/workflow/attachments").get_json()
@@ -854,7 +1061,7 @@ def main():
         check("فرایند و چاه مستند مشخص است",
               bool(one.get("instance_id")) and bool(one.get("well")),
               f"{one.get('instance_id')} / {one.get('well')}")
-        check("مرحله‌ی بارگذاری مشخص است", one.get("stage_title") is not None,
+        check("فاز بارگذاری مشخص است", one.get("stage_title") is not None,
               str(one.get("stage_title")))
         check("دانلود از مرکز مستندات کار می‌کند",
               kahani.get(one["url"]).status_code == 200)
@@ -877,9 +1084,9 @@ def main():
     with app.app_context():
         from app.models import Well
         from app.extensions import db as _db
-        fresh = Well(name="چاه بدون سابقه", is_active=True, is_verified=True)
-        _db.session.add(fresh); _db.session.commit()
-        fresh_id = fresh.id
+        fresh_well = Well(name="چاه بدون سابقه", is_active=True, is_verified=True)
+        _db.session.add(fresh_well); _db.session.commit()
+        fresh_id = fresh_well.id
     empty = c.get(f"/api/workflow/previous?well_id={fresh_id}").get_json()["data"]
     check("چاه بدون سابقه مقادیر قبلی ندارد", not (empty.get("values") or {}),
           str(empty))
@@ -899,7 +1106,6 @@ def main():
     check("گزینه قفل‌شده غیرفعال نمی‌شود", rr.status_code == 409)
     rr = c.put(f"/api/lookups/item/{locked.id}", json={"label": "جمع‌آوری چاه"})
     check("ولی برچسبش قابل تغییر است", rr.status_code == 200)
-
     print("\n— ترتیب تب‌ها —")
     check("صفحه اصلی، ثبت اطلاعات است",
           b"page-mode" in c.get("/", follow_redirects=True).data)

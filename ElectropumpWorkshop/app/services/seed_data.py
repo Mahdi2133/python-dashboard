@@ -544,55 +544,133 @@ FORM_SECTIONS = [
 # ``items`` entries are (kind, code, applies_to, optional).
 WORKFLOW_CODE = "main"
 
-WORKFLOW_STAGES = [
+# ── the starting process map ─────────────────────────────────────────────────
+# One example of a workflow, written as data. Nothing in the engine knows any
+# of these names: an admin may rename every node, redraw every arrow, change
+# every condition or delete the whole thing and draw a different process, and
+# the code does not change. This is only what a fresh install opens with.
+#
+# ``legacy_stage`` adopts the row an older release wrote for that stage, so an
+# existing installation keeps its stage owners, its entries and its documents
+# instead of getting a second copy of the process.
+WORKFLOW_NODES = [
     {
-        "stage_number": 0, "title": "شروع فرایند", "applies_to": "both",
+        "key": "start", "type": "start", "legacy_stage": 0,
+        "stage_number": 0, "title": "شروع فرایند", "icon": "🚦",
+        "x": 40, "y": 220, "width": 190, "height": 96,
         "hint": "متولی شروع فرایند",
-        "description": "تعیین اینکه عملیات «کشیدن» است یا «نصب». مسیر بقیه‌ی "
-                       "مراحل از همین‌جا مشخص می‌شود.",
-        "items": [("section", "intake", "both", False)],
+        "description": "چاه و نوع عملیات در همین‌جا یک‌بار تعیین می‌شود و در "
+                       "فازهای بعد تکرار نمی‌شود.",
+        "config": {"start_permission": "workflow.start"},
+        "items": [("section", "intake", False, False),
+                  ("field", "well", False, False)],
     },
     {
-        "stage_number": 1, "title": "اعلام علت خرابی", "applies_to": "pull",
+        "key": "kind", "type": "decision",
+        "stage_number": 10, "title": "کشیدن یا نصب؟", "icon": "🔀",
+        "x": 290, "y": 225, "width": 170, "height": 86,
+        "description": "مسیر فرایند بر اساس پاسخ «نوع عملیات» انتخاب می‌شود.",
+        "items": [],
+    },
+    {
+        "key": "center", "type": "phase", "legacy_stage": 1,
+        "stage_number": 1, "title": "اعلام علت خرابی", "icon": "💧",
+        "x": 520, "y": 60, "width": 220, "height": 100,
         "hint": "مرکز آبرسانی",
-        "description": "مرکز آبرسانی علت خرابی را اعلام می‌کند. این مرحله فقط "
-                       "در عملیات «کشیدن» طی می‌شود.",
-        "items": [("section", "basic", "pull", False),
-                  ("field", "failure", "pull", False)],
+        "description": "مرکز آبرسانی علت خرابی را اعلام می‌کند.",
+        "items": [("section", "basic", False, False),
+                  ("field", "failure", False, False)],
     },
     {
-        "stage_number": 2, "title": "بررسی کارشناس", "applies_to": "pull",
-        "hint": "مهندس امین بزرگمهر",
-        "description": "بررسی گزارش مرکز و تصمیم‌گیری درباره‌ی نیاز چاه به "
-                       "کشیدن، سپس ارجاع به کارگاه.",
-        "items": [("section", "review", "pull", False)],
+        "key": "review", "type": "phase", "legacy_stage": 2,
+        "stage_number": 2, "title": "بررسی کارشناس", "icon": "🔎",
+        "x": 520, "y": 210, "width": 220, "height": 100,
+        "hint": "کارشناس بررسی",
+        "description": "بررسی گزارش مرکز و تصمیم درباره‌ی نیاز چاه به کشیدن، "
+                       "سپس ارجاع به کارگاه.",
+        "items": [("section", "review", False, False)],
     },
     {
-        "stage_number": 3, "title": "کارگاه مکانیک", "applies_to": "both",
-        "hint": "مهندس مهدی یاقوتی‌نیا",
+        "key": "shop", "type": "phase", "legacy_stage": 3,
+        "stage_number": 3, "title": "کارگاه مکانیک", "icon": "🔧",
+        "x": 800, "y": 210, "width": 220, "height": 100,
+        "hint": "کارگاه مکانیک",
         "description": "ثبت عملیات و خرابی، مشخصات موتور و پمپ، و در صورت "
                        "نیاز جدار چاه.",
-        "items": [("section", "basic", "both", False),
-                  ("section", "operation", "both", False),
-                  ("section", "motor", "both", False),
-                  ("section", "pump", "both", False),
-                  ("section", "casing", "both", True)],
+        "items": [("section", "basic", False, False),
+                  ("section", "operation", False, False),
+                  ("section", "motor", False, False),
+                  ("section", "pump", False, False),
+                  ("section", "casing", True, False)],
     },
     {
-        "stage_number": 4, "title": "اطلاعات چاه و نصب", "applies_to": "both",
-        "hint": "مهندس امین بزرگمهر",
-        "description": "تعیین اقدام مورد نیاز و — در صورت نصب الکتروپمپ جدید — "
-                       "ثبت اطلاعات چاه و نصب.",
-        "items": [("section", "action", "pull", False),
-                  ("section", "well_install", "both", False)],
+        "key": "action", "type": "phase", "legacy_stage": 4,
+        "stage_number": 4, "title": "تعیین اقدام مورد نیاز", "icon": "🎯",
+        "x": 1080, "y": 60, "width": 220, "height": 100,
+        "hint": "کارشناس اقدام",
+        "description": "اقدام مورد نیاز چیست؟ پاسخ تعیین می‌کند فرایند به "
+                       "«اطلاعات چاه و نصب» می‌رود یا از آن عبور می‌کند.",
+        "items": [("section", "action", False, False)],
     },
     {
-        "stage_number": 5, "title": "تکمیل و ثبت نهایی", "applies_to": "both",
-        "hint": "مهندس کاهانی",
-        "description": "آزمایش پمپاژ، کابل و راه‌انداز و جمع‌بندی. با ثبت این "
-                       "مرحله، رکورد در جدول رکوردها درج می‌شود.",
-        "items": [("section", "pumping_test", "pull", False),
-                  ("section", "cable_starter", "both", False),
-                  ("section", "result", "pull", False)],
+        "key": "well_install", "type": "phase",
+        "stage_number": 6, "title": "اطلاعات چاه و نصب", "icon": "📐",
+        "x": 1080, "y": 330, "width": 220, "height": 100,
+        "hint": "کارشناس نصب",
+        "description": "عمق، سطوح و اطلاعات نصب. تنها وقتی پرسیده می‌شود که "
+                       "مسیر فرایند به آن برسد.",
+        "items": [("section", "well_install", False, False)],
     },
+    {
+        "key": "final", "type": "phase", "legacy_stage": 5,
+        "stage_number": 5, "title": "تکمیل و ثبت نهایی", "icon": "🏁",
+        "x": 1360, "y": 210, "width": 220, "height": 100,
+        "hint": "کارشناس تکمیل",
+        "description": "آزمایش پمپاژ، کابل و راه‌انداز و جمع‌بندی.",
+        "items": [("section", "pumping_test", False, False),
+                  ("section", "cable_starter", False, False),
+                  ("section", "result", False, False)],
+    },
+    {
+        "key": "save", "type": "action",
+        "stage_number": 11, "title": "ثبت رکورد", "icon": "⚙",
+        "x": 1630, "y": 220, "width": 180, "height": 88,
+        "description": "داده‌های فرایند به‌صورت یک رکورد در جدول رکوردها "
+                       "ذخیره می‌شود.",
+        "config": {"action": "create_record"},
+        "items": [],
+    },
+    {
+        "key": "end", "type": "end",
+        "stage_number": 12, "title": "پایان", "icon": "🏳",
+        "x": 1860, "y": 225, "width": 150, "height": 86,
+        "description": "پایان فرایند.",
+        "items": [],
+    },
+]
+
+# ``condition`` is the JSON language in services/conditions.py; ``None`` means
+# an arrow that is always taken.
+_PULL = {"field": "operation_kind", "op": "eq", "value": "کشیدن"}
+_INSTALL = {"field": "operation_kind", "op": "eq", "value": "نصب"}
+_NEW_PUMP = {"field": "required_action", "op": "eq",
+             "value": "نصب الکتروپمپ جدید"}
+
+WORKFLOW_EDGES = [
+    ("start", "kind", None, None, 0),
+    ("kind", "center", "کشیدن", _PULL, 0),
+    ("kind", "shop", "نصب", _INSTALL, 1),
+    ("center", "review", None, None, 0),
+    ("review", "shop", None, None, 0),
+    ("shop", "action", "کشیدن", _PULL, 0),
+    ("shop", "well_install", "نصب", _INSTALL, 1),
+    ("action", "well_install", "نصب الکتروپمپ جدید و انتخاب تیپ در همین مرحله",
+     {"all": [_NEW_PUMP, {"field": "pump_type_now", "op": "eq", "value": "بله"}]}, 0),
+    ("action", "final", "اقدام دیگری لازم است؛ اطلاعات نصب بایگانی می‌شود",
+     {"not": _NEW_PUMP}, 1),
+    ("action", "final", "تیپ الکتروپمپ بعداً انتخاب می‌شود",
+     {"all": [_NEW_PUMP, {"field": "pump_type_now", "op": "eq", "value": "خیر"}]}, 2),
+    ("well_install", "final", None, None, 0),
+    ("final", "save", None, None, 0),
+    ("save", "end", None, None, 0),
 ]

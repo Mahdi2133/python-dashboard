@@ -4,8 +4,8 @@
 <div class="page-head">
   <div>
     <h2>📬 کارتابل فرایند</h2>
-    <div class="sub">مرحله‌هایی که تکمیل آن‌ها با شماست. هر مرحله مستقل است؛
-      برای پر کردن مرحله‌ی خود لازم نیست منتظر مرحله‌های قبل بمانید.</div>
+    <div class="sub">فازهایی که تکمیل یا تأیید آن‌ها با شماست. هر فاز مستقل
+      است؛ برای پر کردن فاز خود لازم نیست منتظر فازهای قبل بمانید.</div>
   </div>
   <div class="toolbar-actions">
     <button class="btn-ghost" id="btn-refresh" type="button">↻ به‌روزرسانی</button>
@@ -47,41 +47,44 @@
       <div id="wf-attachments" class="mt-1"></div>
     </div>
 
-    <div class="form-actions">
-      <button class="btn-primary" id="wf-submit" type="button">✅ ثبت و ارسال مرحله</button>
+    <div id="wf-approval" class="hidden">
+      <div class="section-title"><span>✅</span><span>تصمیم شما</span></div>
+      <div id="wf-approval-info" class="hint"></div>
+      <div class="field">
+        <label>توضیح / دلیل <span class="hint">(برای «رد» الزامی است)</span></label>
+        <textarea id="wf-comment" rows="2"
+                  placeholder="مثلاً: مدارک ناقص است…"></textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn-primary" id="wf-approve" type="button">✅ تأیید</button>
+        <button class="btn-danger" id="wf-reject" type="button">⛔ رد و بازگشت</button>
+      </div>
+    </div>
+
+    <div class="form-actions" id="wf-fill-actions">
+      <button class="btn-primary" id="wf-submit" type="button">✅ ثبت و ارسال فاز</button>
       <button class="btn-secondary" id="wf-close" type="button">↩ بستن</button>
     </div>
   </section>
 </div>
 
-<div class="modal-backdrop" id="new-process-modal">
+<div class="modal-overlay" id="new-process-modal">
   <div class="modal">
-    <div class="modal-head"><h3>🚦 شروع فرایند جدید</h3>
-      <button class="modal-x" data-close="new-process-modal">×</button></div>
+    <h3>🚦 شروع فرایند جدید</h3>
     <div class="modal-body">
-      <div class="field">
-        <label>نوع عملیات <span class="req">*</span></label>
-        <div class="btn-group" id="np-kind">
-          <label><input type="radio" name="np_kind" value="کشیدن"><span class="btn-opt">🔼 کشیدن</span></label>
-          <label><input type="radio" name="np_kind" value="نصب"><span class="btn-opt">🔽 نصب</span></label>
-        </div>
-        <span class="hint">با «کشیدن» فرایند از مرکز آبرسانی آغاز می‌شود؛
-          با «نصب» مستقیم به کارگاه مکانیک می‌رود.</span>
+      <!-- Everything below is drawn from the start node of the chosen process:
+           whatever the admin put on it is what is asked here. -->
+      <div class="field" id="np-process-field">
+        <label>فرایند</label>
+        <select id="np-process"></select>
       </div>
-      <div class="field">
-        <label>نام چاه <span class="req">*</span></label>
-        <div class="autocomplete-wrapper">
-          <input type="text" id="np-well" autocomplete="off" data-autocomplete="wells"
-                 placeholder="جستجوی نام چاه یا کد PM…">
-          <div class="autocomplete-list"></div>
-        </div>
-        <span class="hint">چاه همین‌جا یک‌بار انتخاب می‌شود؛ در مرحله‌های بعد
-          قفل‌شده نمایش داده می‌شود و دوباره جستجو نمی‌شود.</span>
-      </div>
+      <div id="np-guide" class="hint"></div>
+      <div class="form-grid" id="np-form"></div>
     </div>
-    <div class="modal-foot">
+    <div class="modal-actions">
       <button class="btn-primary" id="np-start" type="button">شروع فرایند</button>
-      <button class="btn-secondary" data-close="new-process-modal" type="button">انصراف</button>
+      <button class="btn-secondary" type="button"
+              onclick="App.closeModal('new-process-modal')">انصراف</button>
     </div>
   </div>
 </div>

@@ -1,18 +1,25 @@
 /* ==========================================================================
-   کارتابل فرایند — the stages this person owes, and the form for each.
+   کارتابل فرایند — the work this person owes, and the form or decision for each.
 
-   Stages are independent: the workshop can record the motor before the
-   engineer has ruled on the fault. What the page must not do is let that pass
-   unnoticed, so every stage says which earlier stages have not reported yet.
+   Two kinds of item land here: a phase to fill and an approval to give. Both
+   come off the same map, so neither the names nor the order of anything are
+   written in this file — the server says what to draw and this page draws it.
+
+   Phases are independent: the workshop can record the motor before the expert
+   has ruled on the fault. What the page must not do is let that pass
+   unnoticed, so every phase says which earlier ones have not reported yet.
    ========================================================================== */
 (function () {
   'use strict';
   var A = window.App, J = window.Jalali;
   var items = [];
-  var current = null;          // { instance, stage_number }
+  var current = null;          // { id, node_key, task_kind, detail }
   var form = null;
+  var startForm = null;        // the FormEngine of the «شروع فرایند» dialog
+  var startOptions = [];       // processes this person may open
   var schema = null;           // lookups + conditional rules, loaded once
-  var canStart = false;        // is this user the متولی of step zero?
+  var canStart = false;        // may this user open a process at all?
+  var routingFields = [];      // answers that change what the form asks next
 
   /* Where each panel belongs, if the page is missing it. A desktop app is
      updated by copying files, so the template and this script can end up a
@@ -70,15 +77,18 @@
         + 'شما نیست.</div>';
       return;
     }
+    /* Opening a process is a card in the work list, not a button hanging over
+       every page — and only the people the start node names ever see it. */
     var html = canStart
-      ? '<div class="wf-group">مرحله ۰ — شروع فرایند</div>'
+      ? '<div class="wf-group">شروع فرایند</div>'
         + '<button class="wf-item wf-item-start" data-start="1" type="button">'
         + '<div class="wf-item-top">'
-        + '<span class="wf-stage-no">۰</span>'
+        + '<span class="wf-stage-no">🚦</span>'
         + '<span class="wf-item-title">شروع فرایند جدید</span>'
-        + '<span class="badge">🚦</span></div>'
-        + '<div class="wf-item-sub">نوع عملیات و چاه را تعیین کنید تا فرایند '
-        + 'آغاز شود.</div></button>'
+        + '<span class="badge">' + J.toFaDigits(startOptions.length || 1)
+        + ' فرایند</span></div>'
+        + '<div class="wf-item-sub">فرم شروع را پر کنید تا فرایند آغاز شود.'
+        + '</div></button>'
       : '';
     var lastRef = null;
     box.innerHTML = html + items.map(function (it, i) {
@@ -95,20 +105,23 @@
   function itemHtml(it, i) {
     var waiting = (it.waiting_on || []).length;
     var active = current && current.id === it.id
-      && current.stage_number === it.stage_number;
+      && current.node_key === it.node_key;
+    var approving = it.task_kind === 'approve';
     return '<button class="wf-item' + (active ? ' active' : '')
+      + (approving ? ' wf-item-approve' : '')
       + '" data-i="' + i + '" type="button">'
       + '<div class="wf-item-top">'
-      + '<span class="wf-stage-no">' + J.toFaDigits(it.stage_number) + '</span>'
+      + '<span class="wf-stage-no">' + (approving ? '✅'
+          : J.toFaDigits(it.stage_number)) + '</span>'
       + '<span class="wf-item-title">' + A.esc(it.stage_title) + '</span>'
-      + '<span class="badge ' + (it.operation_kind === 'pull' ? 'warn' : '')
-      + '">' + A.esc(it.operation_label) + '</span>'
+      + '<span class="badge' + (approving ? ' warn' : '') + '">'
+      + (approving ? 'تأیید' : A.esc(it.operation_label || 'تکمیل')) + '</span>'
       + '</div>'
       + '<div class="wf-item-sub">'
-      + A.esc(it.created_at_j || '')
+      + A.esc(it.workflow_name || '') + ' · ' + A.esc(it.created_at_j || '')
       + (it.unassigned ? ' · <span class="badge warn">بدون متولی</span>' : '')
       + (waiting ? ' · <span class="badge warn">' + J.toFaDigits(waiting)
-          + ' مرحله عقب‌تر ثبت نشده</span>' : '')
+          + ' فاز عقب‌تر ثبت نشده</span>' : '')
       + '</div></button>';
   }
 
@@ -116,10 +129,8 @@
     try {
       var res = await A.api.get('/api/workflow/inbox');
       items = res.data || [];
-      /* Step zero is a stage like any other, so it is a card in the work list
-         rather than a button hanging over every page. Only its owner gets it,
-         and only there does the «شروع فرایند» form exist. */
       canStart = !!res.may_start;
+      startOptions = res.start_options || [];
       renderList();
     } catch (err) {
       fill('#inbox-items', '<div class="alert error">'
@@ -129,19 +140,20 @@
 
   /* ── one stage ──────────────────────────────────────────────────────── */
   function renderPath(detail) {
-    var done = {};
-    (detail.entries || []).forEach(function (e) { done[e.stage_number] = e; });
-    fill('#wf-path', (detail.path || []).map(function (s) {
-      var entry = done[s.stage_number] || {};
-      var state = entry.status || 'pending';
-      var isHere = s.stage_number === current.stage_number;
-      return '<div class="wf-step ' + state + (isHere ? ' here' : '') + '">'
-        + '<span class="wf-step-no">' + J.toFaDigits(s.stage_number) + '</span>'
-        + '<span class="wf-step-title">' + A.esc(s.title) + '</span>'
+    fill('#wf-path', (detail.path || []).map(function (node) {
+      var isHere = node.key === current.node_key;
+      return '<div class="wf-step ' + A.esc(node.status || 'pending')
+        + (isHere ? ' here' : '') + '">'
+        + '<span class="wf-step-no">'
+        + (node.node_type === 'approval' ? '✅'
+           : J.toFaDigits(node.stage_number)) + '</span>'
+        + '<span class="wf-step-title">' + A.esc(node.title) + '</span>'
         + '<span class="wf-step-who">'
-        + A.esc(s.assignee_name || 'بدون متولی') + '</span>'
+        + A.esc(node.assignee_name
+                || (node.approver_names || []).join('، ')
+                || 'بدون متولی') + '</span>'
         + '<span class="wf-step-state">'
-        + A.esc(entry.status_label || 'در انتظار') + '</span>'
+        + A.esc(node.status_label || 'در انتظار') + '</span>'
         + '</div>';
     }).join(''));
   }
@@ -149,25 +161,32 @@
   /* What this stage is for and what to do with it, in the stage's own words —
      the description the admin wrote in the process builder. */
   function renderGuide(detail) {
-    var stage = detail.form && detail.form.stage;
-    if (!stage) { fill('#wf-guide', ''); return; }
-    var required = [];
-    (detail.form.sections || []).forEach(function (s) {
+    var node = detail.node || (detail.form && detail.form.stage);
+    if (!node) { fill('#wf-guide', ''); return; }
+    var required = [], routing = [];
+    ((detail.form && detail.form.sections) || []).forEach(function (s) {
       (s.fields || []).forEach(function (f) {
         if (f.is_required && !f.read_only) required.push(f.label);
+        if (f.affects_routing) routing.push(f.label);
       });
     });
+    var approving = node.node_type === 'approval';
     fill('#wf-guide', '<div class="alert info wf-guide">'
-      + '<b>مرحله ' + J.toFaDigits(stage.stage_number) + ' — '
-      + A.esc(stage.title) + '</b>'
-      + (stage.description
-          ? '<div class="wf-guide-desc">' + A.esc(stage.description) + '</div>'
+      + '<b>' + A.esc(node.icon || '') + ' ' + A.esc(node.title) + '</b>'
+      + (node.description
+          ? '<div class="wf-guide-desc">' + A.esc(node.description) + '</div>'
           : '')
-      + '<div class="wf-guide-todo">فرم زیر را پر کنید و دکمه‌ی '
-      + '<b>«ثبت و ارسال مرحله»</b> را بزنید تا فرایند به مرحله‌ی بعد برود.'
-      + (required.length
-          ? ' فیلدهای الزامی: <b>' + required.map(A.esc).join('، ') + '</b>.'
-          : '')
+      + '<div class="wf-guide-todo">'
+      + (approving
+          ? 'اطلاعات ثبت‌شده را ببینید و سپس <b>تأیید</b> یا <b>رد</b> کنید. '
+            + 'برای رد کردن، ذکر دلیل الزامی است.'
+          : 'فرم زیر را پر کنید و دکمه‌ی <b>«ثبت و ارسال فاز»</b> را بزنید.'
+            + (required.length
+                ? ' فیلدهای الزامی: <b>' + required.map(A.esc).join('، ')
+                  + '</b>.' : ''))
+      + (routing.length
+          ? '<br>🔀 پاسخ به <b>' + routing.map(A.esc).join('، ')
+            + '</b> مسیر ادامه‌ی فرایند را تعیین می‌کند.' : '')
       + '</div></div>');
   }
 
@@ -177,14 +196,13 @@
     /* A warning, never a block — the stage owner may well have the numbers in
        hand before the paperwork upstream catches up. */
     fill('#wf-warning',
-      '<div class="alert warn">⚠ این مرحله‌ها هنوز ثبت نشده‌اند: '
+      '<div class="alert warn">⚠ این فازها هنوز ثبت نشده‌اند: '
       + waiting.map(function (w) {
-          return '<b>مرحله ' + J.toFaDigits(w.stage_number) + ' — '
-            + A.esc(w.title) + '</b>'
+          return '<b>' + A.esc(w.title) + '</b>'
             + (w.assignee ? ' (' + A.esc(w.assignee) + ')' : '');
         }).join('، ')
-      + '.<br>می‌توانید مرحله‌ی خود را همین حالا تکمیل کنید؛ فرایند منتظر '
-      + 'ترتیب مرحله‌ها نمی‌ماند.</div>');
+      + '.<br>می‌توانید فاز خود را همین حالا تکمیل کنید؛ فرایند منتظر ترتیب '
+      + 'فازها نمی‌ماند.</div>');
   }
 
   /* Everything earlier stages recorded, shown locked. The stage owner reads
@@ -204,11 +222,11 @@
      desktop install is updated by copying some files and not others. */
   function summaryFromEntries(detail) {
     var labels = fieldLabels();
-    var keep = { submitted: 1, archived: 1, deferred: 1 };
+    var keep = { submitted: 1, approved: 1 };
     return (detail.entries || []).filter(function (e) {
-      return e.stage_number > 0 && e.stage_number !== current.stage_number
+      return e.task_kind !== 'approve' && e.node_key !== current.node_key
         && keep[e.status];
-    }).sort(function (a, b) { return a.stage_number - b.stage_number; })
+    }).sort(function (a, b) { return (a.stage_number || 0) - (b.stage_number || 0); })
       .map(function (e) {
         var values = [];
         Object.keys(e.payload || {}).forEach(function (name) {
@@ -218,7 +236,8 @@
           values.push({ label: labels[name] || name, value: String(v) });
         });
         return {
-          stage_number: e.stage_number, title: e.title || '',
+          stage_number: e.stage_number, node_key: e.node_key,
+          title: e.title || '',
           status: e.status, status_label: e.status_label,
           user_name: e.user_name, submitted_at_j: e.submitted_at_j,
           note: e.note, values: values,
@@ -230,7 +249,7 @@
     var blocks = detail.summary || summaryFromEntries(detail);
     if (!blocks.length) {
       fill('#wf-summary',
-           '<div class="hint">هنوز مرحله‌ای پیش از این ثبت نشده است.</div>');
+           '<div class="hint">هنوز فازی پیش از این ثبت نشده است.</div>');
       return;
     }
     fill('#wf-summary', blocks.map(function (b) {
@@ -262,7 +281,7 @@
         + '<a href="' + A.esc(a.url) + '" class="doc-name">📄 ' + A.esc(a.filename) + '</a>'
         + '<span class="doc-meta">' + A.esc(a.size_label) + ' · '
         + A.esc(a.uploaded_by_name || '') + ' · ' + A.esc(a.uploaded_at_j || '')
-        + ' مرحله ' + J.toFaDigits(a.stage_number) + '</span>'
+        + (a.stage_title ? ' · ' + A.esc(a.stage_title) : '') + '</span>'
         + '<button class="btn-sm btn-del" data-del-doc="' + a.id + '" type="button">🗑</button>'
         + '</div>';
     }).join('') + '</div>');
@@ -271,27 +290,27 @@
   async function openStage(entry) {
     try {
       var res = await A.api.get('/api/workflow/instances/' + entry.id
-                                + '?stage=' + entry.stage_number);
+                                + '?node=' + encodeURIComponent(entry.node_key));
       var detail = res.data;
-      current = { id: detail.id, stage_number: entry.stage_number, detail: detail };
+      var node = detail.node || {};
+      current = { id: detail.id, node_key: entry.node_key,
+                  stage_number: entry.stage_number,
+                  task_kind: entry.task_kind || 'fill', detail: detail };
+      routingFields = (detail.form && detail.form.routing_fields) || [];
       A.qs('#wf-detail').classList.remove('hidden');
-      setText('#wf-title', 'مرحله ' + J.toFaDigits(entry.stage_number)
-        + ' — ' + (detail.form ? detail.form.stage.title : '')
-        + (detail.well ? ' · ' + detail.well : ''));
-      setText('#wf-kind', detail.operation_label);
+      setText('#wf-title', (node.icon ? node.icon + ' ' : '')
+        + (node.title || '') + (detail.well ? ' · ' + detail.well : ''));
+      setText('#wf-kind', detail.workflow_name || detail.operation_label || '');
+
       /* The form first. It is the point of this page, and everything after it
          is context around it — so nothing that decorates the page can end up
-         standing between the stage owner and the fields they came to fill.
-         Everything the process already knows is filled in, so a stage can see
+         standing between the owner and the fields they came to fill.
+         Everything the process already knows is filled in, so a phase can see
          and correct what came before rather than typing it again. */
       buildForm(detail.form ? detail.form.sections : [],
                 detail.operation_label, detail.payload || {});
       if (detail.well) fillPrevious(detail.well);
-      var submit = A.qs('#wf-submit');
-      if (submit) {
-        submit.disabled = !detail.may_act;
-        submit.title = detail.may_act ? '' : 'این مرحله در اختیار شما نیست.';
-      }
+      showApproval(detail, node);
 
       renderPath(detail);
       renderGuide(detail);
@@ -300,6 +319,67 @@
       renderAttachments(detail);
       renderList();
       A.qs('#wf-detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) {
+      A.toast(err.message, 'error');
+      fill('#inbox-alert', '<div class="alert error">' + A.esc(err.message)
+           + '</div>');
+    }
+  }
+
+  /* An approval node asks for a verdict rather than a form, so the page swaps
+     the submit bar for approve/reject — and says how many approvals this node
+     needs, because «تأیید یکی کافی است» and «همه باید تأیید کنند» are very
+     different things to be told after the fact. */
+  function showApproval(detail, node) {
+    var approving = node.node_type === 'approval';
+    var pane = A.qs('#wf-approval');
+    var fillBar = A.qs('#wf-fill-actions');
+    if (pane) pane.classList.toggle('hidden', !approving);
+    if (fillBar) fillBar.classList.toggle('hidden', approving);
+    var submit = A.qs('#wf-submit');
+    if (submit) {
+      submit.disabled = !detail.may_act;
+      submit.title = detail.may_act ? '' : 'این فاز در اختیار شما نیست.';
+    }
+    if (!approving || !pane) return;
+    var given = (node.approvals || []).filter(function (t) {
+      return t.status === 'approved';
+    }).length;
+    var mode = (node.config || {}).approval_mode || 'any';
+    var need = mode === 'all' ? (node.approvals || []).length
+      : mode === 'quorum' ? ((node.config || {}).approval_quorum || 2) : 1;
+    fill('#wf-approval-info',
+      'تأییدکنندگان: <b>' + A.esc((node.approver_names || []).join('، ')
+        || 'تعیین‌نشده') + '</b> — تاکنون <b>' + J.toFaDigits(given)
+      + '</b> از <b>' + J.toFaDigits(need) + '</b> تأیید لازم ثبت شده است.'
+      + ((node.approvals || []).filter(function (t) { return t.comment; })
+          .map(function (t) {
+            return '<br>💬 ' + A.esc(t.user_name || t.assignee_name || '')
+              + ': ' + A.esc(t.comment);
+          }).join('')));
+    ['#wf-approve', '#wf-reject'].forEach(function (sel) {
+      var button = A.qs(sel);
+      if (button) button.disabled = !detail.may_approve;
+    });
+  }
+
+  async function decide(approved) {
+    if (!current) return;
+    var comment = (A.qs('#wf-comment') || {}).value || '';
+    if (!approved && !comment.trim()) {
+      A.toast('برای رد کردن، ذکر دلیل الزامی است.', 'error');
+      A.qs('#wf-comment').focus();
+      return;
+    }
+    try {
+      var res = await A.api.post('/api/workflow/instances/' + current.id
+                                 + '/decide',
+        { node_key: current.node_key, approved: approved, comment: comment });
+      A.toast(res.message || 'ثبت شد.', 'success');
+      A.qs('#wf-detail').classList.add('hidden');
+      A.qs('#wf-comment').value = '';
+      current = null;
+      await loadInbox();
     } catch (err) {
       A.toast(err.message, 'error');
       fill('#inbox-alert', '<div class="alert error">' + A.esc(err.message)
@@ -320,10 +400,12 @@
          could not be judged and «علت خرابی» would hide itself. */
       context: { operation_kind: operationLabel },
       onWellPicked: fillPrevious,
+      /* Some answers decide where the process goes next, and therefore what
+         this very form should still be asking. The server says which ones —
+         they are the fields the arrows leaving this node read — so no field
+         name is written into this page. */
       onChange: function (name) {
-        if (name === 'required_action' || name === 'pump_type_now') {
-          refreshStageForm();
-        }
+        if (routingFields.indexOf(name) >= 0) refreshStageForm();
       },
     });
     form.render();
@@ -336,19 +418,19 @@
     if (date && !date.value) date.value = J.format.apply(null, J.today());
   }
 
-  /* Stage 4's «اقدام مورد نیاز» decides whether «اطلاعات چاه و نصب» is even
-     asked, so the form is re-fetched the moment that answer changes. */
+  /* An answer that decides the route can also decide what else this node
+     asks, so the form is re-read the moment such an answer changes. Nothing is
+     saved — the server just recomputes the node with the answers in hand. */
   var refreshStageForm = A.debounce(async function () {
     if (!current) return;
     var answers = form.collect();
     var res;
     try {
-      /* Nothing is saved — the server just recomputes the stage with the
-         answers in hand, which is how «اطلاعات چاه و نصب» appears or files
-         itself away the instant «اقدام مورد نیاز» is picked. */
       res = await A.api.post('/api/workflow/instances/' + current.id + '/form',
-                             { stage_number: current.stage_number, data: answers });
+                             { node_key: current.node_key, data: answers });
     } catch (err) { return; }
+    routingFields = (res.data.form && res.data.form.routing_fields)
+      || routingFields;
     buildForm(res.data.form ? res.data.form.sections : [],
               res.data.operation_label,
               Object.assign({}, current.detail.payload || {}, answers));
@@ -399,7 +481,7 @@
     form.clearErrors();
     try {
       var res = await A.api.post('/api/workflow/instances/' + current.id + '/submit',
-        { stage_number: current.stage_number, data: form.collect() });
+        { node_key: current.node_key, data: form.collect() });
       A.toast(res.message || 'ثبت شد.', 'success');
       A.qs('#wf-detail').classList.add('hidden');
       current = null;
@@ -420,6 +502,7 @@
       var body = new FormData();
       body.append('file', files[i]);
       try {
+        body.append('node_key', current.node_key);
         await A.request('/api/workflow/instances/' + current.id + '/attachments',
                         { method: 'POST', body: body });
       } catch (err) {
@@ -427,29 +510,71 @@
       }
     }
     var res = await A.api.get('/api/workflow/instances/' + current.id
-                              + '?stage=' + current.stage_number);
+                              + '?node=' + encodeURIComponent(current.node_key));
     renderAttachments(res.data);
     A.toast('مستندات بارگذاری شد.', 'success');
   }
 
   /* ── new process ────────────────────────────────────────────────────── */
-  async function startProcess() {
-    var kind = A.qs('input[name="np_kind"]:checked');
-    if (!kind) { A.toast('نوع عملیات را انتخاب کنید.', 'error'); return; }
-    if (!A.qs('#np-well').value.trim()) {
-      A.toast('نام چاه را انتخاب کنید — چاه فقط همین‌جا تعیین می‌شود.', 'error');
-      A.qs('#np-well').focus();
-      return;
+  /* The dialog is drawn from the start node of the chosen process. This page
+     does not know that one process asks for a well and an operation and
+     another asks for a number of days — it renders whatever the map says. */
+  async function openStartDialog() {
+    A.openModal('new-process-modal');
+    fill('#np-form', '<div class="loading">در حال بارگذاری</div>');
+    var select = A.qs('#np-process');
+    await loadStartForm(select && select.value);
+  }
+
+  async function loadStartForm(code) {
+    try {
+      var res = await A.api.get('/api/workflow/start-form'
+        + (code ? '?code=' + encodeURIComponent(code) : ''));
+      var data = res.data;
+      var select = A.qs('#np-process');
+      var options = data.options || [];
+      A.qs('#np-process-field').classList.toggle('hidden', options.length < 2);
+      if (select && select.options.length !== options.length) {
+        select.innerHTML = options.map(function (o) {
+          return '<option value="' + A.esc(o.code) + '"'
+            + (o.code === data.workflow.code ? ' selected' : '') + '>'
+            + A.esc(o.name) + '</option>';
+        }).join('');
+      }
+      fill('#np-guide', (data.node && data.node.description
+        ? A.esc(data.node.description) : ''));
+      startForm = window.FormEngine({
+        root: A.qs('#np-form'),
+        schema: { sections: data.sections, lookups: schema.lookups,
+                  conditional: schema.conditional },
+        flat: true,
+      });
+      startForm.render();
+      var date = A.qs('#np-form [id^="fld-"][id$="jdate"]');
+      if (date && !date.value) date.value = J.format.apply(null, J.today());
+    } catch (err) {
+      fill('#np-form', '<div class="alert error">' + A.esc(err.message)
+           + '</div>');
+      startForm = null;
     }
+  }
+
+  async function startProcess() {
+    if (!startForm) return;
+    startForm.clearErrors();
+    var select = A.qs('#np-process');
     try {
       var res = await A.api.post('/api/workflow/instances', {
-        operation_kind: kind.value,
-        well: A.qs('#np-well').value.trim(),
+        workflow_code: select && select.value ? select.value : null,
+        data: startForm.collect(),
       });
       A.closeModal('new-process-modal');
       A.toast(res.message || 'فرایند آغاز شد.', 'success');
       await loadInbox();
-    } catch (err) { A.toast(err.message, 'error'); }
+    } catch (err) {
+      if (err.fields) startForm.showErrors(err.fields);
+      A.toast(err.message, 'error');
+    }
   }
 
   document.addEventListener('DOMContentLoaded', async function () {
@@ -463,7 +588,7 @@
     await loadInbox();
 
     A.qs('#inbox-items').addEventListener('click', function (ev) {
-      if (ev.target.closest('[data-start]')) { A.openModal('new-process-modal'); return; }
+      if (ev.target.closest('[data-start]')) { openStartDialog(); return; }
       var button = ev.target.closest('[data-i]');
       if (button) openStage(items[Number(button.dataset.i)]);
     });
@@ -486,13 +611,15 @@
       try {
         await A.api.del('/api/workflow/attachments/' + button.dataset.delDoc);
         var res = await A.api.get('/api/workflow/instances/' + current.id
-                                  + '?stage=' + current.stage_number);
+                                  + '?node=' + encodeURIComponent(current.node_key));
         renderAttachments(res.data);
       } catch (err) { A.toast(err.message, 'error'); }
     });
     A.qs('#np-start').addEventListener('click', startProcess);
-    /* The well picker in the dialog is the same autocomplete the forms use,
-       so the process starts against a canonical well from the register. */
-    window.FormEngine.attachAutocomplete(A.qs('#np-well'), schema.lookups);
+    A.qs('#np-process').addEventListener('change', function () {
+      loadStartForm(this.value);
+    });
+    A.qs('#wf-approve').addEventListener('click', function () { decide(true); });
+    A.qs('#wf-reject').addEventListener('click', function () { decide(false); });
   });
 })();
