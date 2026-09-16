@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}ثبت اطلاعات — {{ APP_TITLE }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h2>📝 <span id="page-mode">ثبت اطلاعات</span></h2>
+    <div class="sub">{% if 'formbuilder' in ALLOWED_PAGES %}ساختار این فرم از بخش «فرم‌ساز» خوانده می‌شود و قابل تغییر است.{% else %}فیلدهای ستاره‌دار الزامی هستند.{% endif %}</div>
+  </div>
+  <div class="toolbar-actions">
+    {% if 'records' in ALLOWED_PAGES %}
+    <a class="btn-ghost" href="/records">📋 مشاهده رکوردها</a>
+    {% endif %}
+    {% if 'formbuilder' in ALLOWED_PAGES %}
+    <a class="btn-ghost" href="/form-builder">🛠 فرم‌ساز</a>
+    {% endif %}
+  </div>
+</div>
+
+<div id="form-alert"></div>
+<div class="form-grid" id="form-grid"><div class="loading">در حال بارگذاری ساختار فرم</div></div>
+
+<div class="form-actions">
+  <button class="btn-primary" id="btn-save" type="button">💾 ثبت رکورد</button>
+  <button class="btn-secondary" id="btn-clear" type="button">🗑 پاک کردن فرم</button>
+  <a class="btn-secondary hidden" id="btn-cancel" href="/records">↩ انصراف از ویرایش</a>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>window.RECORD_ID = {{ record_id or 'null' }};</script>
+<script src="{{ url_for('static', filename='js/formengine.js') }}"></script>
+<script src="{{ url_for('static', filename='js/entry.js') }}"></script>
+{% endblock %}

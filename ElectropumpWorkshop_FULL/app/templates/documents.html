@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}مستندات فرایندها — {{ APP_TITLE }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h2>📎 مستندات فرایندها</h2>
+    <div class="sub">هر فایلی که در مرحله‌های فرایند بارگذاری شده — عکس، ویدئو،
+      Word، PDF، Excel — یک‌جا برای مشاهده و دانلود.</div>
+  </div>
+  <div class="toolbar-actions">
+    <button class="btn-ghost" id="doc-refresh" type="button">↻ به‌روزرسانی</button>
+  </div>
+</div>
+
+<div class="filters card">
+  <div class="field"><label>جستجو (نام فایل یا چاه)</label>
+    <input type="search" id="doc-q" placeholder="نام فایل یا نام چاه…"></div>
+  <div class="field"><label>شماره فرایند</label>
+    <input type="number" id="doc-instance" min="1" placeholder="مثلاً ۱۲"></div>
+  <div class="field"><label>مرحله</label>
+    <select id="doc-stage"><option value="">همه مرحله‌ها</option></select></div>
+</div>
+
+<div id="doc-alert"></div>
+<div class="card">
+  <div class="card-head"><span>فهرست مستندات</span>
+    <span class="badge" id="doc-count">۰</span></div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr>
+        <th>#</th><th>نام فایل</th><th>فرایند</th><th>چاه</th>
+        <th>مرحله</th><th>بارگذار</th><th>تاریخ</th><th>حجم</th><th>دانلود</th>
+      </tr></thead>
+      <tbody id="doc-rows">
+        <tr><td colspan="9" class="loading">در حال بارگذاری</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pagination" id="doc-pages"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/documents.js') }}"></script>
+{% endblock %}

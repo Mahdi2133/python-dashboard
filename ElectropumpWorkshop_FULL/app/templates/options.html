@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}مدیریت گزینه‌ها — {{ APP_TITLE }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h2>🗂 مدیریت گزینه‌های فرم</h2>
+    <div class="sub">افزودن، ویرایش، مرتب‌سازی و فعال/غیرفعال کردن گزینه‌ها.
+      گزینه‌ها حذف فیزیکی نمی‌شوند تا سابقه رکوردهای قبلی خراب نشود.</div>
+  </div>
+</div>
+
+<div class="alert info">
+  گزینه‌های نشان‌دار با <span class="badge warn">خودکار</span> هنگام ورود داده از اکسل ساخته
+  شده‌اند و منتظر بازبینی شما هستند. می‌توانید آن‌ها را فعال کنید، نامشان را اصلاح کنید،
+  یا به‌عنوان «نام مستعار» به گزینه‌ی صحیح متصل نمایید.
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="section-title">دسته‌ها</div>
+    <div class="sortable-list" id="cat-list"><div class="loading">بارگذاری</div></div>
+  </div>
+  <div class="card">
+    <div class="page-head">
+      <div><h2 id="opt-title" style="font-size:16px">گزینه‌ها</h2>
+        <div class="sub" id="opt-sub"></div></div>
+      <div class="toolbar-actions">
+        <label class="small" style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="show-inactive" style="width:auto"> نمایش غیرفعال‌ها
+        </label>
+        <button class="btn-primary btn-sm" id="btn-add-opt" type="button">➕ گزینه جدید</button>
+      </div>
+    </div>
+    <div class="sortable-list" id="opt-list"></div>
+    <button class="btn-ghost mt-2 hidden" id="btn-save-order" type="button">💾 ذخیره ترتیب</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="opt-modal">
+  <div class="modal">
+    <h3 id="opt-modal-title">گزینه</h3>
+    <div class="field-group cols-2">
+      <div class="field"><label>مقدار ذخیره‌شده <span class="req">*</span></label>
+        <input type="text" id="o-value">
+        <span class="hint">مقداری که در پایگاه داده و گزارش‌ها دیده می‌شود.</span></div>
+      <div class="field"><label>برچسب نمایشی</label><input type="text" id="o-label"></div>
+      <div class="field"><label>آیکون (اموجی)</label><input type="text" id="o-icon" maxlength="4"></div>
+      <div class="field"><label>وضعیت</label>
+        <select id="o-active"><option value="1">فعال</option><option value="0">غیرفعال</option></select></div>
+      <div class="field span-2"><label>توضیحات</label><input type="text" id="o-notes"></div>
+      <div class="field span-2"><label>افزودن نام مستعار</label>
+        <div style="display:flex;gap:6px">
+          <input type="text" id="o-alias" placeholder="مثال: سعدابادی">
+          <button class="btn-ghost" id="o-alias-add" type="button">افزودن</button>
+        </div>
+        <span class="hint">املاهای دیگری که هنگام ورود داده باید به همین گزینه نگاشت شوند.</span>
+        <div class="tag-list mt-1" id="o-alias-list"></div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" id="o-save" type="button">ذخیره</button>
+      <button class="btn-danger hidden" id="o-delete" type="button">حذف / غیرفعال</button>
+      <button class="btn-secondary" type="button" onclick="App.closeModal('opt-modal')">انصراف</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/options.js') }}"></script>{% endblock %}

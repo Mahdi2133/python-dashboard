@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}رکوردها — {{ APP_TITLE }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h2>📋 سوابق ثبت‌شده</h2>
+    <div class="sub">جستجو، فیلتر و مرتب‌سازی روی سرور انجام می‌شود؛ جدول صفحه‌به‌صفحه بارگذاری می‌گردد.</div>
+  </div>
+  <div class="toolbar-actions">
+    {% if 'entry' in ALLOWED_PAGES %}
+    <a class="btn-primary" href="/entry">➕ رکورد جدید</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="table-wrapper">
+  <div class="table-toolbar">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <h2>نتایج</h2>
+      <span class="record-count-badge" id="record-count">۰ رکورد</span>
+    </div>
+    <div class="toolbar-actions">
+      {% if 'transfer' in ALLOWED_PAGES or CURRENT_USER and CURRENT_USER.can('record.export') %}
+      <button class="export-btn export-xlsx" data-export="xlsx" type="button">📊 اکسل</button>
+      <button class="export-btn export-csv"  data-export="csv"  type="button">📄 CSV</button>
+      <button class="export-btn export-json" data-export="json" type="button">🗂 JSON</button>
+      <button class="export-btn export-pdf"  data-export="pdf"  type="button">📕 PDF</button>
+      {% endif %}
+      <button class="export-btn export-print" id="btn-print" type="button">🖨 چاپ</button>
+    </div>
+  </div>
+
+  <div class="filter-row">
+    <input type="text" id="f-q" class="wide" placeholder="🔍 جستجو در تمام فیلدها...">
+    <select id="f-center"><option value="">همه مراکز</option></select>
+    <select id="f-operation"><option value="">همه عملیات</option></select>
+    <select id="f-contractor"><option value="">همه پیمانکاران</option></select>
+    <select id="f-month">
+      <option value="">همه ماه‌ها</option>
+      {% for i in range(1,13) %}<option value="{{ i }}">{{ MONTHS_FA[i] }}</option>{% endfor %}
+    </select>
+    <select id="f-year"><option value="">همه سال‌ها</option></select>
+    <select id="f-failure"><option value="">همه علل خرابی</option></select>
+    <input type="text" id="f-date-from" class="jdate" placeholder="از تاریخ">
+    <input type="text" id="f-date-to" class="jdate" placeholder="تا تاریخ">
+    <select id="f-page-size">
+      <option value="25">۲۵ سطر</option><option value="50" selected>۵۰ سطر</option>
+      <option value="100">۱۰۰ سطر</option><option value="200">۲۰۰ سطر</option>
+    </select>
+    <label class="small" style="display:flex;align-items:center;gap:6px;">
+      <input type="checkbox" id="f-inactive" style="width:auto"> نمایش غیرفعال‌ها
+    </label>
+    <button class="btn-secondary" id="btn-reset" type="button">پاک کردن فیلترها</button>
+  </div>
+
+  <div class="table-scroll">
+    <table id="records-table">
+      <thead><tr id="table-head"></tr></thead>
+      <tbody id="records-body">
+        <tr><td colspan="20" class="table-empty">در حال بارگذاری…</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pagination" id="pagination"></div>
+</div>
+
+<div class="modal-overlay" id="detail-modal">
+  <div class="modal wide">
+    <h3>جزئیات رکورد</h3>
+    <div class="modal-body" id="detail-body"></div>
+    <div class="modal-actions">
+      <a class="btn-primary" id="detail-edit" href="#">✏ ویرایش</a>
+      <button class="btn-secondary" type="button"
+              onclick="App.closeModal('detail-modal')">بستن</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/records.js') }}"></script>{% endblock %}

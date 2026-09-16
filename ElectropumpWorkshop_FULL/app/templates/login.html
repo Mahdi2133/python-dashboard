@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<title>ورود — {{ APP_TITLE }}</title>
+<link rel="icon" href="{{ url_for('static', filename='img/favicon.svg') }}" type="image/svg+xml">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body class="login-page">
+<div class="login-card">
+  <div class="login-brand">
+    <img src="{{ url_for('static', filename='img/electropump.png') }}" alt="" width="72" height="72">
+    <h1>{{ APP_TITLE }}</h1>
+    <p>برای ورود، نام کاربری و رمز عبور خود را وارد کنید.</p>
+  </div>
+
+  <div id="login-alert"></div>
+
+  <form id="login-form" autocomplete="on">
+    <div class="field">
+      <label for="username">نام کاربری</label>
+      <input type="text" id="username" name="username" autocomplete="username"
+             autofocus required>
+    </div>
+    <div class="field mt-1">
+      <label for="password">رمز عبور</label>
+      <div class="pw-wrap">
+        <input type="password" id="password" name="password"
+               autocomplete="current-password" required>
+        <button type="button" class="pw-toggle" id="pw-toggle" title="نمایش رمز">👁</button>
+      </div>
+    </div>
+    <button class="btn-primary login-submit mt-2" type="submit" id="login-btn">
+      ورود به سامانه
+    </button>
+  </form>
+
+  <p class="login-foot">
+    اگر رمز عبور خود را فراموش کرده‌اید یا حسابتان غیرفعال است،
+    با <b>مدیر سیستم</b> تماس بگیرید.
+  </p>
+</div>
+
+<div class="modal-overlay" id="pwchange-modal">
+  <div class="modal">
+    <h3>تغییر رمز عبور</h3>
+    <p>برای این حساب تغییر رمز عبور در اولین ورود الزامی است.</p>
+    <div id="pwchange-alert"></div>
+    <div class="field"><label>رمز عبور فعلی</label>
+      <input type="password" id="pw-current" autocomplete="current-password"></div>
+    <div class="field mt-1"><label>رمز عبور جدید</label>
+      <input type="password" id="pw-new" autocomplete="new-password">
+      <span class="hint">حداقل ۶ نویسه و نه فقط عدد.</span></div>
+    <div class="field mt-1"><label>تکرار رمز عبور جدید</label>
+      <input type="password" id="pw-new2" autocomplete="new-password"></div>
+    <div class="modal-actions">
+      <button class="btn-primary" id="pw-save" type="button">ذخیره و ادامه</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>window.LOGIN_NEXT = {{ (next or '')|tojson }};</script>
+<script src="{{ url_for('static', filename='js/core.js') }}"></script>
+<script src="{{ url_for('static', filename='js/login.js') }}"></script>
+</body>
+</html>

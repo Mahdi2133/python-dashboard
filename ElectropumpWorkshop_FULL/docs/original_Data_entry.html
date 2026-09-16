@@ -1,0 +1,1708 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>سامانه ثبت اطلاعات الکتروپمپ</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&display=swap');
+
+  :root {
+    --primary: #0a3d62;
+    --primary-light: #1e6fa5;
+    --secondary: #e74c3c;
+    --accent: #f39c12;
+    --success: #27ae60;
+    --bg: #f0f4f8;
+    --card: #ffffff;
+    --border: #d1d9e0;
+    --text: #1a2530;
+    --text-muted: #6b7f8e;
+    --input-bg: #f8fafc;
+    --shadow: 0 2px 12px rgba(10,61,98,0.1);
+    --shadow-hover: 0 6px 24px rgba(10,61,98,0.18);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Vazirmatn', 'Tahoma', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    direction: rtl;
+  }
+
+  /* HEADER */
+  .app-header {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+    color: white;
+    padding: 0;
+    box-shadow: 0 4px 20px rgba(10,61,98,0.3);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+  }
+  .header-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+  .header-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .header-title .icon { font-size: 28px; }
+  .header-title h1 { font-size: 18px; font-weight: 800; line-height: 1.2; }
+  .header-title p { font-size: 12px; opacity: 0.8; margin-top: 2px; }
+  .header-nav {
+    display: flex;
+    gap: 8px;
+  }
+  .nav-btn {
+    background: rgba(255,255,255,0.15);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.3);
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .nav-btn:hover { background: rgba(255,255,255,0.25); transform: translateY(-1px); }
+  .nav-btn.active { background: white; color: var(--primary); }
+
+  /* MAIN LAYOUT */
+  .main-container { max-width: 1600px; margin: 0 auto; padding: 20px 24px; }
+
+  /* PAGES */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* FORM PAGE */
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .form-section {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
+  }
+  .form-section.full-width { grid-column: 1 / -1; }
+  .section-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .field-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+  }
+  .field-group.cols-2 { grid-template-columns: 1fr 1fr; }
+  .field-group.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .field-group.cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .field label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .field label span.req { color: var(--secondary); margin-right: 2px; }
+
+  input[type="text"], input[type="number"], input[type="date"], select, textarea {
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 12px;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--text);
+    background: var(--input-bg);
+    transition: all 0.2s;
+    width: 100%;
+    direction: rtl;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--primary-light);
+    box-shadow: 0 0 0 3px rgba(30,111,165,0.15);
+    background: white;
+  }
+  textarea { resize: vertical; min-height: 80px; }
+
+  /* BUTTON GROUPS (radio/checkbox style) */
+  .btn-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .btn-group label {
+    cursor: pointer;
+  }
+  .btn-group input[type="radio"],
+  .btn-group input[type="checkbox"] {
+    display: none;
+  }
+  .btn-group .btn-opt {
+    display: inline-block;
+    padding: 7px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: var(--input-bg);
+    cursor: pointer;
+    transition: all 0.18s;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .btn-group input[type="radio"]:checked + .btn-opt,
+  .btn-group input[type="checkbox"]:checked + .btn-opt {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+    font-weight: 700;
+  }
+  .btn-group .btn-opt:hover {
+    border-color: var(--primary-light);
+    color: var(--primary);
+  }
+
+  /* MULTI SELECT CHIPS */
+  .chip-select {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    background: var(--input-bg);
+    min-height: 44px;
+    cursor: text;
+  }
+  .chip {
+    background: var(--primary);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+  }
+  .chip .remove { cursor: pointer; font-weight: 700; }
+
+  /* FORM ACTIONS */
+  .form-actions {
+    display: flex;
+    gap: 12px;
+    padding: 20px 24px;
+    background: white;
+    border-top: 1px solid var(--border);
+    position: sticky;
+    bottom: 0;
+    z-index: 100;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.08);
+  }
+  .btn-primary {
+    background: var(--success);
+    color: white;
+    border: none;
+    padding: 12px 28px;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn-primary:hover { background: #219a52; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(39,174,96,0.4); }
+  .btn-secondary {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-secondary:hover { background: #e08e0b; }
+  .btn-danger {
+    background: var(--secondary);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-danger:hover { background: #c0392b; }
+
+  /* RECORDS TABLE */
+  .table-wrapper {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  .table-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .table-toolbar h2 { font-size: 16px; font-weight: 700; color: var(--primary); }
+  .toolbar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .export-btn {
+    padding: 9px 18px;
+    border-radius: 8px;
+    border: none;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s;
+  }
+  .export-xlsx { background: #217346; color: white; }
+  .export-xlsx:hover { background: #185c38; }
+  .export-csv { background: #2980b9; color: white; }
+  .export-csv:hover { background: #2172a4; }
+  .export-json { background: #8e44ad; color: white; }
+  .export-json:hover { background: #7d3c98; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    min-width: 1200px;
+  }
+  .table-scroll { overflow-x: auto; }
+  th {
+    background: var(--primary);
+    color: white;
+    padding: 10px 12px;
+    text-align: right;
+    font-weight: 600;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+  }
+  td {
+    padding: 9px 12px;
+    border-bottom: 1px solid #f0f4f8;
+    vertical-align: top;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  tr:hover td { background: #f0f7ff; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  tr:nth-child(even):hover td { background: #e8f4ff; }
+  .action-cell { display: flex; gap: 6px; }
+  .btn-sm {
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: none;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-edit { background: var(--accent); color: white; }
+  .btn-del { background: var(--secondary); color: white; }
+
+  /* DASHBOARD */
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: var(--shadow);
+    border-right: 4px solid var(--primary);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .stat-icon { font-size: 32px; }
+  .stat-info h3 { font-size: 28px; font-weight: 800; color: var(--primary); }
+  .stat-info p { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .chart-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: var(--shadow);
+  }
+  .chart-card h3 { font-size: 14px; font-weight: 700; color: var(--primary); margin-bottom: 16px; }
+  .bar-chart { display: flex; flex-direction: column; gap: 10px; }
+  .bar-row { display: flex; align-items: center; gap: 10px; }
+  .bar-label { font-size: 11px; font-weight: 600; color: var(--text-muted); min-width: 120px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-track { flex: 1; height: 22px; background: #f0f4f8; border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--primary), var(--primary-light)); display: flex; align-items: center; padding: 0 8px; }
+  .bar-val { font-size: 10px; font-weight: 700; color: white; white-space: nowrap; }
+
+  /* WELL AUTOCOMPLETE */
+  .autocomplete-wrapper { position: relative; }
+  .autocomplete-list {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    background: white;
+    border: 1.5px solid var(--primary-light);
+    border-radius: 8px;
+    box-shadow: var(--shadow-hover);
+    max-height: 250px;
+    overflow-y: auto;
+    z-index: 9999;
+    display: none;
+  }
+  .autocomplete-list.show { display: block; }
+  .autocomplete-item {
+    padding: 9px 14px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s;
+  }
+  .autocomplete-item:hover { background: #e8f4ff; color: var(--primary); font-weight: 600; }
+
+  /* SEARCH */
+  .search-box {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .search-box input {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 13px;
+  }
+  .search-box input:focus { outline: none; border-color: var(--primary-light); }
+
+  /* TOAST */
+  .toast {
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--success);
+    color: white;
+    padding: 14px 28px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 14px;
+    z-index: 9999;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+  }
+  .toast.show { opacity: 1; }
+  .toast.error { background: var(--secondary); }
+
+  /* MODAL */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 9000;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: white;
+    border-radius: 16px;
+    width: 90%;
+    max-width: 500px;
+    padding: 28px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  .modal h3 { font-size: 18px; font-weight: 800; color: var(--primary); margin-bottom: 12px; }
+  .modal p { color: var(--text-muted); margin-bottom: 20px; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+  .record-count-badge {
+    background: var(--primary);
+    color: white;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .field-number input { text-align: left; direction: ltr; }
+  .filter-row { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .filter-row select, .filter-row input {
+    padding: 8px 12px;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 12px;
+  }
+
+  @media (max-width: 900px) {
+    .form-grid { grid-template-columns: 1fr; }
+    .charts-grid { grid-template-columns: 1fr; }
+    .header-inner { flex-direction: column; gap: 10px; }
+  }
+
+  .persian-date-hint { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+</style>
+</head>
+<body>
+
+<div class="app-header">
+  <div class="header-inner">
+    <div class="header-title">
+      <div class="icon">⚙️</div>
+      <div>
+        <h1>سامانه ثبت اطلاعات الکتروپمپ</h1>
+        <p>سیستم مدیریت و ورود اطلاعات روزانه – ذخیره‌سازی آفلاین</p>
+      </div>
+    </div>
+    <div class="header-nav">
+      <button class="nav-btn active" id="nav-form" onclick="showPage('form')">📝 ثبت اطلاعات</button>
+      <button class="nav-btn" id="nav-records" onclick="showPage('records')">📋 سوابق ثبت‌شده</button>
+      <button class="nav-btn" id="nav-dashboard" onclick="showPage('dashboard')">📊 داشبورد</button>
+    </div>
+  </div>
+</div>
+
+<div class="main-container">
+
+  <!-- ====== PAGE: FORM ====== -->
+  <div class="page active" id="page-form">
+    <div class="form-grid">
+
+      <!-- SECTION 1: اطلاعات پایه -->
+      <div class="form-section">
+        <div class="section-title">📌 اطلاعات پایه</div>
+        <div class="field-group cols-3">
+          <div class="field">
+            <label>روز <span class="req">*</span></label>
+            <input type="number" id="f-day" min="1" max="31" placeholder="روز" />
+          </div>
+          <div class="field">
+            <label>ماه <span class="req">*</span></label>
+            <select id="f-month">
+              <option value="">انتخاب</option>
+              <option value="1">فروردین (۱)</option>
+              <option value="2">اردیبهشت (۲)</option>
+              <option value="3">خرداد (۳)</option>
+              <option value="4">تیر (۴)</option>
+              <option value="5">مرداد (۵)</option>
+              <option value="6">شهریور (۶)</option>
+              <option value="7">مهر (۷)</option>
+              <option value="8">آبان (۸)</option>
+              <option value="9">آذر (۹)</option>
+              <option value="10">دی (۱۰)</option>
+              <option value="11">بهمن (۱۱)</option>
+              <option value="12">اسفند (۱۲)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>سال</label>
+            <input type="number" id="f-year" value="1404" min="1400" max="1410" />
+          </div>
+        </div>
+        <div style="margin-top:14px;" class="field-group cols-1">
+          <div class="field">
+            <label>نام چاه <span class="req">*</span></label>
+            <div class="autocomplete-wrapper">
+              <input type="text" id="f-well" placeholder="جستجو یا تایپ نام چاه..." oninput="wellSearch(this.value)" autocomplete="off" />
+              <div class="autocomplete-list" id="well-list"></div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:12px;" class="field-group cols-2">
+          <div class="field">
+            <label>مرکز <span class="req">*</span></label>
+            <div class="btn-group" id="center-group">
+              <label><input type="radio" name="center" value="سوران"><span class="btn-opt">سوران</span></label>
+              <label><input type="radio" name="center" value="امامیه"><span class="btn-opt">امامیه</span></label>
+              <label><input type="radio" name="center" value="منزل آباد"><span class="btn-opt">منزل آباد</span></label>
+              <label><input type="radio" name="center" value="خیرآباد"><span class="btn-opt">خیرآباد</span></label>
+              <label><input type="radio" name="center" value="دانشجو"><span class="btn-opt">دانشجو</span></label>
+              <label><input type="radio" name="center" value="گلشهر"><span class="btn-opt">گلشهر</span></label>
+              <label><input type="radio" name="center" value="امام علی"><span class="btn-opt">امام علی</span></label>
+              <label><input type="radio" name="center" value="منطقه 5"><span class="btn-opt">منطقه ۵</span></label>
+              <label><input type="radio" name="center" value="تبادکان"><span class="btn-opt">تبادکان</span></label>
+              <label><input type="radio" name="center" value="تصفیه خانه دوستی"><span class="btn-opt">تصفیه‌خانه</span></label>
+            </div>
+          </div>
+          <div class="field">
+            <label>شیفت کاری</label>
+            <div class="btn-group">
+              <label><input type="radio" name="shift" value=""><span class="btn-opt">—</span></label>
+              <label><input type="radio" name="shift" value="یک"><span class="btn-opt">شیفت یک</span></label>
+              <label><input type="radio" name="shift" value="دو"><span class="btn-opt">شیفت دو</span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 2: عملیات -->
+      <div class="form-section">
+        <div class="section-title">🔧 عملیات و خرابی</div>
+        <div class="field">
+          <label>عملیات انجام شده <span class="req">*</span></label>
+          <div class="btn-group">
+            <label><input type="radio" name="operation" value="کشیدن"><span class="btn-opt">🔼 کشیدن</span></label>
+            <label><input type="radio" name="operation" value="نصب"><span class="btn-opt">🔽 نصب</span></label>
+            <label><input type="radio" name="operation" value="جمع آوری"><span class="btn-opt">📦 جمع‌آوری</span></label>
+            <label><input type="radio" name="operation" value="نصب جدید"><span class="btn-opt">🆕 نصب جدید</span></label>
+          </div>
+        </div>
+        <div class="field" style="margin-top:14px;">
+          <label>شرح خرابی از نظر بهره‌بردار</label>
+          <div class="btn-group" id="failure-group">
+            <label><input type="checkbox" name="failure" value="سوختن الکتروپمپ"><span class="btn-opt">🔥 سوختن الکتروپمپ</span></label>
+            <label><input type="checkbox" name="failure" value="سوختن الکتروموتور"><span class="btn-opt">🔥 سوختن الکتروموتور</span></label>
+            <label><input type="checkbox" name="failure" value="اهم دار"><span class="btn-opt">⚡ اهم دار</span></label>
+            <label><input type="checkbox" name="failure" value="اضافه آمپر"><span class="btn-opt">📈 اضافه آمپر</span></label>
+            <label><input type="checkbox" name="failure" value="اضافه جریان"><span class="btn-opt">📈 اضافه جریان</span></label>
+            <label><input type="checkbox" name="failure" value="اتصال کوتاه"><span class="btn-opt">⚡ اتصال کوتاه</span></label>
+            <label><input type="checkbox" name="failure" value="کاهش آبدهی"><span class="btn-opt">💧 کاهش آبدهی</span></label>
+            <label><input type="checkbox" name="failure" value="افزایش دبی"><span class="btn-opt">📊 افزایش دبی</span></label>
+            <label><input type="checkbox" name="failure" value="افزایش فشار شبکه"><span class="btn-opt">🔄 افزایش فشار شبکه</span></label>
+            <label><input type="checkbox" name="failure" value="شولات"><span class="btn-opt">🪨 شولات</span></label>
+            <label><input type="checkbox" name="failure" value="هوادهی"><span class="btn-opt">💨 هوادهی</span></label>
+            <label><input type="checkbox" name="failure" value="صدا و لرزش"><span class="btn-opt">📳 صدا و لرزش</span></label>
+            <label><input type="checkbox" name="failure" value="ایراد مکانیکی"><span class="btn-opt">🔩 ایراد مکانیکی</span></label>
+            <label><input type="checkbox" name="failure" value="تعویض لوله آبده"><span class="btn-opt">🔧 تعویض لوله آبده</span></label>
+            <label><input type="checkbox" name="failure" value="تجهیز چاه جدید"><span class="btn-opt">🆕 تجهیز چاه جدید</span></label>
+            <label><input type="checkbox" name="failure" value="تجهیز جدید (جابجایی)"><span class="btn-opt">🔀 تجهیز جدید (جابجایی)</span></label>
+            <label><input type="checkbox" name="failure" value="مهندسی مجدد"><span class="btn-opt">🏗️ مهندسی مجدد</span></label>
+            <label><input type="checkbox" name="failure" value="بهسازی شده"><span class="btn-opt">✅ بهسازی شده</span></label>
+            <label><input type="checkbox" name="failure" value="جابجایی"><span class="btn-opt">🔀 جابجایی</span></label>
+            <label><input type="checkbox" name="failure" value="نصب جدید"><span class="btn-opt">🆕 نصب جدید</span></label>
+            <label><input type="checkbox" name="failure" value="افزایش آبدهی"><span class="btn-opt">💧 افزایش آبدهی</span></label>
+            <label><input type="checkbox" name="failure" value="اهم دار و افزایش دبی"><span class="btn-opt">⚡💧 اهم‌دار+دبی</span></label>
+            <label><input type="checkbox" name="failure" value="تغییر فشار و دبی"><span class="btn-opt">🔄 تغییر فشار/دبی</span></label>
+            <label><input type="checkbox" name="failure" value="جمع آوری (چاه قدیم)"><span class="btn-opt">📦 جمع‌آوری چاه قدیم</span></label>
+          </div>
+          <input type="text" id="f-failure-other" placeholder="سایر موارد خرابی (اختیاری)..." style="margin-top:8px;" />
+        </div>
+        <div class="field-group cols-2" style="margin-top:14px;">
+          <div class="field">
+            <label>فرم نصب در PM</label>
+            <div class="btn-group">
+              <label><input type="radio" name="pm" value="√"><span class="btn-opt">✅ دارد (√)</span></label>
+              <label><input type="radio" name="pm" value="ok"><span class="btn-opt">✔ ok</span></label>
+              <label><input type="radio" name="pm" value=""><span class="btn-opt">ندارد</span></label>
+            </div>
+          </div>
+          <div class="field">
+            <label>نام پیمانکار <span class="req">*</span></label>
+            <div class="btn-group">
+              <label><input type="radio" name="contractor" value="جوادی"><span class="btn-opt">جوادی</span></label>
+              <label><input type="radio" name="contractor" value="سعدآبادی"><span class="btn-opt">سعدآبادی</span></label>
+              <label><input type="radio" name="contractor" value="موسوی نژاد"><span class="btn-opt">موسوی‌نژاد</span></label>
+              <label><input type="radio" name="contractor" value="محمدزاده"><span class="btn-opt">محمدزاده</span></label>
+              <label><input type="radio" name="contractor" value="نیکاب"><span class="btn-opt">نیکاب</span></label>
+              <label><input type="radio" name="contractor" value="جوادی (ایرج)"><span class="btn-opt">جوادی (ایرج)</span></label>
+              <label><input type="radio" name="contractor" value="اکبری منطقه 5"><span class="btn-opt">اکبری م۵</span></label>
+              <label><input type="radio" name="contractor" value="توانا منطقه 5"><span class="btn-opt">توانا م۵</span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 3: موتور -->
+      <div class="form-section">
+        <div class="section-title">⚡ مشخصات موتور</div>
+        <div class="field-group cols-2">
+          <div class="field">
+            <label>تیپ الکتروموتور قبلی (KW)</label>
+            <div class="btn-group">
+              <label><input type="radio" name="motor-prev" value=""><span class="btn-opt">—</span></label>
+              <label><input type="radio" name="motor-prev" value="3"><span class="btn-opt">3</span></label>
+              <label><input type="radio" name="motor-prev" value="5"><span class="btn-opt">5</span></label>
+              <label><input type="radio" name="motor-prev" value="7.5"><span class="btn-opt">7.5</span></label>
+              <label><input type="radio" name="motor-prev" value="11"><span class="btn-opt">11</span></label>
+              <label><input type="radio" name="motor-prev" value="13"><span class="btn-opt">13</span></label>
+              <label><input type="radio" name="motor-prev" value="15"><span class="btn-opt">15</span></label>
+              <label><input type="radio" name="motor-prev" value="18"><span class="btn-opt">18</span></label>
+              <label><input type="radio" name="motor-prev" value="22"><span class="btn-opt">22</span></label>
+              <label><input type="radio" name="motor-prev" value="24"><span class="btn-opt">24</span></label>
+              <label><input type="radio" name="motor-prev" value="30"><span class="btn-opt">30</span></label>
+              <label><input type="radio" name="motor-prev" value="37"><span class="btn-opt">37</span></label>
+              <label><input type="radio" name="motor-prev" value="45"><span class="btn-opt">45</span></label>
+              <label><input type="radio" name="motor-prev" value="55"><span class="btn-opt">55</span></label>
+              <label><input type="radio" name="motor-prev" value="62"><span class="btn-opt">62</span></label>
+              <label><input type="radio" name="motor-prev" value="73"><span class="btn-opt">73</span></label>
+              <label><input type="radio" name="motor-prev" value="92"><span class="btn-opt">92</span></label>
+              <label><input type="radio" name="motor-prev" value="110"><span class="btn-opt">110</span></label>
+              <label><input type="radio" name="motor-prev" value="130"><span class="btn-opt">130</span></label>
+            </div>
+          </div>
+          <div class="field">
+            <label>تیپ الکتروموتور فعلی (KW) <span class="req">*</span></label>
+            <div class="btn-group">
+              <label><input type="radio" name="motor-curr" value=""><span class="btn-opt">—</span></label>
+              <label><input type="radio" name="motor-curr" value="3"><span class="btn-opt">3</span></label>
+              <label><input type="radio" name="motor-curr" value="5"><span class="btn-opt">5</span></label>
+              <label><input type="radio" name="motor-curr" value="7.5"><span class="btn-opt">7.5</span></label>
+              <label><input type="radio" name="motor-curr" value="11"><span class="btn-opt">11</span></label>
+              <label><input type="radio" name="motor-curr" value="13"><span class="btn-opt">13</span></label>
+              <label><input type="radio" name="motor-curr" value="15"><span class="btn-opt">15</span></label>
+              <label><input type="radio" name="motor-curr" value="18"><span class="btn-opt">18</span></label>
+              <label><input type="radio" name="motor-curr" value="22"><span class="btn-opt">22</span></label>
+              <label><input type="radio" name="motor-curr" value="24"><span class="btn-opt">24</span></label>
+              <label><input type="radio" name="motor-curr" value="30"><span class="btn-opt">30</span></label>
+              <label><input type="radio" name="motor-curr" value="37"><span class="btn-opt">37</span></label>
+              <label><input type="radio" name="motor-curr" value="45"><span class="btn-opt">45</span></label>
+              <label><input type="radio" name="motor-curr" value="55"><span class="btn-opt">55</span></label>
+              <label><input type="radio" name="motor-curr" value="62"><span class="btn-opt">62</span></label>
+              <label><input type="radio" name="motor-curr" value="73"><span class="btn-opt">73</span></label>
+              <label><input type="radio" name="motor-curr" value="92"><span class="btn-opt">92</span></label>
+              <label><input type="radio" name="motor-curr" value="110"><span class="btn-opt">110</span></label>
+              <label><input type="radio" name="motor-curr" value="130"><span class="btn-opt">130</span></label>
+            </div>
+          </div>
+        </div>
+        <div class="field-group cols-3" style="margin-top:14px;">
+          <div class="field">
+            <label>پلاک موتور</label>
+            <input type="text" id="f-motor-plaque" placeholder="شماره پلاک" />
+          </div>
+          <div class="field">
+            <label>سازنده / تعمیرکار موتور</label>
+            <div class="btn-group">
+              <label><input type="radio" name="motor-maker" value="کارگاه مکانیک"><span class="btn-opt">کارگاه مکانیک</span></label>
+              <label><input type="radio" name="motor-maker" value="پمپیران"><span class="btn-opt">پمپیران</span></label>
+              <label><input type="radio" name="motor-maker" value="سولار"><span class="btn-opt">سولار</span></label>
+              <label><input type="radio" name="motor-maker" value="گازار"><span class="btn-opt">گازار</span></label>
+              <label><input type="radio" name="motor-maker" value="بارش"><span class="btn-opt">بارش</span></label>
+              <label><input type="radio" name="motor-maker" value="اسرار"><span class="btn-opt">اسرار</span></label>
+              <label><input type="radio" name="motor-maker" value="ناصری"><span class="btn-opt">ناصری</span></label>
+              <label><input type="radio" name="motor-maker" value="حسن زاده"><span class="btn-opt">حسن‌زاده</span></label>
+            </div>
+          </div>
+          <div class="field">
+            <label>نو / تعمیری</label>
+            <div class="btn-group">
+              <label><input type="radio" name="motor-condition" value="نو"><span class="btn-opt">🆕 نو</span></label>
+              <label><input type="radio" name="motor-condition" value="تعمیری"><span class="btn-opt">🔧 تعمیری</span></label>
+              <label><input type="radio" name="motor-condition" value="برگشتی"><span class="btn-opt">↩ برگشتی</span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 4: پمپ -->
+      <div class="form-section">
+        <div class="section-title">💧 مشخصات پمپ</div>
+        <div class="field-group cols-2">
+          <div class="field">
+            <label>تیپ پمپ قبلی</label>
+            <input type="text" id="f-pump-prev" placeholder="مثال: 384/10" list="pump-types-list" />
+            <datalist id="pump-types-list">
+              <option value="102"><option value="152"><option value="193"><option value="233">
+              <option value="293"><option value="345"><option value="374"><option value="384">
+              <option value="486"><option value="6606"><option value="6608"><option value="6609">
+              <option value="6611"><option value="کفکش">
+            </datalist>
+          </div>
+          <div class="field">
+            <label>تیپ پمپ فعلی <span class="req">*</span></label>
+            <div class="btn-group" id="pump-curr-group">
+              <label><input type="radio" name="pump-curr" value=""><span class="btn-opt">—</span></label>
+              <label><input type="radio" name="pump-curr" value="102"><span class="btn-opt">102</span></label>
+              <label><input type="radio" name="pump-curr" value="152"><span class="btn-opt">152</span></label>
+              <label><input type="radio" name="pump-curr" value="193"><span class="btn-opt">193</span></label>
+              <label><input type="radio" name="pump-curr" value="233"><span class="btn-opt">233</span></label>
+              <label><input type="radio" name="pump-curr" value="293"><span class="btn-opt">293</span></label>
+              <label><input type="radio" name="pump-curr" value="345"><span class="btn-opt">345</span></label>
+              <label><input type="radio" name="pump-curr" value="374"><span class="btn-opt">374</span></label>
+              <label><input type="radio" name="pump-curr" value="384"><span class="btn-opt">384</span></label>
+              <label><input type="radio" name="pump-curr" value="486"><span class="btn-opt">486</span></label>
+              <label><input type="radio" name="pump-curr" value="6606"><span class="btn-opt">6606</span></label>
+              <label><input type="radio" name="pump-curr" value="6608"><span class="btn-opt">6608</span></label>
+              <label><input type="radio" name="pump-curr" value="6609"><span class="btn-opt">6609</span></label>
+              <label><input type="radio" name="pump-curr" value="6611"><span class="btn-opt">6611</span></label>
+              <label><input type="radio" name="pump-curr" value="کفکش"><span class="btn-opt">کفکش</span></label>
+            </div>
+          </div>
+        </div>
+        <div class="field-group cols-3" style="margin-top:14px;">
+          <div class="field">
+            <label>طبقه پمپ</label>
+            <input type="number" id="f-pump-stage" min="1" max="30" placeholder="تعداد طبقه" />
+          </div>
+          <div class="field">
+            <label>پلاک پمپ</label>
+            <input type="text" id="f-pump-plaque" placeholder="شماره پلاک" />
+          </div>
+          <div class="field">
+            <label>سازنده / تعمیرکار پمپ</label>
+            <div class="btn-group">
+              <label><input type="radio" name="pump-maker" value="کارگاه مکانیک"><span class="btn-opt">کارگاه مکانیک</span></label>
+              <label><input type="radio" name="pump-maker" value="پمپیران"><span class="btn-opt">پمپیران</span></label>
+              <label><input type="radio" name="pump-maker" value="سولار"><span class="btn-opt">سولار</span></label>
+              <label><input type="radio" name="pump-maker" value="گازار"><span class="btn-opt">گازار</span></label>
+              <label><input type="radio" name="pump-maker" value="بارش"><span class="btn-opt">بارش</span></label>
+              <label><input type="radio" name="pump-maker" value="آریان"><span class="btn-opt">آریان</span></label>
+            </div>
+          </div>
+        </div>
+        <div class="field-group cols-2" style="margin-top:12px;">
+          <div class="field">
+            <label>نو / تعمیری پمپ</label>
+            <div class="btn-group">
+              <label><input type="radio" name="pump-condition" value="نو"><span class="btn-opt">🆕 نو</span></label>
+              <label><input type="radio" name="pump-condition" value="تعمیری"><span class="btn-opt">🔧 تعمیری</span></label>
+              <label><input type="radio" name="pump-condition" value="برگشتی"><span class="btn-opt">↩ برگشتی</span></label>
+            </div>
+          </div>
+          <div class="field">
+            <label>تغییر تیپ</label>
+            <div class="btn-group">
+              <label><input type="radio" name="type-change" value=""><span class="btn-opt">—</span></label>
+              <label><input type="radio" name="type-change" value="دارد"><span class="btn-opt">✅ دارد</span></label>
+              <label><input type="radio" name="type-change" value="ندارد"><span class="btn-opt">❌ ندارد</span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 5: اطلاعات چاه -->
+      <div class="form-section">
+        <div class="section-title">📐 اطلاعات چاه و نصب</div>
+        <div class="field-group cols-3">
+          <div class="field field-number">
+            <label>تاریخ نصب قبلی</label>
+            <input type="text" id="f-prev-install-date" placeholder="مثال: 1402/07/10" />
+          </div>
+          <div class="field field-number">
+            <label>عمق چاه (متر)</label>
+            <input type="number" id="f-well-depth" placeholder="متر" />
+          </div>
+          <div class="field field-number">
+            <label>عمق نصب قبلی (متر)</label>
+            <input type="number" id="f-prev-install-depth" placeholder="متر" />
+          </div>
+          <div class="field field-number">
+            <label>عمق نصب فعلی (متر)</label>
+            <input type="number" id="f-curr-install-depth" placeholder="متر" />
+          </div>
+          <div class="field field-number">
+            <label>سطح استاتیک (متر)</label>
+            <input type="number" id="f-static-level" placeholder="متر" />
+          </div>
+          <div class="field field-number">
+            <label>سطح دینامیک (متر)</label>
+            <input type="number" id="f-dynamic-level" placeholder="متر" />
+          </div>
+          <div class="field field-number">
+            <label>تلفات مسیر</label>
+            <input type="number" id="f-path-loss" placeholder="متر" />
+          </div>
+          <div class="field field-number">
+            <label>فشار شبکه (متر)</label>
+            <input type="number" id="f-network-pressure" placeholder="متر" />
+          </div>
+          <div class="field field-number">
+            <label>هد کلی (متر)</label>
+            <input type="number" id="f-total-head" placeholder="متر" />
+          </div>
+          <div class="field field-number">
+            <label>دبی طراحی</label>
+            <input type="number" id="f-design-flow" placeholder="لیتر بر ثانیه" step="0.1" />
+          </div>
+          <div class="field">
+            <label>قطر لوله آبده (اینچ)</label>
+            <div class="btn-group">
+              <label><input type="radio" name="pipe-diam" value="3"><span class="btn-opt">3″</span></label>
+              <label><input type="radio" name="pipe-diam" value="4"><span class="btn-opt">4″</span></label>
+              <label><input type="radio" name="pipe-diam" value="6"><span class="btn-opt">6″</span></label>
+              <label><input type="radio" name="pipe-diam" value="6*8"><span class="btn-opt">6×8″</span></label>
+              <label><input type="radio" name="pipe-diam" value="8"><span class="btn-opt">8″</span></label>
+              <label><input type="radio" name="pipe-diam" value="10"><span class="btn-opt">10″</span></label>
+            </div>
+          </div>
+          <div class="field">
+            <label>تغییر تیپ کابل</label>
+            <div class="btn-group">
+              <label><input type="radio" name="cable-type-change" value=""><span class="btn-opt">—</span></label>
+              <label><input type="radio" name="cable-type-change" value="دارد"><span class="btn-opt">✅ دارد</span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 6: آزمایش پمپاژ -->
+      <div class="form-section">
+        <div class="section-title">🔬 آزمایش پمپاژ کارگاه مکانیک</div>
+        <div class="field-group cols-2">
+          <div class="field">
+            <label>تاریخ آزمایش پمپاژ</label>
+            <input type="text" id="f-test-date" placeholder="مثال: 1404/01/05" />
+          </div>
+          <div class="field field-number">
+            <label>فشار آزمایش پمپاژ</label>
+            <input type="number" id="f-test-pressure" placeholder="فشار" step="0.1" />
+          </div>
+          <div class="field field-number">
+            <label>دبی آزمایش پمپاژ</label>
+            <input type="number" id="f-test-flow" placeholder="دبی" step="0.1" />
+          </div>
+          <div class="field">
+            <label>تغییر سایز کابل</label>
+            <div class="btn-group">
+              <label><input type="radio" name="cable-size-change" value=""><span class="btn-opt">—</span></label>
+              <label><input type="radio" name="cable-size-change" value="دارد"><span class="btn-opt">✅ دارد</span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 7: کابل و راه‌انداز -->
+      <div class="form-section">
+        <div class="section-title">🔌 کابل و راه‌انداز</div>
+        <div class="field-group cols-2">
+          <div class="field">
+            <label>نام چاه استفاده شده (کابل)</label>
+            <input type="text" id="f-cable-well" placeholder="نام چاه" />
+          </div>
+          <div class="field">
+            <label>راه‌انداز (نوع استارت)</label>
+            <div class="btn-group">
+              <label><input type="radio" name="starter" value=""><span class="btn-opt">—</span></label>
+              <label><input type="radio" name="starter" value="ستاره"><span class="btn-opt">⭐ ستاره</span></label>
+              <label><input type="radio" name="starter" value="سافت"><span class="btn-opt">🔁 سافت</span></label>
+              <label><input type="radio" name="starter" value="ستاره مثلث"><span class="btn-opt">⭐△ ستاره‌مثلث</span></label>
+              <label><input type="radio" name="starter" value="تک فاز"><span class="btn-opt">1⚡ تک فاز</span></label>
+              <label><input type="radio" name="starter" value="ندارد"><span class="btn-opt">❌ ندارد</span></label>
+            </div>
+          </div>
+          <div class="field">
+            <label>سایز کابل</label>
+            <div class="btn-group">
+              <label><input type="radio" name="cable-size" value=""><span class="btn-opt">—</span></label>
+              <label><input type="radio" name="cable-size" value="3*6"><span class="btn-opt">3×6</span></label>
+              <label><input type="radio" name="cable-size" value="3*10"><span class="btn-opt">3×10</span></label>
+              <label><input type="radio" name="cable-size" value="3*16"><span class="btn-opt">3×16</span></label>
+              <label><input type="radio" name="cable-size" value="3*25"><span class="btn-opt">3×25</span></label>
+              <label><input type="radio" name="cable-size" value="3*35"><span class="btn-opt">3×35</span></label>
+              <label><input type="radio" name="cable-size" value="3*50"><span class="btn-opt">3×50</span></label>
+              <label><input type="radio" name="cable-size" value="3*70"><span class="btn-opt">3×70</span></label>
+              <label><input type="radio" name="cable-size" value="3*95"><span class="btn-opt">3×95</span></label>
+            </div>
+          </div>
+          <div class="field field-number">
+            <label>سال کشیدن فعلی</label>
+            <input type="number" id="f-pull-year" placeholder="مثال: 1404" min="1390" max="1420" />
+          </div>
+          <div class="field">
+            <label>ماه کشیدن فعلی</label>
+            <select id="f-pull-month">
+              <option value="">—</option>
+              <option value="1">فروردین</option><option value="2">اردیبهشت</option>
+              <option value="3">خرداد</option><option value="4">تیر</option>
+              <option value="5">مرداد</option><option value="6">شهریور</option>
+              <option value="7">مهر</option><option value="8">آبان</option>
+              <option value="9">آذر</option><option value="10">دی</option>
+              <option value="11">بهمن</option><option value="12">اسفند</option>
+            </select>
+          </div>
+          <div class="field field-number">
+            <label>سال نصب قدیم</label>
+            <input type="number" id="f-old-install-year" placeholder="مثال: 1402" min="1390" max="1420" />
+          </div>
+          <div class="field">
+            <label>ماه نصب قدیم</label>
+            <select id="f-old-install-month">
+              <option value="">—</option>
+              <option value="1">فروردین</option><option value="2">اردیبهشت</option>
+              <option value="3">خرداد</option><option value="4">تیر</option>
+              <option value="5">مرداد</option><option value="6">شهریور</option>
+              <option value="7">مهر</option><option value="8">آبان</option>
+              <option value="9">آذر</option><option value="10">دی</option>
+              <option value="11">بهمن</option><option value="12">اسفند</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 8: نتیجه و توضیحات -->
+      <div class="form-section full-width">
+        <div class="section-title">📝 نتیجه بررسی و توضیحات</div>
+        <div class="field-group cols-2">
+          <div class="field">
+            <label>نظر کارگاه مکانیک</label>
+            <div class="btn-group">
+              <label><input type="checkbox" name="workshop-opinion" value="سالم"><span class="btn-opt">✅ سالم</span></label>
+              <label><input type="checkbox" name="workshop-opinion" value="اهم دار"><span class="btn-opt">⚡ اهم دار</span></label>
+              <label><input type="checkbox" name="workshop-opinion" value="سوختن الکتروموتور"><span class="btn-opt">🔥 سوختن الکتروموتور</span></label>
+              <label><input type="checkbox" name="workshop-opinion" value="شولاتی"><span class="btn-opt">🪨 شولاتی</span></label>
+              <label><input type="checkbox" name="workshop-opinion" value="شولات-سوخته"><span class="btn-opt">🪨🔥 شولات+سوخته</span></label>
+              <label><input type="checkbox" name="workshop-opinion" value="شولات- سالم"><span class="btn-opt">🪨✅ شولات+سالم</span></label>
+              <label><input type="checkbox" name="workshop-opinion" value="ایراد در قطغه پمپ"><span class="btn-opt">💧 ایراد قطغه پمپ</span></label>
+              <label><input type="checkbox" name="workshop-opinion" value="شکستن طبقه"><span class="btn-opt">💥 شکستن طبقه</span></label>
+              <label><input type="checkbox" name="workshop-opinion" value="شکستن پمپ بعلت ورود جسم خارجی"><span class="btn-opt">💥 ورود جسم خارجی</span></label>
+              <label><input type="checkbox" name="workshop-opinion" value="نشستن به کف چاه"><span class="btn-opt">⬇ نشستن کف چاه</span></label>
+              <label><input type="checkbox" name="workshop-opinion" value="گیرپاژ"><span class="btn-opt">🔒 گیرپاژ</span></label>
+              <label><input type="checkbox" name="workshop-opinion" value="مشکل تابلو"><span class="btn-opt">📟 مشکل تابلو</span></label>
+              <label><input type="checkbox" name="workshop-opinion" value="مشکل در نصب"><span class="btn-opt">🔧 مشکل در نصب</span></label>
+              <label><input type="checkbox" name="workshop-opinion" value="خطا بهره بردار"><span class="btn-opt">⚠ خطا بهره‌بردار</span></label>
+              <label><input type="checkbox" name="workshop-opinion" value="کفکش سالم"><span class="btn-opt">✅ کفکش سالم</span></label>
+            </div>
+          </div>
+          <div class="field">
+            <label>چاه‌های با عمر کمتر از یک سال</label>
+            <div class="btn-group">
+              <label><input type="radio" name="young-wells" value=""><span class="btn-opt">—</span></label>
+              <label><input type="radio" name="young-wells" value="0"><span class="btn-opt">0</span></label>
+              <label><input type="radio" name="young-wells" value="1"><span class="btn-opt">1</span></label>
+              <label><input type="radio" name="young-wells" value="2"><span class="btn-opt">2</span></label>
+              <label><input type="radio" name="young-wells" value="3"><span class="btn-opt">3</span></label>
+              <label><input type="radio" name="young-wells" value="4"><span class="btn-opt">4</span></label>
+              <label><input type="radio" name="young-wells" value="5"><span class="btn-opt">5</span></label>
+            </div>
+          </div>
+        </div>
+        <div class="field" style="margin-top:14px;">
+          <label>توضیحات (چند گزینه)</label>
+          <div class="btn-group">
+            <label><input type="checkbox" name="desc-tags" value="الکتروموتور سالم"><span class="btn-opt">موتور سالم</span></label>
+            <label><input type="checkbox" name="desc-tags" value="پمپ سالم"><span class="btn-opt">پمپ سالم</span></label>
+            <label><input type="checkbox" name="desc-tags" value="سیم‌پیچ سوخته"><span class="btn-opt">سیم‌پیچ سوخته</span></label>
+            <label><input type="checkbox" name="desc-tags" value="ورود شولات"><span class="btn-opt">ورود شولات</span></label>
+            <label><input type="checkbox" name="desc-tags" value="خوردگی بوش"><span class="btn-opt">خوردگی بوش</span></label>
+            <label><input type="checkbox" name="desc-tags" value="خرابی پروانه"><span class="btn-opt">خرابی پروانه</span></label>
+            <label><input type="checkbox" name="desc-tags" value="کابل زخمی"><span class="btn-opt">کابل زخمی</span></label>
+            <label><input type="checkbox" name="desc-tags" value="لاستیک پاره"><span class="btn-opt">لاستیک پاره</span></label>
+            <label><input type="checkbox" name="desc-tags" value="آرک سربندی"><span class="btn-opt">آرک سربندی</span></label>
+            <label><input type="checkbox" name="desc-tags" value="یاتاقان خراب"><span class="btn-opt">یاتاقان خراب</span></label>
+            <label><input type="checkbox" name="desc-tags" value="گیرکردن به جدار"><span class="btn-opt">گیرکردن جدار</span></label>
+            <label><input type="checkbox" name="desc-tags" value="پرشدن چاه"><span class="btn-opt">پرشدن چاه</span></label>
+            <label><input type="checkbox" name="desc-tags" value="داخل موتور گل و لای"><span class="btn-opt">گل و لای</span></label>
+            <label><input type="checkbox" name="desc-tags" value="تغییر از ستاره به سافت"><span class="btn-opt">ستاره→سافت</span></label>
+            <label><input type="checkbox" name="desc-tags" value="اسقاط پمپ"><span class="btn-opt">اسقاط پمپ</span></label>
+          </div>
+          <textarea id="f-description" placeholder="توضیحات تکمیلی..." style="margin-top:10px;"></textarea>
+        </div>
+        <div class="field" style="margin-top:14px;">
+          <label>تعداد ماه‌های کارکرد</label>
+          <input type="number" id="f-working-months" min="0" placeholder="تعداد ماه" />
+        </div>
+      </div>
+
+    </div><!-- /form-grid -->
+
+    <div class="form-actions">
+      <button class="btn-primary" onclick="saveRecord()">💾 ثبت رکورد</button>
+      <button class="btn-secondary" onclick="clearForm()">🗑 پاک کردن فرم</button>
+    </div>
+  </div>
+
+  <!-- ====== PAGE: RECORDS ====== -->
+  <div class="page" id="page-records">
+    <div class="table-wrapper">
+      <div class="table-toolbar">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <h2>📋 سوابق ثبت‌شده</h2>
+          <span class="record-count-badge" id="record-count">0 رکورد</span>
+        </div>
+        <div class="toolbar-actions">
+          <button class="export-btn export-xlsx" onclick="exportXLSX()">📊 خروجی اکسل</button>
+          <button class="export-btn export-csv" onclick="exportCSV()">📄 خروجی CSV</button>
+          <button class="export-btn export-json" onclick="exportJSON()">🗂 خروجی JSON</button>
+          <button class="export-btn" style="background:#c0392b;color:white;" onclick="confirmClearAll()">🗑 پاک کردن همه</button>
+        </div>
+      </div>
+      <div style="padding:16px 20px;">
+        <div class="filter-row">
+          <input type="text" id="search-input" placeholder="🔍 جستجو در تمام فیلدها..." oninput="filterRecords()" />
+          <select id="filter-center" onchange="filterRecords()">
+            <option value="">همه مراکز</option>
+            <option>سوران</option><option>امامیه</option><option>منزل آباد</option>
+            <option>خیرآباد</option><option>دانشجو</option><option>گلشهر</option>
+            <option>امام علی</option><option>منطقه 5</option>
+          </select>
+          <select id="filter-operation" onchange="filterRecords()">
+            <option value="">همه عملیات</option>
+            <option>کشیدن</option><option>نصب</option><option>جمع آوری</option>
+          </select>
+          <select id="filter-month" onchange="filterRecords()">
+            <option value="">همه ماه‌ها</option>
+            <option value="1">فروردین</option><option value="2">اردیبهشت</option>
+            <option value="3">خرداد</option><option value="4">تیر</option>
+            <option value="5">مرداد</option><option value="6">شهریور</option>
+            <option value="7">مهر</option><option value="8">آبان</option>
+            <option value="9">آذر</option><option value="10">دی</option>
+            <option value="11">بهمن</option><option value="12">اسفند</option>
+          </select>
+        </div>
+        <div class="table-scroll">
+          <table id="records-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>تاریخ</th>
+                <th>نام چاه</th>
+                <th>مرکز</th>
+                <th>شیفت</th>
+                <th>عملیات</th>
+                <th>خرابی</th>
+                <th>پیمانکار</th>
+                <th>موتور قبلی</th>
+                <th>موتور فعلی</th>
+                <th>نو/تعمیری موتور</th>
+                <th>تیپ پمپ قبلی</th>
+                <th>تیپ پمپ فعلی</th>
+                <th>طبقه</th>
+                <th>نو/تعمیری پمپ</th>
+                <th>عمق نصب فعلی</th>
+                <th>هد کلی</th>
+                <th>دبی طراحی</th>
+                <th>دبی آزمایش</th>
+                <th>راه‌انداز</th>
+                <th>سایز کابل</th>
+                <th>نظر کارگاه</th>
+                <th>توضیحات</th>
+                <th>عملیات</th>
+              </tr>
+            </thead>
+            <tbody id="records-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== PAGE: DASHBOARD ====== -->
+  <div class="page" id="page-dashboard">
+    <div class="dashboard-grid" id="stats-grid"></div>
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h3>📊 توزیع بر اساس مرکز</h3>
+        <div class="bar-chart" id="chart-center"></div>
+      </div>
+      <div class="chart-card">
+        <h3>🔧 نوع عملیات</h3>
+        <div class="bar-chart" id="chart-operation"></div>
+      </div>
+      <div class="chart-card">
+        <h3>🔥 علت خرابی</h3>
+        <div class="bar-chart" id="chart-failure"></div>
+      </div>
+      <div class="chart-card">
+        <h3>👷 پیمانکار</h3>
+        <div class="bar-chart" id="chart-contractor"></div>
+      </div>
+      <div class="chart-card">
+        <h3>📅 ثبت ماهانه</h3>
+        <div class="bar-chart" id="chart-monthly"></div>
+      </div>
+      <div class="chart-card">
+        <h3>💧 تیپ پمپ</h3>
+        <div class="bar-chart" id="chart-pump"></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main-container -->
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- CONFIRM MODAL -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal">
+    <h3 id="modal-title">تأیید عملیات</h3>
+    <p id="modal-msg">آیا مطمئن هستید؟</p>
+    <div class="modal-actions">
+      <button class="btn-danger" id="modal-confirm-btn">تأیید</button>
+      <button class="btn-secondary" onclick="closeModal()">انصراف</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// DATA LAYER – localStorage persistence
+// ============================================================
+const STORAGE_KEY = 'electropump_records_v1';
+let records = [];
+let editingId = null;
+
+function loadFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) records = JSON.parse(raw);
+  } catch(e) { records = []; }
+}
+
+function saveToStorage() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+}
+
+loadFromStorage();
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+function showPage(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.getElementById('nav-' + page).classList.add('active');
+  if (page === 'records') renderTable();
+  if (page === 'dashboard') renderDashboard();
+}
+
+// ============================================================
+// WELL AUTOCOMPLETE
+// ============================================================
+const ALL_WELLS = ['آماده سازی 2','آماده سازی 4','ابوطالب 2','ارشاد','ازاد شهر 2','اسلام آباد 10','اسلام آباد 11','اسلام آباد 14','اسلام آباد 4','اسلام آباد 5','اسلام آباد 9','اسلام اباد 16','اسلام اباد 9','اسلام اباد13','اسماعیل آباد','اسماعیل آباد (منزل اباد)','اسماعیل آباد خیراباد','التیمور 7','التیمور 8','التیمور2','الهیه 5','الهیه یک','اماده سازی2','اماده سازی4','امام رضا 1','امام رضا 11','امام رضا 13 ( قدیم )','امام رضا 13 (جدید)','امام رضا 14','امام رضا 14 ( قدیم )','امام رضا 15','امام رضا 17','امام رضا 18','امام رضا 19','امام رضا 2','امام رضا 21','امام رضا 26','امام رضا 29','امام رضا 31','امام رضا 32','امام رضا 39','امام رضا 43','امام رضا 46','امام رضا 49','امام رضا 5','امام رضا 54','امام رضا 55','امام رضا 56','امام رضا 6','امام رضا 60','امام رضا 61','امام رضا 62','امام رضا 64','امام رضا 7','امام رضا یک','امام رضا11','امام رضا17','امام علی 3','امام هادی 1','امام هادی 2','امامیه 10','امامیه 13','امامیه 16','امامیه 17','امامیه 2','امامیه 21','امامیه 6','امامیه 9','امرغان توس قدیم','امیریه 31','امین آباد','انتهای اقدسیه','انتهای دانشجو','اندرخ 2','اندرخ 5','اندرخ 6','اندیشه 1','اندیشه 19','اندیشه 8','اندیشه8','انصار المهدی','انقلاب','اکبرآباد','بازشیخ 2','بازشیخ 3','بازمرگان','بازه شیخ 3','باغون آباد 2','باهنر 1','باهنر 3','باهنر1','باهنر2','بحر آباد','برک','بنیاد','بهار','بوستان ادب','بوستان فروغی','بوستان نوده','بوستان نیلوفر','تقاطع مترو و سیدان','تلویزیون','تلگرد','توس 3','توس علیا','جباریان','جعماب یک','جمعاب 1','حجاب 2','حجاب 3','حجاب 5','حجت 1','حجت 2','حجت4','حسن آباد گرجی (روستایی)','حصار روستایی','خاتم','خدربیک','خدمات 1 جدبد','خدمات 1 قدیم','خدمات 2','دبستان طبرسی','دبیرستان جباریان','درآبد 1','درآبد2','درآبد6','درابد 1','درابد 2','درابد3','دهرود','دهشک','دوستی 3','دوستی 5 عباس آباد','دیزباد سفلی','رجایی 2','رجایی 4','رجایی 6','رجایی 8','رده 3','رسالت 55','رستمی','رستمی 12','روستای انداد درنگ آباد','روستای برقی','روستای جغنه','روستای خوش هوا','روستای خین عرب','روستای دهشک','روستای زیرکن','روستای گیامی','روستایی بازمرگان','روستایی دزق','روستایی گراب','زاک 13','زاک 14','زاک 16','زاک 20','زاک 3','زاک 5','زاک 6','زاک 8','زاک 9','زاک10','زاک15','زاک16','زرکش 3','ساغروان','ساغروان (پهلوانی)','سالارآباد','سجاد','سعید آباد روستایی','سلامی','سوران 1','سوران 8','سوران 9','سپاد 3','سپاد 3 ( قدیم )','سپاد 4','سپاد 5','سیاسک','سید جلال 1','سید جلال 1 ( قدیم )','سیدی 2','سیدی 6','سیدی 7','سیدی 8','سیدی 9','سیدی9','سیمانشهر 1','شاهد 2','شاهد 2(قدیم)','شاهد 54','شاهنامه 70','شرق منزل آباد','شریعتی 66','ششصد دستگاه','شفا 9','شمس آباد 3','شمس اباد 1','شهرک امام','شهرک انقلاب','شهرک بهشتی','شهرک راه آهن','صدر6','صدف 1 قدیم','صدف 2','صدف1','طلاب یک','عبادی 30','عباس آباد','عباس آباد قدیم جمع آوری','عبدل آباد','عدل خمبنی','غدیر','غرب پارک','فارمد','فتاح','فتح آباد','فخرآباد','فرهنگیان 2','فرهنگیان 4','فریزی 2','فلاحی 88','فلمن','فناوری 1','فناوری 2','فناوری 3','فیاض بخش','قاسم آباد 22','قدس 3','لشکر 77','لشگر77','مجتمع امیریان','مجتمع پردیس','مجد','مجلسی شرقی','مردار کشان','مصلی 3/1','مطهری 1','مطهری 2','مطهری 3','مطهری 4','مطهری 5','ملک آباد 2','ملک اباد','ملک اباد 1','منزل آباد 24','منزل آباد 25','منزل آباد 36','منزل آباد 37','منزل اباد 30','منزل اباد 37','منظریه 1','مهدی آباد','مهراباد2','مهرگان','میدان ضد','میدان قائم','میراٍ ث 1','ناظر آباد','ناظریه 10','ناظریه 2','ناظریه 3','ناظریه 5','ناظریه 6','ناظریه 7','ناظریه 9','ناظریه 9 ( قدیم )','ناظریه روستایی','ناظریه2','نریمانی سفلی','نیروگاه 4','نیروگاه 5','نیروگاه 6','نیروی انتظامی','هندل آباد(روستایی)','وحدت 2','پردیس رآهن','پرکند 2','پرکند 3','پرکند آباد 1','پرکند آباد2 جدید','پرکندآباد 3','پمپاژ زون k','پنج تن 55','پنجتن 55','پیوه زن','چلمه سنگ','چمران 3','چمران2','چهار فصل','چهاربرج','کاظم آباد پنجشنبه','کشاورز 5','کشف 12','کشف 5','کشف رود 10','کشف رود 12','کشف رود 2','کشف رود 8','کلاته سید علی','کلاته منار','کلاهدوز 1','کلاهدوز 1 ( بلوار کلاهدوز )','کلشور','کنه بیست','کوثر 5','کورده 10','کورده 13','کورده 2','کورده 3','کورده 5','کورده 6','کورده 7','کورده 8','کورده روستایی','کورده2','کوشک مهدی','کوی امیر','گاوترنا','گجوان','گلبهار 17','گلبهار 6','گلبهار4','گلبهارجنگل','گلشهر 1','گلشهر 10','گلشهر 3','گلشهر10','گلشهر3','گلشهر4','گلشهر6','گلشهر7','گلشور','گنبدواز','گوارشک','گوارشک ( جدید )','گیامی','گیزی_حسن شهاب','کورده 8','منزل اباد 37','سعید آباد روستایی'];
+
+function wellSearch(val) {
+  const list = document.getElementById('well-list');
+  if (!val || val.length < 1) { list.classList.remove('show'); return; }
+  const matches = ALL_WELLS.filter(w => w.includes(val)).slice(0, 20);
+  if (!matches.length) { list.classList.remove('show'); return; }
+  list.innerHTML = matches.map(w => `<div class="autocomplete-item" onclick="selectWell('${w}')">${w}</div>`).join('');
+  list.classList.add('show');
+}
+
+function selectWell(name) {
+  document.getElementById('f-well').value = name;
+  document.getElementById('well-list').classList.remove('show');
+}
+
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.autocomplete-wrapper')) {
+    document.getElementById('well-list').classList.remove('show');
+  }
+});
+
+// ============================================================
+// FORM HELPERS
+// ============================================================
+function getChecked(name) {
+  return [...document.querySelectorAll(`input[name="${name}"]:checked`)].map(i => i.value).join(', ');
+}
+function getRadio(name) {
+  const el = document.querySelector(`input[name="${name}"]:checked`);
+  return el ? el.value : '';
+}
+
+function collectForm() {
+  const failureOther = document.getElementById('f-failure-other').value.trim();
+  let failure = getChecked('failure');
+  if (failureOther) failure = failure ? failure + ', ' + failureOther : failureOther;
+
+  const descTags = getChecked('desc-tags');
+  const descText = document.getElementById('f-description').value.trim();
+  let description = descTags;
+  if (descText) description = description ? description + ' | ' + descText : descText;
+
+  const workshopOpinion = getChecked('workshop-opinion');
+
+  return {
+    id: editingId || Date.now().toString(),
+    day: document.getElementById('f-day').value,
+    month: document.getElementById('f-month').value,
+    year: document.getElementById('f-year').value,
+    wellName: document.getElementById('f-well').value,
+    center: getRadio('center'),
+    shift: getRadio('shift'),
+    failure: failure,
+    operation: getRadio('operation'),
+    pm: getRadio('pm'),
+    contractor: getRadio('contractor'),
+    motorPrev: getRadio('motor-prev'),
+    motorCurr: getRadio('motor-curr'),
+    motorPlaque: document.getElementById('f-motor-plaque').value,
+    motorMaker: getRadio('motor-maker'),
+    motorCondition: getRadio('motor-condition'),
+    pumpPrev: document.getElementById('f-pump-prev').value,
+    pumpCurr: getRadio('pump-curr'),
+    pumpStage: document.getElementById('f-pump-stage').value,
+    pumpPlaque: document.getElementById('f-pump-plaque').value,
+    pumpMaker: getRadio('pump-maker'),
+    pumpCondition: getRadio('pump-condition'),
+    typeChange: getRadio('type-change'),
+    prevInstallDate: document.getElementById('f-prev-install-date').value,
+    wellDepth: document.getElementById('f-well-depth').value,
+    prevInstallDepth: document.getElementById('f-prev-install-depth').value,
+    currInstallDepth: document.getElementById('f-curr-install-depth').value,
+    staticLevel: document.getElementById('f-static-level').value,
+    dynamicLevel: document.getElementById('f-dynamic-level').value,
+    pathLoss: document.getElementById('f-path-loss').value,
+    networkPressure: document.getElementById('f-network-pressure').value,
+    totalHead: document.getElementById('f-total-head').value,
+    designFlow: document.getElementById('f-design-flow').value,
+    pipeDiameter: getRadio('pipe-diam'),
+    cableTypeChange: getRadio('cable-type-change'),
+    testDate: document.getElementById('f-test-date').value,
+    testPressure: document.getElementById('f-test-pressure').value,
+    testFlow: document.getElementById('f-test-flow').value,
+    cableSizeChange: getRadio('cable-size-change'),
+    cableWell: document.getElementById('f-cable-well').value,
+    starter: getRadio('starter'),
+    cableSize: getRadio('cable-size'),
+    pullYear: document.getElementById('f-pull-year').value,
+    pullMonth: document.getElementById('f-pull-month').value,
+    oldInstallYear: document.getElementById('f-old-install-year').value,
+    oldInstallMonth: document.getElementById('f-old-install-month').value,
+    workingMonths: document.getElementById('f-working-months').value,
+    workshopOpinion: workshopOpinion,
+    description: description,
+    youngWells: getRadio('young-wells'),
+    savedAt: new Date().toISOString()
+  };
+}
+
+function saveRecord() {
+  const data = collectForm();
+  if (!data.wellName) { showToast('❌ نام چاه را وارد کنید', true); return; }
+  if (!data.day || !data.month) { showToast('❌ روز و ماه را وارد کنید', true); return; }
+  if (!data.operation) { showToast('❌ نوع عملیات را انتخاب کنید', true); return; }
+
+  if (editingId) {
+    const idx = records.findIndex(r => r.id === editingId);
+    if (idx !== -1) records[idx] = data;
+    editingId = null;
+  } else {
+    records.push(data);
+  }
+  saveToStorage();
+  showToast('✅ رکورد با موفقیت ثبت شد');
+  clearForm();
+}
+
+function clearForm() {
+  editingId = null;
+  // clear inputs
+  ['f-day','f-month','f-motor-plaque','f-pump-prev','f-pump-stage','f-pump-plaque',
+   'f-prev-install-date','f-well-depth','f-prev-install-depth','f-curr-install-depth',
+   'f-static-level','f-dynamic-level','f-path-loss','f-network-pressure','f-total-head',
+   'f-design-flow','f-test-date','f-test-pressure','f-test-flow','f-cable-well',
+   'f-pull-year','f-pull-month','f-old-install-year','f-old-install-month',
+   'f-working-months','f-description','f-failure-other','f-well'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('f-year').value = 1404;
+  // uncheck all radios/checkboxes
+  document.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(i => i.checked = false);
+  document.getElementById('well-list').classList.remove('show');
+}
+
+function populateForm(r) {
+  editingId = r.id;
+  document.getElementById('f-day').value = r.day || '';
+  document.getElementById('f-month').value = r.month || '';
+  document.getElementById('f-year').value = r.year || 1404;
+  document.getElementById('f-well').value = r.wellName || '';
+  document.getElementById('f-motor-plaque').value = r.motorPlaque || '';
+  document.getElementById('f-pump-prev').value = r.pumpPrev || '';
+  document.getElementById('f-pump-stage').value = r.pumpStage || '';
+  document.getElementById('f-pump-plaque').value = r.pumpPlaque || '';
+  document.getElementById('f-prev-install-date').value = r.prevInstallDate || '';
+  document.getElementById('f-well-depth').value = r.wellDepth || '';
+  document.getElementById('f-prev-install-depth').value = r.prevInstallDepth || '';
+  document.getElementById('f-curr-install-depth').value = r.currInstallDepth || '';
+  document.getElementById('f-static-level').value = r.staticLevel || '';
+  document.getElementById('f-dynamic-level').value = r.dynamicLevel || '';
+  document.getElementById('f-path-loss').value = r.pathLoss || '';
+  document.getElementById('f-network-pressure').value = r.networkPressure || '';
+  document.getElementById('f-total-head').value = r.totalHead || '';
+  document.getElementById('f-design-flow').value = r.designFlow || '';
+  document.getElementById('f-test-date').value = r.testDate || '';
+  document.getElementById('f-test-pressure').value = r.testPressure || '';
+  document.getElementById('f-test-flow').value = r.testFlow || '';
+  document.getElementById('f-cable-well').value = r.cableWell || '';
+  document.getElementById('f-pull-year').value = r.pullYear || '';
+  document.getElementById('f-pull-month').value = r.pullMonth || '';
+  document.getElementById('f-old-install-year').value = r.oldInstallYear || '';
+  document.getElementById('f-old-install-month').value = r.oldInstallMonth || '';
+  document.getElementById('f-working-months').value = r.workingMonths || '';
+  document.getElementById('f-description').value = (r.description || '').includes('|') ? r.description.split('|').pop().trim() : (r.description || '');
+
+  // Set radios
+  function setRadio(name, val) {
+    const el = document.querySelector(`input[name="${name}"][value="${val}"]`);
+    if (el) el.checked = true;
+  }
+  setRadio('center', r.center || '');
+  setRadio('shift', r.shift || '');
+  setRadio('operation', r.operation || '');
+  setRadio('pm', r.pm || '');
+  setRadio('contractor', r.contractor || '');
+  setRadio('motor-prev', r.motorPrev || '');
+  setRadio('motor-curr', r.motorCurr || '');
+  setRadio('motor-maker', r.motorMaker || '');
+  setRadio('motor-condition', r.motorCondition || '');
+  setRadio('pump-curr', r.pumpCurr || '');
+  setRadio('pump-maker', r.pumpMaker || '');
+  setRadio('pump-condition', r.pumpCondition || '');
+  setRadio('type-change', r.typeChange || '');
+  setRadio('pipe-diam', r.pipeDiameter || '');
+  setRadio('cable-type-change', r.cableTypeChange || '');
+  setRadio('cable-size-change', r.cableSizeChange || '');
+  setRadio('starter', r.starter || '');
+  setRadio('cable-size', r.cableSize || '');
+  setRadio('young-wells', r.youngWells || '');
+
+  // Set checkboxes
+  function setCheckboxes(name, valStr) {
+    const vals = (valStr || '').split(', ').map(v => v.trim());
+    document.querySelectorAll(`input[name="${name}"]`).forEach(cb => {
+      cb.checked = vals.includes(cb.value);
+    });
+  }
+  setCheckboxes('failure', r.failure || '');
+  setCheckboxes('workshop-opinion', r.workshopOpinion || '');
+  setCheckboxes('desc-tags', r.description || '');
+
+  showPage('form');
+  window.scrollTo(0,0);
+}
+
+// ============================================================
+// TABLE RENDER
+// ============================================================
+let filteredRecords = [];
+
+function renderTable() {
+  filteredRecords = [...records];
+  applyFilters();
+}
+
+function filterRecords() { applyFilters(); }
+
+function applyFilters() {
+  const search = (document.getElementById('search-input')?.value || '').trim().toLowerCase();
+  const center = document.getElementById('filter-center')?.value || '';
+  const operation = document.getElementById('filter-operation')?.value || '';
+  const month = document.getElementById('filter-month')?.value || '';
+
+  filteredRecords = records.filter(r => {
+    if (center && r.center !== center) return false;
+    if (operation && r.operation !== operation) return false;
+    if (month && String(r.month) !== month) return false;
+    if (search) {
+      const combined = Object.values(r).join(' ').toLowerCase();
+      if (!combined.includes(search)) return false;
+    }
+    return true;
+  });
+
+  document.getElementById('record-count').textContent = `${filteredRecords.length} رکورد`;
+  const tbody = document.getElementById('records-body');
+  if (!filteredRecords.length) {
+    tbody.innerHTML = '<tr><td colspan="24" style="text-align:center;padding:40px;color:#999;">رکوردی یافت نشد</td></tr>';
+    return;
+  }
+
+  const monthNames = ['','فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+  tbody.innerHTML = filteredRecords.map((r, i) => `
+    <tr>
+      <td>${i+1}</td>
+      <td style="white-space:nowrap">${r.day||''}/${r.month ? monthNames[r.month]||r.month : ''}/${r.year||''}</td>
+      <td title="${r.wellName||''}">${(r.wellName||'').substring(0,18)}</td>
+      <td>${r.center||''}</td>
+      <td>${r.shift||''}</td>
+      <td>${r.operation||''}</td>
+      <td title="${r.failure||''}">${(r.failure||'').substring(0,20)}</td>
+      <td>${r.contractor||''}</td>
+      <td>${r.motorPrev||''}</td>
+      <td>${r.motorCurr||''}</td>
+      <td>${r.motorCondition||''}</td>
+      <td>${r.pumpPrev||''}</td>
+      <td>${r.pumpCurr||''}</td>
+      <td>${r.pumpStage||''}</td>
+      <td>${r.pumpCondition||''}</td>
+      <td>${r.currInstallDepth||''}</td>
+      <td>${r.totalHead||''}</td>
+      <td>${r.designFlow||''}</td>
+      <td>${r.testFlow||''}</td>
+      <td>${r.starter||''}</td>
+      <td>${r.cableSize||''}</td>
+      <td title="${r.workshopOpinion||''}">${(r.workshopOpinion||'').substring(0,20)}</td>
+      <td title="${r.description||''}">${(r.description||'').substring(0,30)}</td>
+      <td><div class="action-cell">
+        <button class="btn-sm btn-edit" onclick="editRecord('${r.id}')">✏ ویرایش</button>
+        <button class="btn-sm btn-del" onclick="confirmDelete('${r.id}')">🗑</button>
+      </div></td>
+    </tr>
+  `).join('');
+}
+
+function editRecord(id) {
+  const r = records.find(r => r.id === id);
+  if (r) populateForm(r);
+}
+
+let pendingDeleteId = null;
+function confirmDelete(id) {
+  pendingDeleteId = id;
+  document.getElementById('modal-title').textContent = 'حذف رکورد';
+  document.getElementById('modal-msg').textContent = 'آیا مطمئن هستید؟ این عمل غیرقابل بازگشت است.';
+  document.getElementById('modal-confirm-btn').onclick = () => { deleteRecord(pendingDeleteId); closeModal(); };
+  document.getElementById('confirm-modal').classList.add('show');
+}
+
+function deleteRecord(id) {
+  records = records.filter(r => r.id !== id);
+  saveToStorage();
+  showToast('رکورد حذف شد');
+  renderTable();
+}
+
+function confirmClearAll() {
+  document.getElementById('modal-title').textContent = 'پاک کردن همه رکوردها';
+  document.getElementById('modal-msg').textContent = 'تمام داده‌ها حذف خواهند شد. مطمئن هستید؟';
+  document.getElementById('modal-confirm-btn').onclick = () => { records = []; saveToStorage(); renderTable(); showToast('همه رکوردها پاک شدند'); closeModal(); };
+  document.getElementById('confirm-modal').classList.add('show');
+}
+
+function closeModal() { document.getElementById('confirm-modal').classList.remove('show'); }
+
+// ============================================================
+// EXPORTS
+// ============================================================
+function getExportData() {
+  const monthNames = ['','فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+  return (filteredRecords.length ? filteredRecords : records).map((r,i) => ({
+    'ردیف': i+1,
+    'روز': r.day,
+    'ماه': r.month ? monthNames[r.month]||r.month : '',
+    'ماه(عدد)': r.month,
+    'سال': r.year,
+    'نام چاه': r.wellName,
+    'مرکز': r.center,
+    'شیفت کاری': r.shift,
+    'شرح خرابی از نظر بهره بردار': r.failure,
+    'کشیدن/نصب/جمع آوری': r.operation,
+    'فرم نصب در PM': r.pm,
+    'نام پیمانکار': r.contractor,
+    'تیپ الکتروموتور قبلی': r.motorPrev,
+    'تیپ الکتروموتور فعلی': r.motorCurr,
+    'پلاک موتور': r.motorPlaque,
+    'سازنده/تعمیرکار موتور': r.motorMaker,
+    'نو/تعمیری موتور': r.motorCondition,
+    'تیپ پمپ قبلی': r.pumpPrev,
+    'تیپ پمپ فعلی': r.pumpCurr,
+    'طبقه پمپ': r.pumpStage,
+    'پلاک پمپ': r.pumpPlaque,
+    'سازنده/تعمیرکار پمپ': r.pumpMaker,
+    'نو/تعمیری پمپ': r.pumpCondition,
+    'تغییر تیپ': r.typeChange,
+    'تاریخ نصب قبلی': r.prevInstallDate,
+    'عمق چاه': r.wellDepth,
+    'عمق نصب قبلی': r.prevInstallDepth,
+    'عمق نصب فعلی': r.currInstallDepth,
+    'سطح استاتیک': r.staticLevel,
+    'سطح دینامیک': r.dynamicLevel,
+    'تلفات مسیر': r.pathLoss,
+    'فشار شبکه': r.networkPressure,
+    'هد کلی': r.totalHead,
+    'دبی طراحی': r.designFlow,
+    'قطر لوله آبده': r.pipeDiameter,
+    'تغییر تیپ کابل': r.cableTypeChange,
+    'تاریخ آزمایش پمپاژ': r.testDate,
+    'فشار آزمایش پمپاژ': r.testPressure,
+    'دبی آزمایش پمپاژ': r.testFlow,
+    'تغییر سایز کابل': r.cableSizeChange,
+    'نام چاه استفاده شده (کابل)': r.cableWell,
+    'راه انداز': r.starter,
+    'سایز کابل': r.cableSize,
+    'سال کشیدن فعلی': r.pullYear,
+    'ماه کشیدن فعلی': r.pullMonth,
+    'سال نصب قدیم': r.oldInstallYear,
+    'ماه نصب قدیم': r.oldInstallMonth,
+    'تعداد ماه های کارکرد': r.workingMonths,
+    'چاههای با عمر کمتر از یک سال': r.youngWells,
+    'نظر کارگاه مکانیک': r.workshopOpinion,
+    'توضیحات': r.description,
+  }));
+}
+
+function exportXLSX() {
+  const data = getExportData();
+  if (!data.length) { showToast('❌ داده‌ای برای خروجی وجود ندارد', true); return; }
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'اطلاعات الکتروپمپ');
+  // RTL and column widths
+  ws['!cols'] = Object.keys(data[0]).map(() => ({ wch: 20 }));
+  XLSX.writeFile(wb, `electropump_${Date.now()}.xlsx`);
+  showToast('✅ فایل اکسل دانلود شد');
+}
+
+function exportCSV() {
+  const data = getExportData();
+  if (!data.length) { showToast('❌ داده‌ای وجود ندارد', true); return; }
+  const headers = Object.keys(data[0]).join(',');
+  const rows = data.map(r => Object.values(r).map(v => `"${String(v||'').replace(/"/g,'""')}"`).join(','));
+  const csv = '\uFEFF' + headers + '\n' + rows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `electropump_${Date.now()}.csv`;
+  a.click();
+  showToast('✅ فایل CSV دانلود شد');
+}
+
+function exportJSON() {
+  const data = getExportData();
+  if (!data.length) { showToast('❌ داده‌ای وجود ندارد', true); return; }
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `electropump_${Date.now()}.json`;
+  a.click();
+  showToast('✅ فایل JSON دانلود شد');
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function renderDashboard() {
+  const total = records.length;
+  const pull = records.filter(r => r.operation === 'کشیدن').length;
+  const install = records.filter(r => r.operation === 'نصب').length;
+  const collect = records.filter(r => r.operation === 'جمع آوری').length;
+
+  document.getElementById('stats-grid').innerHTML = `
+    <div class="stat-card" style="border-color:#0a3d62"><div class="stat-icon">📋</div><div class="stat-info"><h3>${total}</h3><p>کل رکوردها</p></div></div>
+    <div class="stat-card" style="border-color:#e74c3c"><div class="stat-icon">🔼</div><div class="stat-info"><h3>${pull}</h3><p>عملیات کشیدن</p></div></div>
+    <div class="stat-card" style="border-color:#27ae60"><div class="stat-icon">🔽</div><div class="stat-info"><h3>${install}</h3><p>عملیات نصب</p></div></div>
+    <div class="stat-card" style="border-color:#f39c12"><div class="stat-icon">📦</div><div class="stat-info"><h3>${collect}</h3><p>جمع‌آوری</p></div></div>
+  `;
+
+  renderBarChart('chart-center', countField('center'));
+  renderBarChart('chart-operation', countField('operation'));
+  renderBarChart('chart-failure', countMulti('failure'));
+  renderBarChart('chart-contractor', countField('contractor'));
+  renderMonthlyChart();
+  renderBarChart('chart-pump', countField('pumpCurr'));
+}
+
+function countField(field) {
+  const counts = {};
+  records.forEach(r => {
+    const v = r[field] || '—';
+    counts[v] = (counts[v] || 0) + 1;
+  });
+  return Object.entries(counts).sort((a,b) => b[1]-a[1]).slice(0, 12);
+}
+
+function countMulti(field) {
+  const counts = {};
+  records.forEach(r => {
+    const vals = (r[field] || '').split(',').map(v => v.trim()).filter(Boolean);
+    vals.forEach(v => { counts[v] = (counts[v] || 0) + 1; });
+  });
+  return Object.entries(counts).sort((a,b) => b[1]-a[1]).slice(0, 12);
+}
+
+function renderBarChart(elId, data) {
+  const el = document.getElementById(elId);
+  if (!data.length) { el.innerHTML = '<p style="color:#999;text-align:center;padding:20px">داده‌ای وجود ندارد</p>'; return; }
+  const max = data[0][1];
+  el.innerHTML = data.map(([label, count]) => `
+    <div class="bar-row">
+      <div class="bar-label" title="${label}">${label}</div>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:${Math.round(count/max*100)}%">
+          <span class="bar-val">${count}</span>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderMonthlyChart() {
+  const months = ['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+  const counts = Array(12).fill(0);
+  records.forEach(r => { const m = parseInt(r.month); if (m >= 1 && m <= 12) counts[m-1]++; });
+  const data = months.map((m, i) => [m, counts[i]]).filter(([,c]) => c > 0);
+  renderBarChart('chart-monthly', data.sort((a,b) => b[1]-a[1]));
+}
+
+// ============================================================
+// TOAST
+// ============================================================
+function showToast(msg, isError = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ============================================================
+// INIT
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('record-count').textContent = `${records.length} رکورد`;
+  // Default year to current
+  document.getElementById('f-year').value = 1404;
+});
+</script>
+</body>
+</html>

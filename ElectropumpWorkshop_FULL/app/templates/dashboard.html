@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}داشبورد — {{ APP_TITLE }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h2>📊 داشبورد</h2>
+    <div class="sub">شاخص‌ها مستقیماً از پایگاه داده محاسبه می‌شوند.</div>
+  </div>
+  <div class="toolbar-actions">
+    {% if 'entry' in ALLOWED_PAGES %}
+    <a class="btn-ghost" href="/entry">📝 ثبت رکورد جدید</a>
+    {% endif %}
+    {% if 'reports' in ALLOWED_PAGES %}
+    <a class="btn-ghost" href="/reports">📈 گزارش‌ها</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <div class="field-group cols-3">
+    <div class="field">
+      <label>از تاریخ</label>
+      <input type="text" id="f-date-from" class="jdate" placeholder="۱۴۰۵/۰۱/۰۱">
+    </div>
+    <div class="field">
+      <label>تا تاریخ</label>
+      <input type="text" id="f-date-to" class="jdate" placeholder="۱۴۰۵/۱۲/۲۹">
+    </div>
+    <div class="field">
+      <label>سال شمسی</label>
+      <select id="f-year"><option value="">همه سال‌ها</option></select>
+    </div>
+    <div class="field">
+      <label>مرکز</label>
+      <select id="f-center"><option value="">همه مراکز</option></select>
+    </div>
+    <div class="field">
+      <label>عملیات</label>
+      <select id="f-operation"><option value="">همه عملیات</option></select>
+    </div>
+    <div class="field" style="justify-content:flex-end">
+      <button class="btn-primary" id="btn-apply" type="button">اعمال فیلتر</button>
+    </div>
+  </div>
+</div>
+
+<div class="dashboard-grid" id="stats-grid"><div class="loading">در حال بارگذاری</div></div>
+
+<div class="charts-grid">
+  <div class="chart-card"><h3>📊 توزیع بر اساس مرکز</h3><div class="bar-chart" id="chart-center"></div></div>
+  <div class="chart-card"><h3>🔧 نوع عملیات</h3><div class="bar-chart" id="chart-operation"></div></div>
+  <div class="chart-card"><h3>🔥 علت خرابی</h3><div class="bar-chart" id="chart-failure"></div></div>
+  <div class="chart-card"><h3>👷 پیمانکار</h3><div class="bar-chart" id="chart-contractor"></div></div>
+  <div class="chart-card"><h3>📅 ثبت ماهانه</h3><div class="bar-chart" id="chart-monthly"></div></div>
+  <div class="chart-card"><h3>💧 تیپ پمپ</h3><div class="bar-chart" id="chart-pump"></div></div>
+  <div class="chart-card"><h3>⚡ تیپ الکتروموتور</h3><div class="bar-chart" id="chart-motor"></div></div>
+  <div class="chart-card"><h3>🔌 راه‌انداز</h3><div class="bar-chart" id="chart-starter"></div></div>
+  <div class="chart-card"><h3>🔬 نظر کارگاه مکانیک</h3><div class="bar-chart" id="chart-opinion"></div></div>
+  <div class="chart-card"><h3>📆 روند سالانه</h3><div class="bar-chart" id="chart-yearly"></div></div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>{% endblock %}

@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}فرم‌ساز — {{ APP_TITLE }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h2>🛠 فرم‌ساز</h2>
+    <div class="sub">بخش‌ها و فیلدهای فرم «ثبت اطلاعات» را از اینجا مدیریت کنید.</div>
+  </div>
+  <div class="toolbar-actions">
+    <button class="btn-ghost" id="btn-new-section" type="button">➕ بخش جدید</button>
+    <button class="btn-primary" id="btn-new-field" type="button">➕ فیلد جدید</button>
+    <a class="btn-ghost" href="/entry">👁 پیش‌نمایش فرم</a>
+  </div>
+</div>
+
+<div class="alert info">
+  فیلدهای <span class="badge">پایه</span> به ستون‌های جدول <code>records</code> و گزارش‌ها
+  متصل‌اند: برچسب، راهنما، ترتیب، الزامی بودن و نمایش در جدول آن‌ها قابل تغییر است، ولی
+  نام فنی و نوعشان ثابت می‌ماند و حذف نمی‌شوند (فقط می‌توان پنهانشان کرد).
+  فیلدهایی که شما می‌سازید در جدول <code>record_dynamic_values</code> ذخیره می‌شوند.
+</div>
+
+<div id="sections-container"><div class="loading">در حال بارگذاری</div></div>
+
+<div class="modal-overlay" id="field-modal">
+  <div class="modal wide">
+    <h3 id="field-modal-title">فیلد</h3>
+    <div class="field-group cols-3">
+      <div class="field"><label>نام فنی فیلد <span class="req">*</span></label>
+        <input type="text" id="fb-name" class="mono" placeholder="my_field">
+        <span class="hint">فقط حروف انگلیسی، عدد و زیرخط.</span></div>
+      <div class="field"><label>برچسب فارسی <span class="req">*</span></label>
+        <input type="text" id="fb-label"></div>
+      <div class="field"><label>نوع فیلد</label><select id="fb-type"></select></div>
+      <div class="field"><label>بخش</label><select id="fb-section"></select></div>
+      <div class="field"><label>ترتیب نمایش</label><input type="number" id="fb-order"></div>
+      <div class="field"><label>عرض (ستون)</label>
+        <select id="fb-span"><option value="1">۱</option><option value="2">۲</option></select></div>
+      <div class="field"><label>الزامی</label>
+        <select id="fb-required"><option value="0">اختیاری</option><option value="1">الزامی</option></select></div>
+      <div class="field"><label>وضعیت</label>
+        <select id="fb-active"><option value="1">فعال</option><option value="0">غیرفعال</option></select></div>
+      <div class="field"><label>نمایش در جدول رکوردها</label>
+        <select id="fb-table"><option value="0">خیر</option><option value="1">بله</option></select></div>
+      <div class="field"><label>مقدار پیش‌فرض</label><input type="text" id="fb-default"></div>
+      <div class="field"><label>متن راهنمای داخل کادر</label><input type="text" id="fb-placeholder"></div>
+      <div class="field"><label>دسته گزینه (برای فیلدهای انتخابی)</label>
+        <select id="fb-lookup"><option value="">— گزینه‌های اختصاصی —</option></select></div>
+      <div class="field"><label>حداقل مقدار</label><input type="number" id="fb-min"></div>
+      <div class="field"><label>حداکثر مقدار</label><input type="number" id="fb-max"></div>
+      <div class="field"><label>گام (step)</label><input type="text" id="fb-step" placeholder="0.1"></div>
+      <div class="field span-2"><label>متن راهنما (زیر فیلد)</label>
+        <input type="text" id="fb-help"></div>
+      <div class="field"><label>اجازه ورود «سایر»</label>
+        <select id="fb-other"><option value="0">خیر</option><option value="1">بله</option></select></div>
+      <div class="field span-2"><label>سرستون خروجی اکسل</label>
+        <input type="text" id="fb-export"></div>
+      <div class="field span-full hidden" id="fb-options-wrap">
+        <label>گزینه‌های این فیلد <span id="fb-options-count" class="badge muted"></span></label>
+        <div id="fb-options-note"></div>
+        <div class="options-editor" id="fb-options-list"></div>
+        <div class="toolbar-actions mt-1">
+          <button class="btn-ghost btn-sm" id="fb-opt-add" type="button">➕ گزینه جدید</button>
+          <button class="btn-ghost btn-sm" id="fb-opt-bulk" type="button">📋 ورود گروهی</button>
+        </div>
+        <textarea id="fb-options-bulk" class="hidden mt-1"
+          placeholder="هر خط یک گزینه، به شکل  مقدار|برچسب|آیکون"></textarea>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" id="fb-save" type="button">ذخیره</button>
+      <button class="btn-danger hidden" id="fb-delete" type="button">حذف / غیرفعال</button>
+      <button class="btn-secondary" type="button" onclick="App.closeModal('field-modal')">انصراف</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="section-modal">
+  <div class="modal">
+    <h3 id="section-modal-title">بخش</h3>
+    <div class="field-group cols-2">
+      <div class="field"><label>کد بخش <span class="req">*</span></label>
+        <input type="text" id="sb-code" class="mono"></div>
+      <div class="field"><label>عنوان <span class="req">*</span></label><input type="text" id="sb-title"></div>
+      <div class="field"><label>آیکون</label><input type="text" id="sb-icon" maxlength="4"></div>
+      <div class="field"><label>تعداد ستون</label>
+        <select id="sb-columns"><option>1</option><option>2</option><option selected>3</option></select></div>
+      <div class="field"><label>تمام‌عرض</label>
+        <select id="sb-full"><option value="0">خیر</option><option value="1">بله</option></select></div>
+      <div class="field"><label>وضعیت</label>
+        <select id="sb-active"><option value="1">فعال</option><option value="0">غیرفعال</option></select></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" id="sb-save" type="button">ذخیره</button>
+      <button class="btn-danger hidden" id="sb-delete" type="button">حذف / غیرفعال</button>
+      <button class="btn-secondary" type="button" onclick="App.closeModal('section-modal')">انصراف</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/form_builder.js') }}"></script>{% endblock %}

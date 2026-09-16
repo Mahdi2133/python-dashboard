@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}کارتابل فرایند — {{ APP_TITLE }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h2>📬 کارتابل فرایند</h2>
+    <div class="sub">مرحله‌هایی که تکمیل آن‌ها با شماست. هر مرحله مستقل است؛
+      برای پر کردن مرحله‌ی خود لازم نیست منتظر مرحله‌های قبل بمانید.</div>
+  </div>
+  <div class="toolbar-actions">
+    <button class="btn-ghost" id="btn-refresh" type="button">↻ به‌روزرسانی</button>
+  </div>
+</div>
+
+<div id="inbox-alert"></div>
+
+<div class="wf-layout">
+  <aside class="wf-list card">
+    <div class="card-head"><span>کارهای من</span><span class="badge" id="inbox-count">۰</span></div>
+    <div id="inbox-items"><div class="loading">در حال بارگذاری</div></div>
+  </aside>
+
+  <section class="wf-detail card hidden" id="wf-detail">
+    <div class="card-head">
+      <span id="wf-title">—</span>
+      <span class="badge" id="wf-kind">—</span>
+    </div>
+
+    <div class="wf-path" id="wf-path"></div>
+    <div id="wf-guide"></div>
+    <div id="wf-warning"></div>
+
+    <details class="wf-summary-wrap" id="wf-summary-wrap" open>
+      <summary>📋 اطلاعات ثبت‌شده در مرحله‌های قبل (فقط مشاهده)</summary>
+      <div id="wf-summary"></div>
+    </details>
+
+    <div id="wf-prev-note"></div>
+
+    <div class="form-grid" id="wf-form"></div>
+
+    <div class="wf-docs">
+      <div class="section-title"><span>📎</span><span>مستندات این فرایند</span></div>
+      <div class="hint">هر نوع فایلی پذیرفته می‌شود — عکس، ویدئو، Word، PDF، Excel
+        و… (حداکثر ۶۴ مگابایت برای هر فایل).</div>
+      <input type="file" id="wf-file" multiple class="mt-1">
+      <div id="wf-attachments" class="mt-1"></div>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn-primary" id="wf-submit" type="button">✅ ثبت و ارسال مرحله</button>
+      <button class="btn-secondary" id="wf-close" type="button">↩ بستن</button>
+    </div>
+  </section>
+</div>
+
+<div class="modal-backdrop" id="new-process-modal">
+  <div class="modal">
+    <div class="modal-head"><h3>🚦 شروع فرایند جدید</h3>
+      <button class="modal-x" data-close="new-process-modal">×</button></div>
+    <div class="modal-body">
+      <div class="field">
+        <label>نوع عملیات <span class="req">*</span></label>
+        <div class="btn-group" id="np-kind">
+          <label><input type="radio" name="np_kind" value="کشیدن"><span class="btn-opt">🔼 کشیدن</span></label>
+          <label><input type="radio" name="np_kind" value="نصب"><span class="btn-opt">🔽 نصب</span></label>
+        </div>
+        <span class="hint">با «کشیدن» فرایند از مرکز آبرسانی آغاز می‌شود؛
+          با «نصب» مستقیم به کارگاه مکانیک می‌رود.</span>
+      </div>
+      <div class="field">
+        <label>نام چاه <span class="req">*</span></label>
+        <div class="autocomplete-wrapper">
+          <input type="text" id="np-well" autocomplete="off" data-autocomplete="wells"
+                 placeholder="جستجوی نام چاه یا کد PM…">
+          <div class="autocomplete-list"></div>
+        </div>
+        <span class="hint">چاه همین‌جا یک‌بار انتخاب می‌شود؛ در مرحله‌های بعد
+          قفل‌شده نمایش داده می‌شود و دوباره جستجو نمی‌شود.</span>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-primary" id="np-start" type="button">شروع فرایند</button>
+      <button class="btn-secondary" data-close="new-process-modal" type="button">انصراف</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/formengine.js') }}"></script>
+<script src="{{ url_for('static', filename='js/inbox.js') }}"></script>
+{% endblock %}

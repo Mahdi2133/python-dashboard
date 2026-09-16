@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>{{ report.title if report else 'گزارش' }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+<style>
+  body { background:#fff; padding:16px; }
+  .print-head { text-align:center; margin-bottom:14px; padding-bottom:10px;
+    border-bottom:2px solid var(--primary); }
+  .print-head h1 { font-size:18px; color:var(--primary); }
+  .print-head .meta { font-size:11px; color:var(--text-muted); margin-top:5px; }
+  .print-actions { text-align:center; margin-bottom:14px; }
+  @media print { .print-actions { display:none; } }
+</style>
+</head>
+<body>
+<div class="print-actions no-print">
+  <button class="btn-primary" onclick="window.print()">🖨 چاپ / ذخیره به‌صورت PDF</button>
+  <button class="btn-secondary" onclick="window.close()">بستن</button>
+</div>
+
+{% if report %}
+<div class="print-head">
+  <h1>{{ report.title }}</h1>
+  <div class="meta">
+    {{ APP_TITLE }} — تاریخ تهیه: {{ TODAY_J_STR }}
+    {% if report.filters %}
+      | فیلترها: {% for k, v in report.filters.items() %}{{ k }}={{ v }} {% endfor %}
+    {% endif %}
+    | تعداد سطر: {{ report.rows|length }}
+  </div>
+</div>
+
+{% if report.summary %}
+<div class="summary-strip">
+  {% for k, v in report.summary.items() %}<span>{{ k }}: <b>{{ v if v is not none else '—' }}</b></span>{% endfor %}
+</div>
+{% endif %}
+
+<table>
+  <thead><tr>{% for c in report.columns %}<th>{{ c.label }}</th>{% endfor %}</tr></thead>
+  <tbody>
+    {% for row in report.rows %}
+    <tr>{% for c in report.columns %}
+      <td>{% set v = row.get(c.key) %}{% if v is none or v == '' %}—{% elif v is string or v is number %}{{ v }}{% else %}{{ v|join('، ') }}{% endif %}</td>
+    {% endfor %}</tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="alert error">گزارش «{{ key }}» تعریف نشده است.</div>
+{% endif %}
+</body>
+</html>
