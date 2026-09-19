@@ -10,10 +10,8 @@ from ..extensions import db
 from ..models import (FormField, FormSection, LookupAlias, LookupCategory,
                       LookupItem, Record, Well, WellAlias,
                       WorkflowDefinition, WorkflowStage, WorkflowStageItem)
-from ..models.workflow import (NODE_PHASE, TEMPLATE_PUBLISHED, WorkflowEdge,
-                               WorkflowNodePrincipal)
 from .seed_data import (FORM_SECTIONS, LOOKUP_CATEGORIES, WORKFLOW_CODE,
-                        WORKFLOW_EDGES, WORKFLOW_NODES)
+                        WORKFLOW_STAGES)
 from .seed_wells import WELLS_REFERENCE
 
 log = logging.getLogger(__name__)
@@ -335,219 +333,57 @@ def deduplicate_wells() -> dict:
 
 
 def seed_workflow() -> dict:
-    """Draw the starting process map, adding only what is missing.
+    """Create the process definition, adding only what is missing.
 
-    Three things this deliberately does *not* do. It does not assign anybody:
-    the accounts for the water centre and the engineers belong to the admin,
-    and a node without an owner is reported in the designer rather than
-    silently skipped. It does not touch a map the admin has already drawn —
-    once arrows exist, the process is theirs. And it does not create a second
-    copy of a process an older release already seeded: the six numbered stages
-    are adopted as nodes, keeping their owners, their entries and their
-    documents.
+    Stage owners are left unassigned: the accounts for مرکز آبرسانی and the
+    engineers belong to the admin, not to a seed file, and a stage without an
+    owner is reported in the process builder rather than silently skipped.
+    Once the admin has arranged a stage, this never rearranges it again — only
+    a stage that does not exist yet is created.
     """
-    _repair_template_columns()
-    workflow = (WorkflowDefinition.query.filter_by(code=WORKFLOW_CODE)
-                .order_by(WorkflowDefinition.version.desc()).first())
+    workflow = WorkflowDefinition.query.filter_by(code=WORKFLOW_CODE).one_or_none()
     created = False
     if workflow is None:
         workflow = WorkflowDefinition(
-            code=WORKFLOW_CODE, version=1,
-            name="فرایند اصلی کارگاه الکتروپمپ",
-            description="از اعلام خرابی تا ثبت نهایی رکورد. هر گره، هر پیکان "
-                        "و هر شرط در «نقشه فرایند» قابل تغییر است.",
-            status=TEMPLATE_PUBLISHED, is_active=True)
+            code=WORKFLOW_CODE, name="فرایند اصلی کارگاه الکتروپمپ",
+            description="از اعلام خرابی تا ثبت نهایی رکورد، در شش مرحله.",
+            is_active=True)
         db.session.add(workflow)
         db.session.flush()
         created = True
 
-    drawn = WorkflowEdge.query.filter_by(workflow_id=workflow.id).count()
-    if drawn:
-        # The map is the admin's from here on; the one thing still worth
-        # checking is that the start node asks for everything the later phases
-        # expect to have been settled there.
-        return {"workflow_created": created, "nodes_added": 0, "edges_added": 0,
-                **_ensure_start_items(workflow)}
-
     sections = {s.code: s for s in FormSection.query.all()}
     fields = {f.field_name: f for f in FormField.query.all()}
-    existing = {s.node_key: s for s in workflow.stages if s.node_key}
-    by_number = {s.stage_number: s for s in workflow.stages}
-    nodes, added_nodes, added_items = {}, 0, 0
+    added_stages = added_items = 0
 
-    for spec in WORKFLOW_NODES:
-        node = existing.get(spec["key"])
-        if node is None and spec.get("legacy_stage") is not None:
-            node = by_number.get(spec["legacy_stage"])     # adopt the old row
-        if node is None:
-            node = WorkflowStage(workflow_id=workflow.id,
-                                 stage_number=spec["stage_number"],
-                                 title=spec["title"])
-            db.session.add(node)
-            added_nodes += 1
-        node.node_key = spec["key"]
-        node.node_type = spec["type"]
-        node.icon = spec.get("icon")
-        node.pos_x, node.pos_y = spec["x"], spec["y"]
-        node.width, node.height = spec["width"], spec["height"]
-        node.is_active = True
-        if spec.get("config"):
-            node.set_config(spec["config"])
-        if not node.description:
-            hint = spec.get("hint")
-            node.description = (spec["description"]
-                                + (f"\n\nمتولی پیشنهادی: {hint}" if hint else ""))
+    for spec in WORKFLOW_STAGES:
+        stage = WorkflowStage.query.filter_by(
+            workflow_id=workflow.id, stage_number=spec["stage_number"]).one_or_none()
+        if stage is not None:
+            continue                      # the admin owns it from here on
+        stage = WorkflowStage(
+            workflow_id=workflow.id, stage_number=spec["stage_number"],
+            title=spec["title"],
+            description=f"{spec['description']}\n\nمتولی پیشنهادی: {spec['hint']}",
+            applies_to=spec["applies_to"], is_active=True)
+        db.session.add(stage)
         db.session.flush()
-        nodes[spec["key"]] = node
-
-        # Only lay out a node's form when it has none: what the admin dropped
-        # on a stage in the old builder stays exactly where they put it.
-        if node.items:
-            continue
-        for order, (kind, code, optional, read_only) in enumerate(spec["items"]):
+        added_stages += 1
+        for order, (kind, code, applies, optional) in enumerate(spec["items"]):
             target = sections.get(code) if kind == "section" else fields.get(code)
             if target is None:
-                log.warning("Process node %s refers to a missing %s %r",
-                            spec["key"], kind, code)
+                log.warning("Workflow stage %s refers to a missing %s %r",
+                            spec["stage_number"], kind, code)
                 continue
             db.session.add(WorkflowStageItem(
-                stage_id=node.id,
+                stage_id=stage.id,
                 section_id=target.id if kind == "section" else None,
                 field_id=target.id if kind == "field" else None,
-                sort_order=order, is_optional=optional,
-                is_read_only=read_only))
+                sort_order=order, applies_to=applies, is_optional=optional))
             added_items += 1
-
-    # A node an older release wrote that the map no longer names keeps its
-    # rows — an instance may still refer to it — but leaves the canvas.
-    for node in workflow.stages:
-        if node.node_key not in nodes:
-            node.is_active = False
-
-    added_edges = 0
-    for source, target, label, condition, priority in WORKFLOW_EDGES:
-        if source not in nodes or target not in nodes:
-            continue
-        edge = WorkflowEdge(workflow_id=workflow.id,
-                            source_id=nodes[source].id,
-                            target_id=nodes[target].id,
-                            label=label, priority=priority)
-        edge.set_condition(condition)
-        db.session.add(edge)
-        added_edges += 1
-
-    # The old release put «اطلاعات چاه و نصب» on the same stage as the action
-    # question; the map has them as two nodes, so the section moves across.
-    _split_legacy_item(nodes, "action", "well_install", "well_install")
-
     db.session.commit()
-    log.info("Process map seeded: %s nodes, %s arrows", added_nodes, added_edges)
-    return {"workflow_created": created, "nodes_added": added_nodes,
-            "stage_items_added": added_items, "edges_added": added_edges}
-
-
-# Items the workshop's start node must carry, because every later phase shows
-# them locked instead of asking again. Applied once per database: after that
-# the admin may take them off and they stay off.
-_START_ITEMS_KEY = "workflow_start_items_v1"
-_TEMPLATE_REPAIR_KEY = "workflow_template_repair_v1"
-
-
-def _ensure_start_items(workflow) -> dict:
-    """Put on the start node what the rest of the map assumes it settled.
-
-    The well is chosen once and never searched for again, which only works if
-    the node that opens the process actually asks for it. An installation
-    upgraded from the six-stage release has a start node that asks only for the
-    operation, so the missing item is added — once, and recorded, so an admin
-    who then removes it is not overruled at the next restart.
-    """
-    from ..models.meta import AppMeta
-    if AppMeta.get(_START_ITEMS_KEY):
-        return {}
-    spec = next((n for n in WORKFLOW_NODES if n["type"] == "start"), None)
-    start = next((n for n in workflow.nodes if n.node_type == "start"), None)
-    if spec is None or start is None:
-        return {}
-    have = {(i.kind, i.section.code if i.section
-             else i.field.field_name if i.field else None) for i in start.items}
-    added = 0
-    for order, (kind, code, optional, read_only) in enumerate(spec["items"]):
-        if (kind, code) in have:
-            continue
-        target = (FormSection.query.filter_by(code=code).first() if kind == "section"
-                  else FormField.query.filter_by(field_name=code).first())
-        if target is None:
-            continue
-        db.session.add(WorkflowStageItem(
-            stage_id=start.id,
-            section_id=target.id if kind == "section" else None,
-            field_id=target.id if kind == "field" else None,
-            sort_order=len(start.items) + order,
-            is_optional=optional, is_read_only=read_only))
-        added += 1
-    AppMeta.set(_START_ITEMS_KEY, "done")
-    db.session.commit()
-    if added:
-        log.info("Added %s missing item(s) to the start node", added)
-    return {"start_items_added": added}
-
-
-def _repair_template_columns():
-    """Fill in the version and status of a template written before they existed.
-
-    A database built by ``create_all`` rather than by the migrations gets the
-    new columns empty rather than defaulted, and a template with no version
-    cannot be ordered or copied. One pass, then never again.
-    """
-    from ..models.meta import AppMeta
-    first_run = not AppMeta.get(_TEMPLATE_REPAIR_KEY)
-    fixed = 0
-    for workflow in WorkflowDefinition.query.all():
-        if workflow.version is None:
-            workflow.version = 1
-            fixed += 1
-        if not workflow.status:
-            workflow.status = TEMPLATE_PUBLISHED
-            fixed += 1
-        elif first_run and workflow.is_active and workflow.status == "draft":
-            # An upgraded database gets the column's default, which is
-            # «پیش‌نویس» — wrong for a process that has been live for months.
-            # Corrected once; after that the status is the admin's to set.
-            workflow.status = TEMPLATE_PUBLISHED
-            fixed += 1
-    if first_run:
-        AppMeta.set(_TEMPLATE_REPAIR_KEY, "done")
-        fixed += 1
-    for node in WorkflowStage.query.filter(
-            db.or_(WorkflowStage.node_type.is_(None),
-                   WorkflowStage.node_key.is_(None))).all():
-        node.node_type = node.node_type or NODE_PHASE
-        node.node_key = node.node_key or f"s{node.stage_number}"
-        fixed += 1
-    if fixed:
-        db.session.commit()
-        log.info("Repaired %s process-template columns", fixed)
-
-
-def _split_legacy_item(nodes, from_key, to_key, section_code):
-    """Move one section from one node to another, once."""
-    source, target = nodes.get(from_key), nodes.get(to_key)
-    if source is None or target is None:
-        return
-    section = FormSection.query.filter_by(code=section_code).one_or_none()
-    if section is None:
-        return
-    moved = [i for i in source.items if i.section_id == section.id]
-    if not moved:
-        return
-    if any(i.section_id == section.id for i in target.items):
-        for item in moved:
-            db.session.delete(item)
-        return
-    for item in moved:
-        item.stage_id = target.id
-        item.sort_order = 0
+    return {"workflow_created": created, "stages_added": added_stages,
+            "stage_items_added": added_items}
 
 
 def seed_form() -> dict:
@@ -655,6 +491,135 @@ def seed_admin() -> dict:
     return {"admin_created": 1}
 
 
+# ── undoing the graph release ────────────────────────────────────────────────
+# One release turned the six stages into a node-and-arrow map: it added a
+# decision, an action and an end node, split «اطلاعات چاه و نصب» onto a node of
+# its own, drew arrows between them and — the part that actually broke things —
+# left the process definition deactivated, so the process builder loaded
+# nothing at all and sat on «در حال بارگذاری» forever.
+#
+# The engine is back on plain numbered stages. A database that was opened by
+# that release therefore carries rows this code cannot run, and this puts them
+# back. It runs once, is recorded in app_meta, and touches nothing an admin
+# might have meant: records, instances, entries, documents and the owners of
+# the six stages are all left exactly as they are.
+_GRAPH_ROLLBACK_KEY = "workflow_graph_rollback_v1"
+
+# What that release added, by the key it wrote on each node.
+_GRAPH_ONLY_NODES = ("kind", "save", "end")     # decision · action · end
+_GRAPH_SPLIT_NODE = "well_install"              # split out of stage 4
+_GRAPH_EXTRA_FIELDS = ("well",)                 # added to the step-zero form
+
+
+def rollback_graph_release() -> dict:
+    """Bring a database opened by the graph release back to plain stages.
+
+    ``node_key`` and friends are columns the models no longer have, so they are
+    read with SQL rather than through the ORM — which is the whole point: this
+    function knows about a shape the rest of the code has forgotten.
+    """
+    from sqlalchemy import inspect as sa_inspect
+    from ..models.meta import AppMeta
+
+    if AppMeta.get(_GRAPH_ROLLBACK_KEY):
+        return {}
+    columns = {c["name"] for c in
+               sa_inspect(db.engine).get_columns("workflow_stages")}
+    if "node_key" not in columns:
+        AppMeta.set(_GRAPH_ROLLBACK_KEY, "not-needed")
+        db.session.commit()
+        return {}
+
+    result = {"reactivated": 0, "graph_nodes_removed": 0, "items_restored": 0,
+              "extra_items_removed": 0, "arrows_removed": 0}
+
+    # 1 ── the arrows go first, so removing a node cannot orphan one.
+    for table in ("workflow_edges", "workflow_node_principals",
+                  "workflow_events"):
+        try:
+            removed = db.session.execute(
+                db.text(f"DELETE FROM {table}")).rowcount or 0
+        except Exception:                      # table never existed here
+            db.session.rollback()
+            continue
+        if table == "workflow_edges":
+            result["arrows_removed"] = removed
+
+    def node_ids(*keys):
+        rows = db.session.execute(
+            db.text("SELECT id, node_key FROM workflow_stages "
+                    "WHERE node_key IS NOT NULL")).fetchall()
+        return {key: ident for ident, key in rows if key in keys}
+
+    found = node_ids(_GRAPH_SPLIT_NODE, *_GRAPH_ONLY_NODES)
+
+    # 2 ── «اطلاعات چاه و نصب» belongs on stage 4, where it was.
+    split = db.session.get(WorkflowStage, found[_GRAPH_SPLIT_NODE]) \
+        if _GRAPH_SPLIT_NODE in found else None
+    if split is not None:
+        home = WorkflowStage.query.filter_by(workflow_id=split.workflow_id,
+                                             stage_number=4).one_or_none()
+        for item in list(split.items):
+            already = home is not None and any(
+                i.section_id == item.section_id and i.field_id == item.field_id
+                for i in home.items)
+            if home is None or already:
+                continue                       # the duplicate the split made;
+                                               # the node's own delete takes it
+            else:
+                # Move it between the collections, not by writing the foreign
+                # key: the node is deleted next, and delete-orphan would take
+                # anything still sitting in its own list with it.
+                split.items.remove(item)
+                home.items.append(item)
+                result["items_restored"] += 1
+        db.session.flush()
+        _drop_node(split, result)
+
+    # 3 ── a decision, an action and an end are not stages; the engine has no
+    #      way to run them and the کارتابل would list them as work.
+    for key in _GRAPH_ONLY_NODES:
+        if key in found:
+            node = db.session.get(WorkflowStage, found[key])
+            if node is not None:
+                _drop_node(node, result)
+
+    # 4 ── the step-zero form got a field the start dialog already asks for.
+    intake = WorkflowStage.query.filter_by(stage_number=0).one_or_none()
+    if intake is not None:
+        for item in list(intake.items):
+            if item.field is not None and item.field.field_name in _GRAPH_EXTRA_FIELDS:
+                db.session.delete(item)
+                result["extra_items_removed"] += 1
+
+    # 5 ── and the reason the page hung: nothing was active any more.
+    if not WorkflowDefinition.query.filter_by(is_active=True).count():
+        oldest = (WorkflowDefinition.query
+                  .order_by(WorkflowDefinition.id).first())
+        if oldest is not None:
+            oldest.is_active = True
+            result["reactivated"] = 1
+
+    AppMeta.set(_GRAPH_ROLLBACK_KEY, "done")
+    db.session.commit()
+    if any(result.values()):
+        log.warning("Rolled back the graph release: %s", result)
+    return result
+
+
+def _drop_node(node, result):
+    """Remove a node the stage engine cannot run — unless it holds history."""
+    from ..models.workflow import WorkflowStageEntry
+    used = WorkflowStageEntry.query.filter_by(stage_id=node.id).count()
+    if used:
+        # Somebody's work is attached to it. Take it off the list instead of
+        # deleting it, so the history it carries survives.
+        node.is_active = False
+    else:
+        db.session.delete(node)
+    result["graph_nodes_removed"] += 1
+
+
 def seed_all(force: bool = False) -> dict:
     result = {}
     result.update(seed_admin())
@@ -664,6 +629,7 @@ def seed_all(force: bool = False) -> dict:
     result.update(normalize_well_names())
     result.update(seed_form())
     result.update(apply_builtin_field_fixes())
+    result.update(rollback_graph_release())
     result.update(seed_workflow())
     result["changed"] = any(v for k, v in result.items() if isinstance(v, int))
     if result["changed"]:

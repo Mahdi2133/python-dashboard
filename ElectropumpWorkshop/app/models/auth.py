@@ -31,12 +31,8 @@ PERMISSIONS = [
     ("report.view",    "مشاهده گزارش‌ها",              "گزارش‌ها"),
     ("report.build",   "گزارش‌ساز پویا",               "گزارش‌ها"),
     ("workflow.act",   "شرکت در فرایند (کارتابل)",     "فرایند"),
-    ("workflow.start", "شروع فرایند جدید",             "فرایند"),
-    ("workflow.approve", "تأیید یا رد در فرایند",      "فرایند"),
     ("workflow.view",  "مشاهده مسیر فرایندها",         "فرایند"),
-    ("workflow.map.view", "مشاهده نقشه فرایند",        "فرایند"),
-    ("workflow.map.edit", "طراحی نقشه فرایند",         "فرایند"),
-    ("workflow.manage", "مدیریت کامل فرایندها",        "فرایند"),
+    ("workflow.manage", "فرایندساز و تعریف مراحل",      "فرایند"),
     ("form.manage",    "فرم‌ساز و مدیریت گزینه‌ها",     "پیکربندی"),
     ("data.import",    "ورود داده از اکسل",            "پیکربندی"),
     ("backup.manage",  "پشتیبان‌گیری و بازیابی",        "سیستم"),
@@ -45,17 +41,6 @@ PERMISSIONS = [
     ("settings.view",  "مشاهده تنظیمات سیستم",         "سیستم"),
 ]
 PERMISSION_CODES = [p[0] for p in PERMISSIONS]
-
-# Permissions that carry others with them. Whoever may redraw the map may
-# obviously look at it, and whoever runs the processes may do both — saying so
-# once here beats ticking four boxes on every account.
-IMPLIES = {
-    "workflow.manage": ("workflow.map.edit", "workflow.map.view",
-                        "workflow.view", "workflow.act", "workflow.start",
-                        "workflow.approve"),
-    "workflow.map.edit": ("workflow.map.view", "workflow.view"),
-    "workflow.view": ("workflow.map.view",),
-}
 
 ROLES = {
     "admin": {
@@ -69,8 +54,7 @@ ROLES = {
         "permissions": ["record.view", "record.create", "record.edit", "record.export",
                         "well.view", "well.manage", "dashboard.view", "report.view",
                         "report.build", "data.import", "audit.view",
-                        "workflow.act", "workflow.view", "workflow.map.view",
-                        "workflow.approve", "workflow.start"],
+                        "workflow.act", "workflow.view"],
     },
     "operator": {
         "label": "کاربر ثبت اطلاعات",
@@ -86,8 +70,7 @@ ROLES = {
         # schema, the option lists and the well picker, and all three now
         # accept workflow.act — so a متولی never has to be handed the right to
         # create records outright just to do their own job.
-        "permissions": ["workflow.act", "workflow.map.view", "record.view",
-                        "record.export"],
+        "permissions": ["workflow.act", "record.view", "record.export"],
     },
     "viewer": {
         "label": "فقط مشاهده",
@@ -106,7 +89,7 @@ PAGE_PERMISSION = {
     "builder": "report.build",
     "inbox": "workflow.act",
     "documents": "workflow.act",
-    "workflow": "workflow.map.view",
+    "workflow": "workflow.manage",
     "formbuilder": "form.manage",
     "options": "form.manage",
     "transfer": "data.import",
@@ -224,10 +207,7 @@ class AppUser(db.Model):
         # management by an accidental permission edit.
         if self.role == "admin":
             return True
-        held = self.permissions
-        if permission in held:
-            return True
-        return any(permission in IMPLIES.get(code, ()) for code in held)
+        return permission in self.permissions
 
     @property
     def full_name(self):

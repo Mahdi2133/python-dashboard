@@ -33,25 +33,13 @@ _MOVED_FK = {
 }
 
 
-# Constraints a release removed. ``ALTER TABLE ADD COLUMN`` can add a column
-# but never drop a constraint, so a table that still carries an old one has to
-# be rebuilt.  table -> (columns the old UNIQUE covered, why)
-_DROPPED_UNIQUE = {
-    # A process template is now versioned, so several rows share one code and
-    # only (code, version) is unique. Without this rebuild, "new version"
-    # fails on a database that predates versioning.
-    "workflow_definitions": (["code"], "process templates are versioned now"),
-}
-
-
 def _rebuild_stale_fk_tables() -> list:
-    """Rebuild tables whose shape a release changed in a way ALTER cannot.
+    """Rebuild tables still carrying a foreign key to the old users table.
 
-    Two cases so far: a foreign key still pointing at the old users table, and
-    a UNIQUE constraint a later release widened. Without the first, an existing
-    wells.db would reject every audit row the moment someone logs in; without
-    the second, a second version of a process template cannot be saved. Either
-    way the rebuild copies the data across, so nothing is lost.
+    Without this, an existing wells.db would reject every audit row the moment
+    someone logs in: the row points at an app_users id that the stale
+    constraint tries to find in the empty legacy table. The rebuild copies the
+    data across, so nothing is lost.
 
     It runs on a dedicated sqlite3 connection with the pool disposed first —
     SQLite refuses to rename a table or drop its indexes while another
@@ -67,14 +55,6 @@ def _rebuild_stale_fk_tables() -> list:
         if any(fk.get("referred_table") == old_target
                and column in (fk.get("constrained_columns") or [])
                for fk in insp.get_foreign_keys(table)):
-            todo.append((table, [c["name"] for c in insp.get_columns(table)]))
-    for table, (columns, why) in _DROPPED_UNIQUE.items():
-        if table not in tables or table not in db.metadata.tables:
-            continue
-        if any(list(u.get("column_names") or []) == columns
-               for u in insp.get_unique_constraints(table)):
-            log.warning("Rebuilding %s to drop UNIQUE(%s): %s",
-                        table, ", ".join(columns), why)
             todo.append((table, [c["name"] for c in insp.get_columns(table)]))
     if not todo:
         return []
@@ -92,11 +72,6 @@ def _rebuild_stale_fk_tables() -> list:
             "create": str(CreateTable(model_table).compile(dialect=dialect)),
             "indexes": [str(CreateIndex(i).compile(dialect=dialect))
                         for i in model_table.indexes],
-            # A column added later by ALTER TABLE has no value in the rows that
-            # predate it, and the rebuilt table declares it NOT NULL. Fill them
-            # from the model's own default first, or the copy fails and the
-            # rebuild is silently postponed to the next restart.
-            "prefill": _prefill_sql(model_table, shared),
         })
 
     path = str(database_file())
@@ -117,8 +92,6 @@ def _rebuild_stale_fk_tables() -> list:
             table = plan["table"]
             conn.execute("BEGIN")
             try:
-                for statement in plan["prefill"]:
-                    conn.execute(statement)
                 conn.execute(f'ALTER TABLE "{table}" RENAME TO "{table}__old"')
                 # A rename carries the indexes along under their original
                 # names, so they must go before the new table recreates them.
@@ -135,7 +108,8 @@ def _rebuild_stale_fk_tables() -> list:
                 conn.execute(f'DROP TABLE "{table}__old"')
                 conn.execute("COMMIT")
                 rebuilt.append(table)
-                log.warning("Rebuilt %s to match the current schema", table)
+                log.warning("Rebuilt %s so its user reference points at app_users",
+                            table)
             except Exception:
                 conn.execute("ROLLBACK")
                 log.exception("Could not rebuild %s; the original table is intact",
@@ -148,25 +122,6 @@ def _rebuild_stale_fk_tables() -> list:
     finally:
         conn.close()
     return rebuilt
-
-
-def _prefill_sql(model_table, columns) -> list:
-    """``UPDATE … SET col = <default> WHERE col IS NULL`` for each NOT NULL
-    column that has a plain default. Anything cleverer than a scalar default is
-    left alone: guessing at it would be worse than failing loudly."""
-    out = []
-    for column in model_table.columns:
-        if column.name not in columns or column.nullable:
-            continue
-        default = getattr(column.default, "arg", None)
-        if default is None or callable(default):
-            continue
-        literal = ("1" if default is True else "0" if default is False
-                   else default if isinstance(default, (int, float))
-                   else "'" + str(default).replace("'", "''") + "'")
-        out.append(f'UPDATE "{model_table.name}" SET "{column.name}" = {literal} '
-                   f'WHERE "{column.name}" IS NULL')
-    return out
 
 
 def _add_missing_columns() -> list:

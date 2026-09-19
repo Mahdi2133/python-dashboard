@@ -23,7 +23,7 @@ NAV = [
     ("reports", "گزارش‌ها", "📈", "/reports"),
     ("builder", "گزارش‌ساز", "🧩", "/report-builder"),
     ("formbuilder", "فرم‌ساز", "🛠", "/form-builder"),
-    ("workflow", "نقشه فرایند", "🗺", "/workflow"),
+    ("workflow", "فرایندساز", "🔀", "/workflow"),
     ("options", "مدیریت گزینه‌ها", "🗂", "/options"),
     ("transfer", "ورود / خروج داده", "🔁", "/transfer"),
     ("users", "کاربران", "👤", "/users"),
@@ -125,9 +125,7 @@ def documents():
 
 
 @bp.get("/workflow")
-# Viewing the map and redrawing it are different rights: a phase owner may
-# watch the whole path without being able to move a single arrow.
-@permission_required("workflow.map.view")
+@permission_required("workflow.manage")
 def workflow():
     """The process builder, plus the map of every process in flight."""
     return render_template("workflow.html", active="workflow")

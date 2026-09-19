@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% block title %}نقشه فرایند — {{ APP_TITLE }}{% endblock %}
+{% block title %}فرایندساز — {{ APP_TITLE }}{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <h2>🗺 نقشه فرایند</h2>
+    <h2>🔀 فرایندساز</h2>
     <div class="sub" id="wf-name">در حال بارگذاری…</div>
   </div>
   <div class="toolbar-actions">
-    <button class="btn-ghost" id="tab-design" type="button">🧩 طراحی نقشه</button>
-    <button class="btn-ghost" id="tab-monitor" type="button">🛰 رصد فرایندها</button>
+    <button class="btn-ghost" id="tab-design" type="button">🧩 طراحی مراحل</button>
+    <button class="btn-ghost" id="tab-monitor" type="button">🗺 رصد فرایندها</button>
   </div>
 </div>
 
@@ -16,98 +16,46 @@
 
 <!-- ── designer ──────────────────────────────────────────────────────── -->
 <section id="pane-design">
-  <div class="wf-topbar card">
-    <div class="field">
-      <label>فرایند</label>
-      <select id="wf-template"></select>
-    </div>
-    <div class="field">
-      <label>وضعیت</label>
-      <select id="wf-status"></select>
-    </div>
-    <label class="wf-check" title="فرایندهای جدید روی این نسخه شروع می‌شوند">
-      <input type="checkbox" id="wf-active"> نسخه فعال
-    </label>
-    <div class="wf-topbar-actions">
-      <button class="btn-ghost" id="wf-save-template" type="button">💾 ذخیره مشخصات</button>
-      <button class="btn-ghost" id="wf-new-version" type="button"
-              title="کپی این نقشه به یک نسخه تازه؛ فرایندهای در جریان دست‌نخورده می‌مانند">
-        🧬 نسخه جدید</button>
-      <button class="btn-ghost" id="wf-new-template" type="button">➕ فرایند جدید</button>
-      <button class="btn-ghost danger" id="wf-delete-template" type="button">🗑 حذف فرایند</button>
-    </div>
+  <div class="alert info">
+    برای هر مرحله، <b>متولی</b> را از فهرست کاربران انتخاب کنید و بخش‌ها یا
+    فیلدهای موردنیاز آن مرحله را از پالت سمت چپ <b>بکشید و رها کنید</b>.
+    هر مورد می‌تواند فقط در «کشیدن»، فقط در «نصب»، یا در هر دو ظاهر شود.
   </div>
 
-  <div id="wf-running-note" class="alert warn hidden"></div>
-
-  <div class="wf-designer">
-    <!-- left: toolbar -->
-    <aside class="wf-toolbar card">
-      <div class="card-head"><span>ابزارها</span></div>
-      <div class="pal-group-title">افزودن گره</div>
-      <div id="wf-node-palette" class="wf-shapes"></div>
-
-      <div class="pal-group-title">اتصال</div>
-      <button class="btn-ghost w-full" id="wf-connect" type="button">
-        ➶ کشیدن پیکان بین دو گره</button>
-      <p class="hint" id="wf-connect-hint">ابتدا این دکمه، سپس گره مبدأ و بعد گره مقصد.</p>
-
-      <div class="pal-group-title">محتوای فرم گره</div>
+  <div class="wf-builder">
+    <aside class="wf-palette card">
+      <div class="card-head"><span>پالت</span></div>
       <input type="search" id="pal-search" placeholder="جستجوی بخش یا فیلد…">
-      <div class="pal-sub">بخش‌ها</div>
+      <div class="pal-group-title">بخش‌ها (سکشن‌ها)</div>
       <div id="pal-sections" class="pal-list"></div>
-      <div class="pal-sub">فیلدهای تکی</div>
+      <div class="pal-group-title">فیلدهای تکی</div>
       <div id="pal-fields" class="pal-list"></div>
-      <p class="hint">برای افزودن، یک گره را انتخاب کنید و مورد دلخواه را روی
-        کادر «فرم این گره» در ستون چپ بکشید.</p>
     </aside>
 
-    <!-- centre: canvas -->
-    <div class="wf-canvas-wrap card">
-      <div class="wf-canvas-bar">
-        <button class="icon-btn" id="zoom-out" type="button" title="کوچک‌نمایی">➖</button>
-        <span id="zoom-label">۱۰۰٪</span>
-        <button class="icon-btn" id="zoom-in" type="button" title="بزرگ‌نمایی">➕</button>
-        <button class="icon-btn" id="zoom-fit" type="button" title="اندازه صفحه">⛶</button>
-        <button class="icon-btn" id="zoom-center" type="button" title="وسط‌چین">🎯</button>
-        <span class="spacer"></span>
-        <span class="legend" id="wf-legend"></span>
-        <span class="spacer"></span>
-        <button class="btn-ghost" id="wf-save-layout" type="button">💾 ذخیره چیدمان</button>
-      </div>
-      <div class="wf-canvas" id="wf-canvas" tabindex="0">
-        <div class="wf-plane" id="wf-plane">
-          <svg class="wf-edges" id="wf-edges"></svg>
-          <div class="wf-nodes" id="wf-nodes"></div>
-        </div>
-        <div class="wf-minimap" id="wf-minimap"><canvas id="wf-minimap-canvas"></canvas></div>
-      </div>
-    </div>
-
-    <!-- right: properties -->
-    <aside class="wf-props card">
-      <div class="card-head"><span id="wf-props-title">ویژگی‌ها</span></div>
-      <div id="wf-props"><p class="empty">یک گره یا پیکان را انتخاب کنید.</p></div>
-    </aside>
+    <div class="wf-stages" id="wf-stages"><div class="loading">در حال بارگذاری</div></div>
   </div>
 </section>
 
 <!-- ── monitor ───────────────────────────────────────────────────────── -->
 <section id="pane-monitor" class="hidden">
   <div class="filters card">
-    <div class="field"><label>وضعیت</label><select id="mon-status"></select></div>
-    <div class="field"><label>فرایند</label><select id="mon-workflow"></select></div>
+    <div class="field"><label>وضعیت</label>
+      <select id="mon-status">
+        <option value="">همه</option>
+        <option value="open">در جریان</option>
+        <option value="completed">تکمیل شده</option>
+        <option value="cancelled">لغو شده</option>
+      </select></div>
+    <div class="field"><label>نوع عملیات</label>
+      <select id="mon-kind">
+        <option value="">همه</option>
+        <option value="pull">کشیدن</option>
+        <option value="install">نصب</option>
+      </select></div>
     <div class="field"><label>&nbsp;</label>
       <button class="btn-ghost" id="mon-refresh" type="button">↻ به‌روزرسانی</button></div>
   </div>
-  <div class="wf-monitor">
-    <div id="mon-list"><div class="loading">در حال بارگذاری</div></div>
-    <div class="card" id="mon-detail-card">
-      <div class="card-head"><span id="mon-detail-title">نقشه فرایند انتخاب‌شده</span></div>
-      <div id="mon-detail"><p class="empty">یک فرایند را از فهرست انتخاب کنید
-        تا مسیر طی‌شده روی همان نقشه دیده شود.</p></div>
-    </div>
-  </div>
+  <div id="mon-list"><div class="loading">در حال بارگذاری</div></div>
 </section>
 {% endblock %}
 {% block scripts %}
