@@ -749,3 +749,23 @@ select.mini { font-size:11px; padding:2px 4px; width:auto; }
 .checklist.locked .checklist-item:not(.done) .checklist-text {
   color:var(--text-muted); }
 .checklist-count { margin-top:6px; font-weight:600; }
+
+/* ── the per-stage report panel ───────────────────────────────────────── */
+.stage-report { padding:0; margin-bottom:16px; }
+.stage-report > summary { cursor:pointer; padding:14px 18px; display:flex;
+  align-items:center; gap:12px; flex-wrap:wrap; }
+.stage-report > summary::-webkit-details-marker { display:none; }
+.stage-report[open] > summary { border-bottom:1px solid var(--border); }
+.stage-report > *:not(summary) { padding-inline:18px; }
+.stage-report > .form-actions { margin:14px 18px 18px; position:static;
+  justify-content:flex-start; }
+.sr-cols { display:grid; gap:5px; margin:6px 0;
+  grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); }
+.sr-cols label { display:flex; align-items:center; gap:6px; font-size:12.5px;
+  padding:5px 9px; border:1px solid var(--border); border-radius:8px;
+  background:var(--input-bg); cursor:pointer; }
+.sr-cols label:hover { border-color:var(--primary-light); background:#eaf3fa; }
+.sr-cols input { width:auto; }
+.sr-cols label:has(input:checked) { border-color:var(--primary);
+  background:#eaf3fa; font-weight:600; }
+.sr-quick { display:flex; gap:6px; margin-top:6px; }

@@ -161,3 +161,142 @@
     });
   });
 })();
+
+/* ==========================================================================
+   گزارش مرحله‌ای — an Excel of what one stage of one process records.
+
+   Kept apart from the dataset builder above because the columns are not a
+   fixed list: they are whatever the admin dropped on that stage, so they have
+   to be fetched once a stage is chosen.
+   ========================================================================== */
+(function () {
+  'use strict';
+  var A = window.App;
+  var panel = A.qs('#stage-report');
+  if (!panel) return;
+  var processes = [];
+
+  function checkboxes(host, items, checked) {
+    A.qs(host).innerHTML = items.map(function (c) {
+      return '<label><input type="checkbox" value="' + A.esc(c.key) + '"'
+        + (checked ? ' checked' : '') + '> ' + A.esc(c.label) + '</label>';
+    }).join('') || '<div class="hint">موردی نیست.</div>';
+  }
+
+  function chosen() {
+    return A.qsa('#sr-base input:checked, #sr-fields input:checked')
+      .map(function (b) { return b.value; });
+  }
+
+  function requestBody() {
+    return {
+      stage_id: Number(A.qs('#sr-stage').value || 0),
+      columns: chosen(),
+      only_submitted: A.qs('#sr-done').checked,
+      instance_status: A.qs('#sr-status').value || null,
+    };
+  }
+
+  async function loadProcesses() {
+    try {
+      processes = (await A.api.get('/api/workflow/definitions')).data || [];
+    } catch (err) {
+      /* A user who may build reports but not manage processes still gets the
+         active one, which is the only one they could report on anyway. */
+      try {
+        var def = (await A.api.get('/api/workflow/definition')).data;
+        processes = [{ id: def.workflow.id, name: def.workflow.name }];
+      } catch (e) { processes = []; }
+    }
+    A.qs('#sr-process').innerHTML = processes.map(function (p) {
+      return '<option value="' + p.id + '">' + A.esc(p.name) + '</option>';
+    }).join('') || '<option value="">— فرایندی نیست —</option>';
+    await loadStages();
+  }
+
+  async function loadStages() {
+    var id = A.qs('#sr-process').value;
+    if (!id) return;
+    try {
+      var def = (await A.api.get('/api/workflow/definition?workflow_id=' + id)).data;
+      var stages = (def.workflow.stages || []).filter(function (s) {
+        return s.stage_number > 0 && s.is_active;
+      });
+      A.qs('#sr-stage').innerHTML = stages.map(function (s) {
+        return '<option value="' + s.id + '">مرحله ' + s.stage_number + ' — '
+          + A.esc(s.title) + '</option>';
+      }).join('') || '<option value="">— مرحله‌ای نیست —</option>';
+      await loadColumns();
+    } catch (err) { A.toast(err.message, 'error'); }
+  }
+
+  async function loadColumns() {
+    var id = A.qs('#sr-stage').value;
+    if (!id) return;
+    try {
+      var data = (await A.api.get('/api/workflow/stage-report/columns?stage_id='
+                                  + id)).data;
+      checkboxes('#sr-base', data.base, true);
+      checkboxes('#sr-fields', data.fields, true);
+    } catch (err) { A.toast(err.message, 'error'); }
+  }
+
+  async function run() {
+    if (!chosen().length) {
+      A.toast('حداقل یک ستون را انتخاب کنید.', 'error');
+      return;
+    }
+    var box = A.qs('#sr-result');
+    box.innerHTML = '<div class="loading">در حال تهیه گزارش</div>';
+    try {
+      var res = await A.api.post('/api/workflow/stage-report', requestBody());
+      var data = res.data;
+      if (!data.rows.length) {
+        box.innerHTML = '<div class="table-empty">هنوز چیزی در این مرحله '
+          + 'ثبت نشده است.</div>';
+        return;
+      }
+      box.innerHTML = '<div class="section-title">' + A.esc(data.title)
+        + ' <span class="count">' + data.rows.length + ' سطر</span></div>'
+        + '<div class="table-scroll"><table><thead><tr>'
+        + data.columns.map(function (c) {
+            return '<th>' + A.esc(c.label) + '</th>'; }).join('')
+        + '</tr></thead><tbody>'
+        + data.rows.slice(0, 200).map(function (r) {
+            return '<tr>' + data.columns.map(function (c) {
+              return '<td>' + A.esc(r[c.key]) + '</td>'; }).join('') + '</tr>';
+          }).join('')
+        + '</tbody></table></div>'
+        + (data.rows.length > 200
+            ? '<div class="hint">۲۰۰ سطر اول نمایش داده شد؛ خروجی اکسل کامل است.</div>'
+            : '');
+    } catch (err) {
+      box.innerHTML = '<div class="alert error">' + A.esc(err.message) + '</div>';
+    }
+  }
+
+  function download(fmt) {
+    if (!chosen().length) {
+      A.toast('حداقل یک ستون را انتخاب کنید.', 'error');
+      return;
+    }
+    A.downloadPost('/api/workflow/stage-report/export.' + fmt, requestBody());
+  }
+
+  panel.addEventListener('toggle', function () {
+    if (panel.open && !processes.length) loadProcesses();
+  });
+  A.qs('#sr-process').addEventListener('change', loadStages);
+  A.qs('#sr-stage').addEventListener('change', loadColumns);
+  A.qs('#sr-run').addEventListener('click', run);
+  A.qs('#sr-xlsx').addEventListener('click', function () { download('xlsx'); });
+  A.qs('#sr-csv').addEventListener('click', function () { download('csv'); });
+  A.qs('#sr-all').addEventListener('click', function () {
+    A.qsa('#sr-base input, #sr-fields input').forEach(function (b) {
+      b.checked = true; });
+  });
+  A.qs('#sr-none').addEventListener('click', function () {
+    A.qsa('#sr-base input, #sr-fields input').forEach(function (b) {
+      b.checked = false; });
+  });
+})();

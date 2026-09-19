@@ -4,20 +4,22 @@ import mimetypes
 import os
 import secrets
 
-from flask import Blueprint, request, send_file
+from flask import Blueprint, Response, request, send_file
 
 from ..extensions import db
 from ..models import (AppUser, FormField, FormSection, WorkflowAttachment,
                       WorkflowDefinition, WorkflowInstance, WorkflowStage,
                       WorkflowStageEntry, WorkflowStageItem)
-from ..models.workflow import (APPLIES_TO, ENTRY_AWAITING, ENTRY_PENDING,
-                               INSTANCE_OPEN, INSTANCE_STATUS, OPERATION_KINDS,
+from ..models.workflow import (APPLIES_TO, ENTRY_AWAITING, ENTRY_DONE,
+                               ENTRY_PENDING, ENTRY_STATUS, INSTANCE_OPEN,
+                               INSTANCE_STATUS, OPERATION_KINDS,
                                REFERRAL_MODES, REFER_CHOOSE, REFER_USER)
 from ..paths import instance_dir
 from ..services.audit import record_audit
 from ..services.auth import (current_user, login_required,
                              permission_required,
                              permission_required_any)
+from ..services.jalali import to_jalali_str
 from ..services.lookups import normalize_text
 from ..services.workflow import (WorkflowError, active_workflow,
                                  applicable_stages, awaiting_approval,
@@ -765,3 +767,151 @@ def delete_attachment(attachment_id):
                  summary=f"حذف مستند «{attachment.filename}»")
     db.session.commit()
     return ok(message="مستند حذف شد.")
+
+
+# ── per-stage reports ────────────────────────────────────────────────────────
+# «خروجی اکسل از آیتم‌های ثبت‌شده در هر مرحله»: pick a stage, tick the columns
+# you want, get a sheet. The columns on offer are exactly what that stage
+# records — read off its own form items — plus a few facts about the process
+# that every such report wants anyway.
+_STAGE_REPORT_BASE = [
+    ("__instance", "شماره فرایند"),
+    ("__well", "نام چاه"),
+    ("__pm_code", "کد PM"),
+    ("__operation", "نوع عملیات"),
+    ("__status", "وضعیت مرحله"),
+    ("__user", "ثبت‌کننده"),
+    ("__referred_to", "ارجاع به"),
+    ("__submitted", "تاریخ ثبت"),
+    ("__instance_status", "وضعیت فرایند"),
+]
+
+
+def _stage_field_names(stage):
+    """Every field this stage asks for, section by section, in form order."""
+    names = []
+    for item in sorted(stage.items, key=lambda i: i.sort_order):
+        if item.section is not None:
+            for field in sorted(item.section.fields, key=lambda f: f.sort_order):
+                if field.is_active and field.field_name not in names:
+                    names.append(field.field_name)
+        elif item.field is not None and item.field.field_name not in names:
+            names.append(item.field.field_name)
+    return names
+
+
+@bp.get("/stage-report/columns")
+@permission_required_any("report.build", "report.view", "workflow.manage")
+def stage_report_columns():
+    """What can be put in a report of one stage."""
+    stage = db.session.get(WorkflowStage, int(request.args.get("stage_id") or 0))
+    if stage is None:
+        return fail("مرحله یافت نشد.", 404)
+    labels = {f.field_name: f.label for f in FormField.query.all()}
+    return ok({
+        "stage": {"id": stage.id, "stage_number": stage.stage_number,
+                  "title": stage.title,
+                  "workflow": stage.workflow.name if stage.workflow else None},
+        "base": [{"key": k, "label": v} for k, v in _STAGE_REPORT_BASE],
+        "fields": [{"key": n, "label": labels.get(n, n)}
+                   for n in _stage_field_names(stage)],
+    })
+
+
+def _stage_report(payload):
+    """The rows of one stage's report, and the columns the caller asked for."""
+    stage = db.session.get(WorkflowStage, int(payload.get("stage_id") or 0))
+    if stage is None:
+        raise WorkflowError("مرحله یافت نشد.")
+    wanted = [c for c in (payload.get("columns") or []) if c]
+    if not wanted:
+        raise WorkflowError("حداقل یک ستون را انتخاب کنید.")
+
+    labels = {f.field_name: f.label for f in FormField.query.all()}
+    labels.update(dict(_STAGE_REPORT_BASE))
+    only_done = payload.get("only_submitted") is not False
+
+    query = (WorkflowStageEntry.query
+             .filter(WorkflowStageEntry.stage_number == stage.stage_number)
+             .join(WorkflowInstance,
+                   WorkflowStageEntry.instance_id == WorkflowInstance.id)
+             .filter(WorkflowInstance.workflow_id == stage.workflow_id))
+    if only_done:
+        query = query.filter(WorkflowStageEntry.status.in_(ENTRY_DONE))
+    if payload.get("instance_status"):
+        query = query.filter(WorkflowInstance.status == payload["instance_status"])
+
+    rows = []
+    for entry in query.order_by(WorkflowStageEntry.instance_id).all():
+        instance = entry.instance
+        if instance is None:
+            continue
+        # What this stage recorded, over what the process knew before it.
+        values = dict(instance.payload or {})
+        values.update(entry.payload or {})
+        facts = {
+            "__instance": instance.id,
+            "__well": (instance.well.name if instance.well
+                       else instance.well_name_raw),
+            "__pm_code": instance.well.pm_code if instance.well else None,
+            "__operation": instance.operation_label,
+            "__status": ENTRY_STATUS.get(entry.status, entry.status),
+            "__user": entry.user.full_name if entry.user else None,
+            "__referred_to": (entry.referred_to.full_name
+                              if entry.referred_to else None),
+            "__submitted": (to_jalali_str(entry.submitted_at)
+                            if entry.submitted_at else None),
+            "__instance_status": INSTANCE_STATUS.get(instance.status,
+                                                     instance.status),
+        }
+        row = {}
+        for key in wanted:
+            value = facts[key] if key in facts else values.get(key)
+            if isinstance(value, list):
+                value = "، ".join(str(v) for v in value if v not in (None, ""))
+            row[key] = "" if value in (None, False) else value
+        rows.append(row)
+
+    return {
+        "title": f"گزارش مرحله {stage.stage_number} — {stage.title}",
+        "columns": [{"key": k, "label": labels.get(k, k)} for k in wanted],
+        "rows": rows,
+        "filters": {"فرایند": stage.workflow.name if stage.workflow else "",
+                    "مرحله": stage.title},
+    }
+
+
+@bp.post("/stage-report")
+@permission_required_any("report.build", "report.view", "workflow.manage")
+def stage_report():
+    try:
+        return ok(_stage_report(body()))
+    except WorkflowError as exc:
+        return fail(str(exc), 422)
+
+
+@bp.post("/stage-report/export.<fmt>")
+@permission_required("record.export")
+def stage_report_export(fmt):
+    from ..services.exporter import render
+    from ..services.jalali import today_jalali
+    try:
+        result = _stage_report(body())
+    except WorkflowError as exc:
+        return fail(str(exc), 422)
+    jy, jm, jd = today_jalali()
+    meta = {"تاریخ تهیه": f"{jy}/{jm:02d}/{jd:02d}",
+            "تعداد سطر": len(result["rows"])}
+    meta.update(result["filters"])
+    try:
+        payload, mimetype, ext = render(fmt, result["columns"], result["rows"],
+                                        result["title"], meta)
+    except (ValueError, RuntimeError) as exc:
+        return fail(str(exc), 422)
+    record_audit("export", "workflow", None,
+                 summary=f"خروجی {fmt} از «{result['title']}»", commit=True)
+    stem = f"stage_{result['title'][:20]}"
+    return Response(payload, mimetype=mimetype, headers={
+        "Content-Disposition":
+            f'attachment; filename="stage_report_{jy}-{jm:02d}-{jd:02d}.{ext}"; '
+            f"filename*=UTF-8''stage_report_{jy}-{jm:02d}-{jd:02d}.{ext}"})

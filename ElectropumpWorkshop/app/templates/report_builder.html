@@ -11,6 +11,47 @@
   {% endif %}
 </div>
 
+<!-- ── a report of one stage of one process ─────────────────────────────
+     Its own panel rather than another dataset: what a stage records is not a
+     fixed list of columns, it is whatever the admin dropped on that stage, so
+     the columns have to be fetched once a stage is picked. -->
+<details class="card stage-report" id="stage-report">
+  <summary><b>📋 گزارش مرحله‌ای فرایند</b>
+    <span class="hint">خروجی اکسل از آیتم‌هایی که در یک مرحله ثبت می‌شوند</span>
+  </summary>
+  <div class="field-group cols-3">
+    <div class="field"><label>فرایند</label>
+      <select id="sr-process"></select></div>
+    <div class="field"><label>مرحله</label>
+      <select id="sr-stage"></select></div>
+    <div class="field"><label>وضعیت فرایند</label>
+      <select id="sr-status">
+        <option value="">همه</option>
+        <option value="open">در جریان</option>
+        <option value="completed">تکمیل شده</option>
+        <option value="cancelled">لغو شده</option>
+      </select></div>
+  </div>
+  <div class="field">
+    <label>ستون‌های خروجی <span class="hint">(هر کدام را می‌خواهید بزنید)</span></label>
+    <div class="sr-cols" id="sr-base"></div>
+    <div class="pal-group-title">آیتم‌های ثبت‌شده در این مرحله</div>
+    <div class="sr-cols" id="sr-fields"></div>
+    <div class="sr-quick">
+      <button class="btn-sm btn-ghost" id="sr-all" type="button">انتخاب همه</button>
+      <button class="btn-sm btn-ghost" id="sr-none" type="button">هیچ‌کدام</button>
+    </div>
+  </div>
+  <label class="mini-check"><input type="checkbox" id="sr-done" checked>
+    فقط مرحله‌های ثبت‌شده</label>
+  <div class="form-actions">
+    <button class="btn-primary" id="sr-run" type="button">▶ نمایش</button>
+    <button class="export-btn export-xlsx" id="sr-xlsx" type="button">📊 اکسل</button>
+    <button class="export-btn export-csv" id="sr-csv" type="button">📄 CSV</button>
+  </div>
+  <div id="sr-result"></div>
+</details>
+
 <div class="grid-2">
   <div class="card">
     <div class="section-title">۱. مجموعه‌داده و فیلترهای پایه</div>
