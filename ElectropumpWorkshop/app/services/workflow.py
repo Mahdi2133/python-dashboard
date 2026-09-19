@@ -264,6 +264,16 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
                 field["read_only"] = True
                 field["read_only_value"] = instance.well.name
                 field["help_text"] = "در شروع فرایند انتخاب شده است."
+            # The مرکز follows the well: the register already knows which
+            # centre a well belongs to, so asking is both extra work and a
+            # chance to get it wrong. Shown, never editable.
+            if (field.get("field_name") == "center" and instance.well_id
+                    and instance.well.center is not None):
+                field = dict(field)
+                field["read_only"] = True
+                field["read_only_value"] = instance.well.center.label
+                field["help_text"] = (f"مرکز چاه «{instance.well.name}» است و "
+                                      "از فهرست چاه‌ها خوانده می‌شود.")
             kept.append(field)
         return kept
 
@@ -406,11 +416,16 @@ def start_instance(payload: dict, user) -> WorkflowInstance:
         raise WorkflowError("شروع فرایند با متولی مرحله‌ای است که در فرایندساز "
                             "«می‌تواند فرایند را شروع کند» علامت خورده باشد. "
                             "از مدیر سیستم بخواهید شما را متولی آن مرحله کند.")
+    # Either the Persian label the form shows or the key the API speaks —
+    # the کارتابل builds its radios from the server's own list of startable
+    # operations, which carries both, and a caller should not have to know
+    # which of the two this end expects.
     kind_value = normalize_text(payload.get("operation_kind") or "")
     kind = next((k for k, label in OPERATION_KINDS.items()
-                 if normalize_text(label) == kind_value), None)
+                 if kind_value in (k, normalize_text(label))), None)
     if kind is None:
-        raise WorkflowError("نوع عملیات را انتخاب کنید: کشیدن یا نصب.")
+        raise WorkflowError("نوع عملیات را انتخاب کنید: "
+                            + " یا ".join(OPERATION_KINDS.values()) + ".")
     if kind not in allowed:
         raise WorkflowError(
             f"شروع عملیات «{OPERATION_KINDS[kind]}» با شما نیست؛ این عملیات از "
@@ -431,7 +446,12 @@ def start_instance(payload: dict, user) -> WorkflowInstance:
         well_id=well.id if well else None, well_name_raw=raw,
         current_stage=first_stage_number(kind, workflow), status=INSTANCE_OPEN,
         created_by=user.id if user else None)
-    instance.set_payload({"operation_kind": OPERATION_KINDS[kind]})
+    # The مرکز is decided by the well, not by whoever fills the form, so it
+    # is settled here with the well and shown locked from then on.
+    opening = {"operation_kind": OPERATION_KINDS[kind]}
+    if well is not None and well.center is not None:
+        opening["center"] = well.center.label
+    instance.set_payload(opening)
     db.session.add(instance)
     db.session.flush()
 
@@ -857,6 +877,11 @@ def finalize(instance: WorkflowInstance, user) -> Record:
     payload = dict(instance.payload)
     if instance.well_id and not payload.get("well"):
         payload["well"] = instance.well.name
+    # The centre is shown locked rather than asked, so it never comes back in
+    # a stage's answers — read it from the well instead of losing it.
+    if (instance.well_id and not payload.get("center")
+            and instance.well.center is not None):
+        payload["center"] = instance.well.center.label
     try:
         record = create_record(payload)
     except ValidationError as exc:

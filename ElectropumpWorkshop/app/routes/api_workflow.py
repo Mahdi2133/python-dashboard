@@ -651,11 +651,35 @@ def connections():
                     "title": s.title}
                    for s in sorted(workflow.stages, key=lambda x: x.stage_number)
                    if s.is_active and s.stage_number > 0 and not s.items]
+
+    # «فقط نمایش» means "show what an earlier stage recorded". On the *first*
+    # stage that carries a part, there is no earlier stage — so the field is
+    # shown as «—» to everybody and nobody can ever fill it. That is almost
+    # never what was meant, and it is invisible until somebody opens the form.
+    first_seen, stuck = {}, []
+    for stage in sorted(workflow.stages, key=lambda x: x.stage_number):
+        if not stage.is_active:
+            continue
+        for item in stage.items:
+            part = item.section or item.field
+            if part is None:
+                continue
+            key = (("section", item.section_id) if item.section
+                   else ("field", item.field_id))
+            if key in first_seen:
+                continue
+            first_seen[key] = stage
+            if item.is_read_only:
+                stuck.append({
+                    "stage_number": stage.stage_number, "title": stage.title,
+                    "part": getattr(part, "title", None) or part.label,
+                })
     return ok({
         "workflow": workflow.to_dict(with_stages=False),
         "users": sorted(rows.values(), key=lambda r: -(len(r["owns"]))),
         "unassigned": unassigned,
         "empty_forms": empty_forms,
+        "locked_first": stuck,
         "has_intake": any(s.stage_number == 0 and s.is_active
                           for s in workflow.stages),
         # Where each operation opens, so the panel can say it in words rather

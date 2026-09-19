@@ -593,7 +593,7 @@
     var box = A.qs('#np-kind');
     if (!box || !startable.length) return;
     box.innerHTML = startable.map(function (k, i) {
-      return '<label><input type="radio" name="np_kind" value="' + A.esc(k.value)
+      return '<label><input type="radio" name="np_kind" value="' + A.esc(k.label)
         + '"' + (startable.length === 1 || i === 0 ? ' checked' : '')
         + '><span class="btn-opt">' + A.esc(k.label) + '</span></label>';
     }).join('');

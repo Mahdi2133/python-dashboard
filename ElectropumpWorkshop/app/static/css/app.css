@@ -876,3 +876,10 @@ select.mini { font-size:11px; padding:2px 4px; width:auto; }
 .door-at { color:var(--text,#12333f); }
 .door-who, .door-none { font-size:11.5px; color:var(--text-muted,#6c8592); }
 .badge.start { background:#e6f2ea; color:#1d6b3a; border:1px solid #b9dcc6; }
+
+/* The مرکز follows the well, so the group is shown rather than asked. */
+.from-well .btn-group label:has(input:disabled) { opacity:.45;
+  cursor:not-allowed; }
+.from-well .btn-group label:has(input:checked) .btn-opt { border-color:#8fc0d2;
+  background:#e8f1f5; color:#0d4f63; }
+.centre-note { display:block; }

@@ -304,23 +304,55 @@
       if (options.onChange) options.onChange(name, self);
     }
 
-    /* Picking a well fills in its centre — the register knows which centre
-       each well belongs to, so the operator should not have to remember. */
+    /* Picking a well fills in its centre, and then closes it.
+
+       The register already knows which centre a well belongs to, so asking is
+       both extra work and a chance to get it wrong. Clearing the well opens it
+       again — a well nobody has chosen has no centre to impose. */
     async function fillCentreFromWell(name) {
       name = (name || '').trim();
-      if (!name) return;
+      if (!name) { lockCentre(null); return; }
       try {
         var res = await A.api.get('/api/wells?all=1&limit=1&q='
                                   + encodeURIComponent(name));
         var well = (res.data || []).find(function (w) { return w.name === name; });
-        if (!well || !well.center_value) return;
+        if (!well || !well.center_value) { lockCentre(null); return; }
         var radio = qs('input[name="center"][value="'
                        + CSS.escape(well.center_value) + '"]');
-        if (!radio || radio.checked) return;
-        radio.checked = true;
-        radio.dispatchEvent(new Event('change', { bubbles: true }));
-        flash(qs('[data-wrap="center"]'));
+        if (!radio) { lockCentre(null); return; }
+        if (!radio.checked) {
+          radio.checked = true;
+          radio.dispatchEvent(new Event('change', { bubbles: true }));
+          flash(qs('[data-wrap="center"]'));
+        }
+        lockCentre(well.name);
       } catch (err) { /* leave the centre for the operator to pick */ }
+    }
+
+    function lockCentre(wellName) {
+      var wrap = qs('[data-wrap="center"]');
+      if (!wrap) return;
+      var locked = !!wellName;
+      wrap.classList.toggle('from-well', locked);
+      qsa('input[name="center"]').forEach(function (input) {
+        // A disabled radio is not submitted, so keep the chosen one live and
+        // close only the others; the group then cannot be changed either way.
+        input.disabled = locked && !input.checked;
+        input.readOnly = locked;
+      });
+      var note = wrap.querySelector('.centre-note');
+      if (locked && !note) {
+        note = document.createElement('span');
+        note.className = 'hint centre-note';
+        wrap.appendChild(note);
+      }
+      if (note) {
+        note.textContent = locked
+          ? 'مرکز چاه «' + wellName + '» است و از فهرست چاه‌ها خوانده می‌شود؛ '
+            + 'برای تغییرش چاه دیگری انتخاب کنید.'
+          : '';
+        note.hidden = !locked;
+      }
     }
 
     function flash(wrap) {

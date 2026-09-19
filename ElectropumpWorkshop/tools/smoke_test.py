@@ -697,6 +697,14 @@ def main():
           [k["value"] for k in
            yaghouti.get("/api/workflow/inbox").get_json().get("startable", [])]
           == ["install"])
+    # What the کارتابل itself posts. It builds its radios from the list the
+    # inbox hands back, so both forms of the answer have to be accepted — a
+    # release that took only the label left the start button dead.
+    for kind in ("نصب", "install"):
+        rr = yaghouti.post("/api/workflow/instances",
+                           json={"operation_kind": kind, "well": "کورده 1"})
+        check(f"شروع فرایند با «{kind}» پذیرفته می‌شود", rr.status_code == 200,
+              str(rr.get_json().get("error") or "")[:60])
     iid = yaghouti.post("/api/workflow/instances",
                         json={"operation_kind": "نصب", "well": "کورده 1"}
                         ).get_json()["data"]["id"]
@@ -914,6 +922,35 @@ def main():
     check("گزینه قفل‌شده غیرفعال نمی‌شود", rr.status_code == 409)
     rr = c.put(f"/api/lookups/item/{locked.id}", json={"label": "جمع‌آوری چاه"})
     check("ولی برچسبش قابل تغییر است", rr.status_code == 200)
+
+    print("\n— مرکز از روی چاه خوانده می‌شود و قفل است —")
+    with app.app_context():
+        from app.models import Well, WorkflowInstance
+        from app.services.workflow import (active_workflow, stage_by_number,
+                                           stage_form)
+        inst = WorkflowInstance.query.get(iid)
+        well = inst.well
+        centre_field = None
+        for number in range(0, 9):
+            st = stage_by_number(inst, number)
+            if st is None:
+                continue
+            for block_ in stage_form(inst, st)["sections"]:
+                for f in block_["fields"]:
+                    if f["field_name"] == "center":
+                        centre_field = f
+        check("چاه مرکز دارد", well is not None and well.center is not None,
+              well.center.label if well and well.center else "—")
+        check("مرکز در فرم مرحله نشان داده می‌شود", centre_field is not None)
+        if centre_field:
+            check("و مقدارش مرکز همان چاه است",
+                  centre_field.get("read_only_value") == well.center.label,
+                  str(centre_field.get("read_only_value")))
+            check("و قابل تغییر نیست", centre_field.get("read_only") is True)
+        check("مرکز از همان شروع در فرایند ثبت شده است",
+              inst.payload.get("center") == (well.center.label
+                                             if well.center else None),
+              str(inst.payload.get("center")))
 
     print("\n— چند متولی برای یک مرحله، و مسیردهی بر اساس مرکز —")
     # The city has eight مراکز آبرسانی. One stage belongs to all of them, and

@@ -204,6 +204,12 @@
         return 'مرحله ' + J.toFaDigits(u.stage_number) + ' — ' + A.esc(u.title);
       }).join('، '));
     }
+    (d.locked_first || []).forEach(function (x) {
+      warn.push('«' + x.part + '» در مرحله ' + J.toFaDigits(x.stage_number)
+        + ' — ' + x.title + ' روی «فقط نمایش» است، ولی همین اولین مرحله‌ای '
+        + 'است که آن را دارد؛ پس هیچ‌کس نمی‌تواند پرش کند و همیشه «—» '
+        + 'نشان داده می‌شود. تیک «فقط نمایش» را بردارید.');
+    });
     if (d.empty_forms.length) {
       warn.push('بدون فرم (احتمالاً بخشی که حذف شده): '
         + d.empty_forms.map(function (u) {
