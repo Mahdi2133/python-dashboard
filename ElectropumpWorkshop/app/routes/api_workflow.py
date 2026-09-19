@@ -25,6 +25,8 @@ from ..services.workflow import (WorkflowError, active_workflow,
                                  applicable_stages, awaiting_approval,
                                  cancel_instance, current_stage_of,
                                  decide_stage, may_act, owner_of,
+                                 owners_of, startable_kinds,
+                                 entry_stage,
                                  pending_stages, previous_values_for,
                                  may_start, referral_choices, stage_by_number,
                                  stage_form, stages_of_user,
@@ -52,6 +54,27 @@ def _pick_workflow(wanted):
         return db.session.get(WorkflowDefinition, int(wanted))
     return (active_workflow()
             or WorkflowDefinition.query.order_by(WorkflowDefinition.id).first())
+
+
+def _people(raw):
+    """A list of users from a list of ids. Returns (users, error)."""
+    if raw in (None, "", []):
+        return [], None
+    if not isinstance(raw, (list, tuple)):
+        raw = [raw]
+    out, seen = [], set()
+    for item in raw:
+        if item in (None, "", 0, "0"):
+            continue
+        user = db.session.get(AppUser, int(item))
+        if user is None:
+            return None, "یکی از کاربران انتخاب‌شده یافت نشد."
+        if not user.is_active:
+            return None, f"کاربر «{user.full_name}» غیرفعال است."
+        if user.id not in seen:
+            seen.add(user.id)
+            out.append(user)
+    return out, None
 
 
 def _person(raw):
@@ -237,8 +260,9 @@ def create_stage():
         return fail("عنوان مرحله الزامی است.", 422)
     taken = {s.stage_number for s in workflow.stages}
     if payload.get("as_intake"):
-        # Putting step zero back after it was deleted. Starting a process is
-        # its job, so a process without one can only be opened by an admin.
+        # Putting step zero back after it was deleted. A process needs some
+        # door — either a step zero, or a stage marked «می‌تواند فرایند را
+        # شروع کند» — or only an admin can open one.
         if 0 in taken:
             return fail("این فرایند از قبل مرحله ۰ دارد.", 422)
         number = 0
@@ -254,7 +278,9 @@ def create_stage():
         workflow_id=workflow.id, stage_number=number, title=title,
         description=(payload.get("description") or "").strip() or None,
         assignee_id=person.id if person else None,
-        applies_to=applies, is_active=True)
+        applies_to=applies, is_active=True,
+        can_start=payload.get("can_start") in (True, "true", "1", 1),
+        route_by_center=payload.get("route_by_center") in (True, "true", "1", 1))
     db.session.add(stage)
     record_audit("create", "workflow_stage", workflow.id,
                  summary=f"افزودن مرحله «{title}» به «{workflow.name}»")
@@ -424,6 +450,19 @@ def update_stage(stage_id):
         stage.applies_to = payload["applies_to"]
     if "is_active" in payload:
         stage.is_active = payload["is_active"] in (True, "true", "1", 1)
+    if "can_start" in payload:
+        stage.can_start = payload["can_start"] in (True, "true", "1", 1)
+    if "route_by_center" in payload:
+        stage.route_by_center = payload["route_by_center"] in (True, "true", "1", 1)
+    # The متولی list. One stage can belong to all eight مراکز آبرسانی, so this
+    # is a list; ``assignee_id`` follows its first entry, which is the name
+    # every single-owner screen still shows.
+    if "owner_ids" in payload:
+        people, error = _people(payload["owner_ids"])
+        if error:
+            return fail(error, 422)
+        stage.owners = people
+        stage.assignee_id = people[0].id if people else None
 
     # ── the referral: where this stage's work goes when it is finished ──────
     if "referral_mode" in payload:
@@ -568,14 +607,19 @@ def connections():
             elif item.field is not None:
                 parts.append({"kind": "field", "title": item.field.label,
                               "count": 1, "locked": item.is_read_only})
+        people = stage.all_owners
         card = {"stage_id": stage.id, "stage_number": stage.stage_number,
                 "title": stage.title, "applies_to": stage.applies_to,
                 "applies_to_label": APPLIES_TO.get(stage.applies_to,
                                                    stage.applies_to),
+                "can_start": stage.can_start,
+                "route_by_center": stage.route_by_center,
+                "shared_with": max(0, len(people) - 1),
                 "parts": parts, "empty": not parts}
-        owner = row(stage.assignee)
-        if owner is not None:
-            owner["owns"].append(card)
+        for person in people:
+            owner = row(person)
+            if owner is not None:
+                owner["owns"].append(card)
         approver = row(stage.approver)
         if approver is not None:
             approver["approves"].append(card)
@@ -602,7 +646,7 @@ def connections():
     unassigned = [{"stage_id": s.id, "stage_number": s.stage_number,
                    "title": s.title}
                   for s in sorted(workflow.stages, key=lambda x: x.stage_number)
-                  if s.is_active and s.assignee_id is None]
+                  if s.is_active and not s.owner_ids]
     empty_forms = [{"stage_id": s.id, "stage_number": s.stage_number,
                     "title": s.title}
                    for s in sorted(workflow.stages, key=lambda x: x.stage_number)
@@ -614,6 +658,15 @@ def connections():
         "empty_forms": empty_forms,
         "has_intake": any(s.stage_number == 0 and s.is_active
                           for s in workflow.stages),
+        # Where each operation opens, so the panel can say it in words rather
+        # than leaving the admin to work it out from six checkboxes.
+        "doors": [{"kind": kind, "kind_label": label,
+                   "stage_number": (door.stage_number if door else None),
+                   "title": (door.title if door else None),
+                   "owners": [u.full_name for u in door.all_owners]
+                             if door else []}
+                  for kind, label in OPERATION_KINDS.items()
+                  for door in [entry_stage(workflow, kind)]],
         "running": WorkflowInstance.query.filter_by(
             workflow_id=workflow.id, status=INSTANCE_OPEN).count(),
     })
@@ -737,8 +790,8 @@ def inbox():
                 "stage_id": stage.id,
                 "task_kind": task,
                 "entry_status": entry.status if entry else ENTRY_PENDING,
-                "is_mine": owner_of(instance, stage) == user.id,
-                "unassigned": owner_of(instance, stage) is None,
+                "is_mine": user.id in owners_of(instance, stage),
+                "unassigned": not owners_of(instance, stage),
                 "referred_to_name": (entry.referred_to.full_name
                                      if entry and entry.referred_to else None),
                 "referred_by_name": (entry.referred_by.full_name
@@ -762,7 +815,7 @@ def inbox():
             .filter(WorkflowDefinition.is_active.is_(True),
                     WorkflowStage.is_active.is_(True))
             .order_by(WorkflowStage.stage_number).all()):
-        if stage.assignee_id == user.id:
+        if user.id in stage.owner_ids:
             role = "fill"
         elif stage.approver_id == user.id:
             role = "approve"
@@ -771,10 +824,17 @@ def inbox():
         mine_stages.append({
             "stage_number": stage.stage_number, "title": stage.title,
             "role": role, "field_count": len(stage.items),
+            "can_start": stage.can_start,
+            "shared_with": max(0, len(stage.owner_ids) - 1),
             "workflow": stage.workflow.name if stage.workflow else None,
         })
-    # Only step zero's owner opens processes, so only they get the button.
-    return ok(rows, total=len(rows), may_start=may_start(user),
+    # Only the owner of a stage marked «می‌تواند فرایند را شروع کند» opens
+    # processes, and only for the operations that stage admits — so the card
+    # offers those operations and no others.
+    kinds = startable_kinds(user)
+    return ok(rows, total=len(rows), may_start=bool(kinds),
+              startable=[{"value": k, "label": OPERATION_KINDS[k]}
+                         for k in kinds],
               my_stages=mine_stages,
               running=WorkflowInstance.query.filter_by(
                   status=INSTANCE_OPEN).count())

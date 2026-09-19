@@ -193,6 +193,23 @@ def _apply_user_payload(user, payload, creating=False):
                 return "مهلت ویرایش باید بین ۱ تا ۸۷۶۰ ساعت (یک سال) باشد."
             user.edit_window_hours = hours
 
+    # The مراکز آبرسانی this person answers for. A stage set to «فقط متولی
+    # مرکزِ همان چاه» reads it to pick which of its owners gets the job; every
+    # other stage ignores it, so leaving it empty changes nothing.
+    if "center_ids" in payload:
+        from ..models import LookupItem
+        raw = payload["center_ids"] or []
+        if not isinstance(raw, (list, tuple)):
+            return "فهرست مراکز باید آرایه باشد."
+        centers = []
+        for item in raw:
+            center = db.session.get(LookupItem, int(item))
+            if center is None:
+                return "یکی از مرکزهای انتخاب‌شده یافت نشد."
+            if center not in centers:
+                centers.append(center)
+        user.centers = centers
+
     if "is_active" in payload:
         user.is_active = payload["is_active"] in (True, "true", "1", 1)
     if "must_change_password" in payload:

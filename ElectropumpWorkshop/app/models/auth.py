@@ -170,6 +170,11 @@ class AppUser(db.Model):
 
     sessions = db.relationship("UserSession", back_populates="user",
                                cascade="all, delete-orphan", lazy="dynamic")
+    # The مراکز آبرسانی this person answers for. Only a stage that asks to be
+    # routed by the well's مرکز reads it; everywhere else a user with no
+    # centres behaves exactly as before.
+    centers = db.relationship("LookupItem",
+                              secondary="app_user_centers", lazy="selectin")
 
     # ── password ────────────────────────────────────────────────────────────
     def set_password(self, password: str):
@@ -269,6 +274,8 @@ class AppUser(db.Model):
             "is_locked": bool(self.locked_until and self.locked_until > local_now()),
             "edit_window_hours": self.edit_window_hours,
             "edit_window_label": self.edit_window_label,
+            "center_ids": [c.id for c in self.centers],
+            "center_names": [c.label for c in self.centers],
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
         if include_permissions:

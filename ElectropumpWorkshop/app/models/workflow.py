@@ -107,6 +107,34 @@ class WorkflowDefinition(db.Model):
         return data
 
 
+# A stage's متولی is a list, not a person. The city has eight مراکز آبرسانی,
+# each with its own user, and one stage — «اعلام علت خرابی» — belongs to all of
+# them. ``assignee_id`` stays as the first of the list so every older row and
+# every screen that shows one name keeps working.
+workflow_stage_owners = db.Table(
+    "workflow_stage_owners",
+    db.Column("stage_id", db.Integer,
+              db.ForeignKey("workflow_stages.id", ondelete="CASCADE"),
+              primary_key=True),
+    db.Column("user_id", db.Integer,
+              db.ForeignKey("app_users.id", ondelete="CASCADE"),
+              primary_key=True),
+)
+
+# Which مرکز each person answers for. Only consulted by a stage that asks to
+# be routed by the well's مرکز; a user with no centres is simply never narrowed
+# out, so this stays empty until somebody fills it in.
+app_user_centers = db.Table(
+    "app_user_centers",
+    db.Column("user_id", db.Integer,
+              db.ForeignKey("app_users.id", ondelete="CASCADE"),
+              primary_key=True),
+    db.Column("center_id", db.Integer,
+              db.ForeignKey("lookup_items.id", ondelete="CASCADE"),
+              primary_key=True),
+)
+
+
 class WorkflowStage(db.Model):
     """A step and the person who owns it.
 
@@ -133,6 +161,15 @@ class WorkflowStage(db.Model):
     # Which branch visits this stage at all.
     applies_to = db.Column(db.String(10), nullable=False, default=APPLIES_BOTH)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
+    # Whether a process can be opened here. This is what makes «کشیدن شروع
+    # می‌شود از مرکز آبرسانی، نصب از کارگاه نصب» a setting rather than a rule
+    # in the code: mark both stages, and ``applies_to`` says which operation
+    # each one opens.
+    can_start = db.Column(db.Boolean, nullable=False, default=False)
+    # With eight centres owning one stage, all eight would otherwise see every
+    # job. Turn this on and the work goes only to the owner whose مرکز is the
+    # well's.
+    route_by_center = db.Column(db.Boolean, nullable=False, default=False)
 
     # ── the referral: where this stage's work goes when it is done ──────────
     referral_mode = db.Column(db.String(10), nullable=False, default=REFER_NEXT)
@@ -155,11 +192,33 @@ class WorkflowStage(db.Model):
 
     workflow = db.relationship("WorkflowDefinition", back_populates="stages")
     assignee = db.relationship("AppUser", foreign_keys=[assignee_id])
+    owners = db.relationship("AppUser", secondary=workflow_stage_owners,
+                             lazy="selectin")
     referral_user = db.relationship("AppUser", foreign_keys=[referral_user_id])
     approver = db.relationship("AppUser", foreign_keys=[approver_id])
     items = db.relationship("WorkflowStageItem", back_populates="stage",
                             cascade="all, delete-orphan",
                             order_by="WorkflowStageItem.sort_order")
+
+    @property
+    def all_owners(self):
+        """Everyone who owns this stage, the primary متولی first.
+
+        ``owners`` is the list the admin edits. ``assignee_id`` is kept in step
+        with its first entry, so a process seeded before this existed — and
+        every screen that shows a single name — still reads correctly.
+        """
+        people = list(self.owners)
+        if self.assignee is not None and self.assignee not in people:
+            people.insert(0, self.assignee)
+        elif self.assignee is not None:
+            people.remove(self.assignee)
+            people.insert(0, self.assignee)
+        return people
+
+    @property
+    def owner_ids(self):
+        return [u.id for u in self.all_owners]
 
     def to_dict(self):
         return {
@@ -171,6 +230,10 @@ class WorkflowStage(db.Model):
             "applies_to": self.applies_to,
             "applies_to_label": APPLIES_TO.get(self.applies_to, self.applies_to),
             "is_active": self.is_active,
+            "can_start": self.can_start,
+            "route_by_center": self.route_by_center,
+            "owner_ids": self.owner_ids,
+            "owner_names": [u.full_name for u in self.all_owners],
             "referral_mode": self.referral_mode,
             "referral_mode_label": REFERRAL_MODES.get(self.referral_mode,
                                                       self.referral_mode),
@@ -372,17 +435,29 @@ class WorkflowStageEntry(db.Model):
     decided_by = db.relationship("AppUser", foreign_keys=[decided_by_id])
 
     @property
-    def owner_id(self):
-        """Whose کارتابل this entry belongs in right now.
+    def pinned_owner_id(self):
+        """The one person this run put this stage with, or None.
 
         A referral wins over the stage's standing متولی: the whole point of
         «ارجاع» is that this particular job goes to this particular person,
-        without changing who owns the stage in general.
+        without changing who owns the stage in general. An approval does the
+        same until the approver has ruled.
+
+        Nothing else pins it. A stage's متولی is a list — eight مراکز آبرسانی
+        can share one — and «فقط متولی مرکزِ چاه» narrows that list per well,
+        so when this run has pinned nobody the answer must be None and not the
+        stage's first owner, or neither of those ever gets a chance to run.
         """
         if self.status == ENTRY_AWAITING:
             return self.approver_id
-        if self.referred_to_id:
-            return self.referred_to_id
+        return self.referred_to_id or None
+
+    @property
+    def owner_id(self):
+        """The one name to show for this entry — see ``pinned_owner_id``."""
+        pinned = self.pinned_owner_id
+        if pinned is not None:
+            return pinned
         return self.stage.assignee_id if self.stage else None
 
     @property

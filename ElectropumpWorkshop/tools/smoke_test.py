@@ -681,10 +681,25 @@ def main():
                      json={"operation_kind": "کشیدن", "well": "چاه ناموجود ۹۹"})
     check("چاه خارج از فهرست پذیرفته نمی‌شود", rr.status_code == 422)
 
-    print("\n— فرایند: مسیر «نصب» از مرحله ۳ آغاز می‌شود —")
-    iid = markaz.post("/api/workflow/instances",
-                      json={"operation_kind": "نصب", "well": "کورده 1"}
-                      ).get_json()["data"]["id"]
+    print("\n— فرایند: هر عملیات از مرحله‌ی خودش آغاز می‌شود —")
+    # کشیدن opens at مرکز آبرسانی's stage, نصب at کارگاه مکانیک's. Neither is
+    # a rule in the code any more: both are the ``can_start`` flag on a stage,
+    # and «شامل» says which operation each door admits.
+    rr = markaz.post("/api/workflow/instances",
+                     json={"operation_kind": "نصب", "well": "کورده 1"})
+    check("مرکز آبرسانی نمی‌تواند «نصب» را شروع کند", rr.status_code == 422,
+          str(rr.get_json().get("error"))[:70])
+    check("و کارتابلش فقط «کشیدن» را پیشنهاد می‌دهد",
+          [k["value"] for k in
+           markaz.get("/api/workflow/inbox").get_json().get("startable", [])]
+          == ["pull"])
+    check("کارگاه مکانیک فقط «نصب» را می‌تواند شروع کند",
+          [k["value"] for k in
+           yaghouti.get("/api/workflow/inbox").get_json().get("startable", [])]
+          == ["install"])
+    iid = yaghouti.post("/api/workflow/instances",
+                        json={"operation_kind": "نصب", "well": "کورده 1"}
+                        ).get_json()["data"]["id"]
     det = yaghouti.get(f"/api/workflow/instances/{iid}").get_json()["data"]
     check("نصب مستقیم به مرحله ۳ می‌رود", det["current_stage"] == 3,
           str(det["current_stage"]))
@@ -899,6 +914,75 @@ def main():
     check("گزینه قفل‌شده غیرفعال نمی‌شود", rr.status_code == 409)
     rr = c.put(f"/api/lookups/item/{locked.id}", json={"label": "جمع‌آوری چاه"})
     check("ولی برچسبش قابل تغییر است", rr.status_code == 200)
+
+    print("\n— چند متولی برای یک مرحله، و مسیردهی بر اساس مرکز —")
+    # The city has eight مراکز آبرسانی. One stage belongs to all of them, and
+    # each is shown only the wells of its own مرکز.
+    with app.app_context():
+        from app.extensions import db as _db
+        from app.models import AppUser, LookupCategory, Well
+        from app.services.workflow import (active_workflow, owners_of,
+                                           start_instance, sync_entries)
+        cat = LookupCategory.query.filter_by(code="center").one()
+        pair = cat.items[:2]
+        people = []
+        for item in pair:
+            u = AppUser(username=f"c_{item.id}", first_name="مرکز",
+                        last_name=item.label, role="stage_owner")
+            u.set_password("Aa@123456")
+            u.centers = [item]
+            _db.session.add(u)
+            people.append(u)
+        _db.session.flush()
+        wf = active_workflow()
+        stage = next(x for x in wf.stages if x.stage_number == 1)
+        stage.owners = people
+        stage.assignee_id = people[0].id
+        stage.route_by_center = True
+        _db.session.commit()
+
+        check("یک مرحله چند متولی می‌گیرد", len(stage.owner_ids) == 2,
+              str([u.full_name for u in stage.all_owners]))
+
+        seen = []
+        for item, owner in zip(pair, people):
+            well = Well.query.filter_by(center_id=item.id, is_active=True).first()
+            if well is None:
+                continue
+            inst = start_instance({"operation_kind": "کشیدن",
+                                   "well": well.name}, people[0])
+            sync_entries(inst)
+            _db.session.commit()
+            seen.append(owners_of(inst, stage) == [owner.id])
+        check("کار هر چاه فقط به متولی مرکز خودش می‌رسد",
+              bool(seen) and all(seen), f"{len(seen)} مرکز آزمایش شد")
+
+        # A well whose مرکز nobody claims must stay visible to everyone rather
+        # than fall into a کارتابل nobody reads.
+        orphan = Well.query.filter(
+            Well.center_id.notin_([i.id for i in pair]),
+            Well.is_active.is_(True)).first()
+        inst = start_instance({"operation_kind": "کشیدن",
+                               "well": orphan.name}, people[0])
+        sync_entries(inst)
+        _db.session.commit()
+        check("چاهی که مرکزش متولی ندارد گم نمی‌شود",
+              sorted(owners_of(inst, stage)) == sorted(u.id for u in people))
+
+        # Turning the switch off puts the job back with everybody.
+        stage.route_by_center = False
+        _db.session.commit()
+        check("بدون مسیردهی، کار به همه‌ی متولی‌ها می‌رسد",
+              sorted(owners_of(inst, stage)) == sorted(u.id for u in people))
+
+        # A disabled account must not hold work another owner could do.
+        people[0].is_active = False
+        stage.route_by_center = True
+        _db.session.commit()
+        check("کاربر غیرفعال کار را نگه نمی‌دارد",
+              people[0].id not in owners_of(inst, stage))
+        people[0].is_active = True
+        _db.session.commit()
 
     print("\n— ترتیب تب‌ها —")
     check("صفحه اصلی، ثبت اطلاعات است",

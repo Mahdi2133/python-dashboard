@@ -19,7 +19,8 @@ from __future__ import annotations
 import logging
 
 from ..extensions import db
-from ..models import (FormField, FormSection, Record, WorkflowAttachment,
+from ..models import (AppUser, FormField, FormSection, Record,
+                      WorkflowAttachment,
                       WorkflowDefinition, WorkflowInstance, WorkflowStage,
                       WorkflowStageEntry, WorkflowStageItem)
 from ..models.workflow import (APPLIES_BOTH, ENTRY_ARCHIVED, ENTRY_AWAITING,
@@ -40,10 +41,16 @@ log = logging.getLogger(__name__)
 # The one answer that keeps «اطلاعات چاه و نصب» open at stage 4.
 ACTION_NEW_PUMP = "نصب الکتروپمپ جدید"
 STAGE_INTAKE = 0
+# Where each branch used to begin, before the admin could say so. Kept only as
+# the fallback for a process nobody has marked a start stage on yet; once any
+# stage carries ``can_start`` these are never consulted again.
 STAGE_FIRST_PULL = 1
 STAGE_FIRST_INSTALL = 3
-STAGE_WELL_INSTALL = 4
-STAGE_FINAL = 5
+# «اطلاعات چاه و نصب» is only asked for when the action decision says a new
+# pump is going in. That rule belongs to the section, not to whatever number
+# its stage happens to carry, so it follows the section when the admin moves
+# or reorders it.
+SECTION_WELL_INSTALL = "well_install"
 
 
 class WorkflowError(Exception):
@@ -71,9 +78,70 @@ def stages_for(workflow: WorkflowDefinition, kind: str | None) -> list:
             if s.is_active and _kind_matches(s.applies_to, kind)]
 
 
-def first_stage_number(kind: str | None) -> int:
-    """Where the real work starts once step zero is answered."""
+def entry_stage(workflow, kind: str | None):
+    """The stage a ``kind`` process opens at, as the admin marked it.
+
+    «کشیدن از مرکز آبرسانی شروع می‌شود، نصب از کارگاه نصب» is a setting, not a
+    rule in this file: whichever stages carry ``can_start`` and admit this
+    operation are the doors, and the earliest of them is the one it opens at.
+    """
+    if workflow is None:
+        return None
+    doors = [s for s in sorted(workflow.stages, key=lambda x: x.stage_number)
+             if s.is_active and s.can_start
+             and _kind_matches(s.applies_to, kind)]
+    return doors[0] if doors else None
+
+
+def first_stage_number(kind: str | None, workflow=None) -> int:
+    """Where the real work starts once the operation is known."""
+    door = entry_stage(workflow if workflow is not None else active_workflow(),
+                       kind)
+    if door is not None:
+        return door.stage_number
+    # Nothing marked yet — the process as it was seeded.
     return STAGE_FIRST_INSTALL if kind == OPERATION_INSTALL else STAGE_FIRST_PULL
+
+
+def last_stage_number(workflow) -> int:
+    """One past the final stage: where ``current_stage`` rests when done."""
+    numbers = [s.stage_number for s in (workflow.stages if workflow else [])
+               if s.is_active]
+    return max(numbers) if numbers else STAGE_INTAKE
+
+
+def startable_kinds(user) -> list:
+    """Which operations this person may open a process for.
+
+    A door is a stage marked ``can_start``; its متولی holds the key, and its
+    «شامل» says which operation it opens. An admin holds every key.
+    """
+    if user is None:
+        return []
+    workflow = active_workflow()
+    if workflow is None:
+        return []
+    if user.role == "admin" or user.can("workflow.manage"):
+        return list(OPERATION_KINDS)
+    out = []
+    for kind in OPERATION_KINDS:
+        door = entry_stage(workflow, kind)
+        if door is not None and user.id in stage_owner_ids(door):
+            out.append(kind)
+            continue
+        # A process that still has its intake step keeps the old rule: whoever
+        # owns step zero opens everything.
+        intake = next((s for s in workflow.stages
+                       if s.stage_number == STAGE_INTAKE and s.is_active), None)
+        if door is None and intake is not None \
+                and user.id in stage_owner_ids(intake):
+            out.append(kind)
+    return out
+
+
+def stage_owner_ids(stage) -> list:
+    """Everyone who owns this stage, ignoring any one run of the process."""
+    return stage.owner_ids if stage is not None else []
 
 
 # ── stage 4's branch ─────────────────────────────────────────────────────────
@@ -124,6 +192,12 @@ def _already_owned(instance: WorkflowInstance, except_stage: int) -> set:
     return owned
 
 
+def carries_well_install(stage: WorkflowStage) -> bool:
+    """Whether «اطلاعات چاه و نصب» is on this stage, wherever the admin put it."""
+    return any(i.section is not None and i.section.code == SECTION_WELL_INSTALL
+               for i in stage.items)
+
+
 def stage_items(instance: WorkflowInstance, stage: WorkflowStage,
                 payload: dict | None = None) -> list:
     """The sections and fields this stage asks for, on this instance."""
@@ -131,8 +205,7 @@ def stage_items(instance: WorkflowInstance, stage: WorkflowStage,
     merged = dict(instance.payload)
     merged.update(payload or {})
     owned = _already_owned(instance, stage.stage_number)
-    state = (well_install_state(kind, merged)
-             if stage.stage_number == STAGE_WELL_INSTALL else "show")
+    state = well_install_state(kind, merged)
 
     visible = []
     for item in stage.items:
@@ -142,9 +215,8 @@ def stage_items(instance: WorkflowInstance, stage: WorkflowStage,
                else ("field", item.field.field_name) if item.field else None)
         if key is None or (key in owned and not item.is_read_only):
             continue
-        if (stage.stage_number == STAGE_WELL_INSTALL
-                and item.section is not None
-                and item.section.code == "well_install"
+        if (item.section is not None
+                and item.section.code == SECTION_WELL_INSTALL
                 and state != "show"):
             continue          # archived or deferred by the action decision
         visible.append(item)
@@ -253,8 +325,7 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
         "well_install_state": (well_install_state(
                                    instance.operation_kind,
                                    {**instance.payload, **(draft or {})})
-                               if stage.stage_number == STAGE_WELL_INSTALL
-                               else None),
+                               if carries_well_install(stage) else None),
     }
 
 
@@ -316,21 +387,13 @@ def _ensure_entry(instance: WorkflowInstance, stage: WorkflowStage):
 
 
 def may_start(user) -> bool:
-    """Whether ``user`` is the one who opens processes.
+    """Whether ``user`` may open a process of any kind at all.
 
-    Starting is step zero's job, not every stage owner's — otherwise each
-    person in the chain has a button that makes work for everybody else.
+    Opening is the job of whoever owns a stage marked «می‌تواند فرایند را شروع
+    کند», not of every stage owner — otherwise each person in the chain has a
+    button that makes work for everybody else.
     """
-    if user is None:
-        return False
-    if user.role == "admin" or user.can("workflow.manage"):
-        return True
-    workflow = active_workflow()
-    if workflow is None:
-        return False
-    intake = next((s for s in workflow.stages
-                   if s.stage_number == STAGE_INTAKE), None)
-    return bool(intake and intake.assignee_id == user.id)
+    return bool(startable_kinds(user))
 
 
 def start_instance(payload: dict, user) -> WorkflowInstance:
@@ -338,15 +401,21 @@ def start_instance(payload: dict, user) -> WorkflowInstance:
     workflow = active_workflow()
     if workflow is None:
         raise WorkflowError("هیچ فرایند فعالی تعریف نشده است.")
-    if not may_start(user):
-        raise WorkflowError("شروع فرایند با متولی «شروع فرایند» (مرحله صفر) "
-                            "است. اگر لازم است شما آن را آغاز کنید، از مدیر "
-                            "سیستم بخواهید متولی مرحله صفر را تغییر دهد.")
+    allowed = startable_kinds(user)
+    if not allowed:
+        raise WorkflowError("شروع فرایند با متولی مرحله‌ای است که در فرایندساز "
+                            "«می‌تواند فرایند را شروع کند» علامت خورده باشد. "
+                            "از مدیر سیستم بخواهید شما را متولی آن مرحله کند.")
     kind_value = normalize_text(payload.get("operation_kind") or "")
     kind = next((k for k, label in OPERATION_KINDS.items()
                  if normalize_text(label) == kind_value), None)
     if kind is None:
         raise WorkflowError("نوع عملیات را انتخاب کنید: کشیدن یا نصب.")
+    if kind not in allowed:
+        raise WorkflowError(
+            f"شروع عملیات «{OPERATION_KINDS[kind]}» با شما نیست؛ این عملیات از "
+            f"مرحله‌ی دیگری آغاز می‌شود. شما می‌توانید "
+            + "، ".join(OPERATION_KINDS[k] for k in allowed) + " را شروع کنید.")
 
     # The well is settled here and nowhere else: every later stage is shown it
     # locked, so it must be a real well from the register before we start.
@@ -360,16 +429,17 @@ def start_instance(payload: dict, user) -> WorkflowInstance:
     instance = WorkflowInstance(
         workflow_id=workflow.id, operation_kind=kind,
         well_id=well.id if well else None, well_name_raw=raw,
-        current_stage=STAGE_INTAKE, status=INSTANCE_OPEN,
+        current_stage=first_stage_number(kind, workflow), status=INSTANCE_OPEN,
         created_by=user.id if user else None)
     instance.set_payload({"operation_kind": OPERATION_KINDS[kind]})
     db.session.add(instance)
     db.session.flush()
 
-    # Step zero is answered by the act of starting, so record it as submitted
-    # and hand the process straight to the first real stage.
+    # Step zero — when the process still has one — is answered by the act of
+    # starting, so record it as submitted and hand the process straight on. A
+    # process whose start stage is a real form has no step zero to answer.
     intake = next((s for s in workflow.stages
-                   if s.stage_number == STAGE_INTAKE), None)
+                   if s.stage_number == STAGE_INTAKE and s.is_active), None)
     if intake is not None:
         entry = _ensure_entry(instance, intake)
         entry.status = ENTRY_SUBMITTED
@@ -391,7 +461,7 @@ def applicable_stages(instance: WorkflowInstance) -> list:
     Step zero is excluded: it is answered by the act of starting.
     """
     kind = instance.operation_kind
-    start = first_stage_number(kind)
+    start = first_stage_number(kind, instance.workflow)
     return [s for s in sorted(instance.workflow.stages, key=lambda x: x.stage_number)
             if s.is_active and s.stage_number > STAGE_INTAKE
             and s.stage_number >= start
@@ -443,7 +513,7 @@ def refresh_position(instance: WorkflowInstance):
     """Point ``current_stage`` at the earliest stage still owed."""
     pending = pending_stages(instance)
     instance.current_stage = (pending[0].stage_number if pending
-                              else STAGE_FINAL)
+                              else last_stage_number(instance.workflow))
     return pending
 
 
@@ -457,18 +527,53 @@ def stage_by_number(instance: WorkflowInstance, number: int):
                  if s.stage_number == number), None)
 
 
-def owner_of(instance: WorkflowInstance, stage: WorkflowStage):
+def owners_of(instance: WorkflowInstance, stage: WorkflowStage) -> list:
     """Whose کارتابل this stage sits in, on this run.
 
-    Normally the stage's standing متولی. But a referral — «ارجاع به کارگاه
-    مکانیک» — puts this one job with one particular person, and an approval
-    puts it with the approver until they have ruled. The entry knows; the
-    stage only knows the default.
+    Normally the stage's standing متولی‌ها — a list, because one stage can
+    belong to all eight مراکز آبرسانی at once. Two things narrow it:
+
+    * a referral — «ارجاع به کارگاه مکانیک» — puts this one job with one
+      particular person, and an approval puts it with the approver until they
+      have ruled; the entry knows, the stage only knows the default;
+    * «فقط متولی مرکز چاه», which keeps the owner whose مرکز is this well's, so
+      the other seven centres are not shown somebody else's job.
     """
     entry = _entry_for(instance, stage.stage_number)
-    if entry is not None and entry.owner_id is not None:
-        return entry.owner_id
-    return stage.assignee_id
+    if entry is not None and entry.pinned_owner_id is not None:
+        return [entry.pinned_owner_id]
+    people = stage.all_owners
+    # A disabled account cannot open its کارتابل, so work must not rest there
+    # while somebody else on the stage could do it. If every owner is disabled
+    # the list stays as it is — the stage is then visibly stuck, which is the
+    # truth, rather than silently ownerless.
+    live = [u for u in people if u.is_active]
+    people = live or people
+    if stage.route_by_center:
+        people = _for_this_center(people, instance)
+    return [u.id for u in people]
+
+
+def _for_this_center(people: list, instance: WorkflowInstance) -> list:
+    """Narrow a stage's owners to the one who answers for this well's مرکز.
+
+    Nobody is narrowed out by a centre they were never given: if no owner
+    claims this well's مرکز, the stage stays with all of them rather than
+    falling into a کارتابل nobody reads.
+    """
+    well = instance.well
+    center_id = well.center_id if well is not None else None
+    if center_id is None:
+        return people
+    matching = [u for u in people
+                if any(c.id == center_id for c in u.centers)]
+    return matching or people
+
+
+def owner_of(instance: WorkflowInstance, stage: WorkflowStage):
+    """The one name to show for this stage — the first of its owners."""
+    people = owners_of(instance, stage)
+    return people[0] if people else None
 
 
 def stages_of_user(instance: WorkflowInstance, user) -> list:
@@ -476,7 +581,7 @@ def stages_of_user(instance: WorkflowInstance, user) -> list:
     if user is None:
         return []
     return [s for s in applicable_stages(instance)
-            if owner_of(instance, s) == user.id]
+            if user.id in owners_of(instance, s)]
 
 
 def may_act(user, instance: WorkflowInstance, stage: WorkflowStage = None) -> bool:
@@ -486,7 +591,7 @@ def may_act(user, instance: WorkflowInstance, stage: WorkflowStage = None) -> bo
     if user.role == "admin" or user.can("workflow.manage"):
         return True
     if stage is not None:
-        return owner_of(instance, stage) == user.id
+        return user.id in owners_of(instance, stage)
     return bool(stages_of_user(instance, user))
 
 
@@ -538,14 +643,17 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
             f"مرحله «{stage.title}» در عملیات "
             f"«{OPERATION_KINDS.get(instance.operation_kind, '')}» طی نمی‌شود.")
     if not may_act(user, instance, stage):
-        owner = stage.assignee.full_name if stage.assignee else "تعیین‌نشده"
+        holders = [db.session.get(AppUser, i).full_name
+                   for i in owners_of(instance, stage)
+                   if db.session.get(AppUser, i) is not None]
+        owner = "، ".join(holders) if holders else "تعیین‌نشده"
         raise WorkflowError(f"مرحله «{stage.title}» در اختیار «{owner}» است.")
 
     merged = dict(instance.payload)
     merged.update(payload or {})
     entry = _ensure_entry(instance, stage)
 
-    if stage.stage_number == STAGE_WELL_INSTALL:
+    if carries_well_install(stage):
         state = well_install_state(instance.operation_kind, merged)
         if state == "ask":
             raise WorkflowError("ابتدا «اقدام مورد نیاز» را مشخص کنید.")
@@ -760,7 +868,7 @@ def finalize(instance: WorkflowInstance, user) -> Record:
     instance.record_id = record.id
     instance.status = INSTANCE_COMPLETED
     instance.completed_at = local_now()
-    instance.current_stage = STAGE_FINAL
+    instance.current_stage = last_stage_number(instance.workflow)
     record_audit("create", "workflow", instance.id,
                  summary=f"فرایند تکمیل و رکورد #{record.id} ثبت شد")
     log.info("Workflow %s finalised into record %s", instance.id, record.id)

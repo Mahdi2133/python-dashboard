@@ -190,9 +190,14 @@
 
   function connectionsHtml(d) {
     var warn = [];
-    if (!d.has_intake) {
-      warn.push('این فرایند مرحله ۰ ندارد، پس فقط مدیر سیستم می‌تواند آن را '
-        + 'شروع کند. با دکمهٔ «افزودن مرحله شروع» یکی بسازید.');
+    var doors = d.doors || [];
+    var shut = doors.filter(function (x) { return x.stage_number === null; });
+    if (shut.length && !d.has_intake) {
+      warn.push('هیچ مرحله‌ای برای شروع عملیات '
+        + shut.map(function (x) { return '«' + x.kind_label + '»'; }).join(' و ')
+        + ' تعیین نشده است، پس فقط مدیر سیستم می‌تواند آن را شروع کند. روی '
+        + 'مرحله‌ی مورد نظر گزینهٔ «فرایند از همین مرحله شروع می‌شود» را '
+        + 'بزنید.');
     }
     if (d.unassigned.length) {
       warn.push('بدون متولی: ' + d.unassigned.map(function (u) {
@@ -210,6 +215,12 @@
         return '<li><span class="conn-stage">' + icon + ' مرحله '
           + J.toFaDigits(c.stage_number) + ' — ' + A.esc(c.title) + '</span>'
           + '<span class="badge muted">' + A.esc(c.applies_to_label) + '</span>'
+          + (c.can_start ? '<span class="badge start">🚦 شروع فرایند</span>' : '')
+          + (c.shared_with
+              ? '<span class="badge muted">مشترک با ' + J.toFaDigits(c.shared_with)
+                + ' نفر دیگر</span>' : '')
+          + (c.route_by_center
+              ? '<span class="badge muted">بر اساس مرکز چاه</span>' : '')
           + '<div class="conn-parts">'
           + (c.parts.length
               ? c.parts.map(function (x) {
@@ -224,6 +235,18 @@
     return (warn.length
         ? '<div class="alert warn">' + warn.map(A.esc).join('<br>') + '</div>'
         : '')
+      + '<div class="conn-doors">' + doors.map(function (x) {
+          return '<div class="conn-door' + (x.stage_number === null ? ' shut' : '')
+            + '"><span class="door-kind">🚦 ' + A.esc(x.kind_label) + '</span>'
+            + (x.stage_number === null
+                ? '<span class="door-none">مرحله‌ی شروع تعیین نشده</span>'
+                : '<span class="door-at">از مرحله ' + J.toFaDigits(x.stage_number)
+                  + ' — ' + A.esc(x.title) + '</span>'
+                  + '<span class="door-who">' + (x.owners.length
+                      ? A.esc(x.owners.join('، '))
+                      : 'بدون متولی') + '</span>')
+            + '</div>';
+        }).join('') + '</div>'
       + '<div class="hint">در این لحظه <b>' + J.toFaDigits(d.running)
       + '</b> فرایند در جریان است. کارتابل هر کاربر تا وقتی فرایندی در جریان '
       + 'نباشد خالی است — این به معنی وصل‌نبودن فرم‌ها نیست.</div>'
@@ -242,13 +265,67 @@
   }
 
   /* ── stages ─────────────────────────────────────────────────────────── */
-  function userOptions(selected) {
-    return '<option value="">— متولی انتخاب نشده —</option>'
+  function userOptions(selected, placeholder) {
+    return '<option value="">' + A.esc(placeholder || '— متولی انتخاب نشده —')
+      + '</option>'
       + definition.users.map(function (u) {
           return '<option value="' + u.id + '"'
             + (u.id === selected ? ' selected' : '') + '>'
             + A.esc(u.full_name) + ' (' + A.esc(u.username) + ')</option>';
         }).join('');
+  }
+
+  /* A stage's متولی is a list, not a person.
+
+     The city has eight مراکز آبرسانی and each needs its own user, so «اعلام
+     علت خرابی» belongs to all eight at once. Each name is a chip that can be
+     taken off; the select underneath adds one more. The first name is the
+     stage's primary متولی — the one every single-name screen shows. */
+  function ownersRow(s) {
+    var ids = s.owner_ids && s.owner_ids.length
+      ? s.owner_ids
+      : (s.assignee_id ? [s.assignee_id] : []);
+    var chips = ids.map(function (id, i) {
+      var u = userById(id);
+      return '<span class="owner-chip" data-owner="' + id + '">'
+        + (i === 0 ? '<b title="متولی اصلی">★</b> ' : '')
+        + A.esc(u ? u.full_name : '#' + id)
+        + '<button type="button" class="owner-off" title="برداشتن">×</button>'
+        + '</span>';
+    }).join('');
+    return '<div class="wf-stage-row wf-owners" data-owners="' + ids.join(',') + '">'
+      + '<label>متولی‌ها</label>'
+      + '<div class="owner-box">'
+      + '<div class="owner-chips">'
+      + (chips || '<span class="owner-none">هیچ متولی‌ای تعیین نشده</span>')
+      + '</div>'
+      + '<select class="owner-add">' + userOptions(null, 'افزودن متولی…')
+      + '</select>'
+      + '<label class="owner-route"><input type="checkbox" class="wf-by-center"'
+      + (s.route_by_center ? ' checked' : '') + '> فقط متولی مرکزِ همان چاه'
+      + '</label>'
+      + '<span class="hint">با چند متولی، کار در کارتابل همه‌ی آن‌ها می‌آید. '
+      + 'گزینهٔ بالا آن را به متولی‌ای می‌دهد که مرکزش با مرکز چاه یکی است '
+      + '(مرکز هر کاربر در تب «کاربران» تعیین می‌شود).</span>'
+      + '</div></div>';
+  }
+
+  /* Where each operation opens. This is «کشیدن از مرکز آبرسانی، نصب از کارگاه
+     نصب» said as data: mark the stage, and «شامل» decides which operation it
+     opens. Nothing about the start point lives in the code any more. */
+  function startRow(s) {
+    var label = s.applies_to === 'pull' ? 'کشیدن'
+              : s.applies_to === 'install' ? 'نصب' : 'هر دو عملیات';
+    return '<label class="wf-stage-start' + (s.can_start ? ' on' : '') + '">'
+      + '<input type="checkbox" class="wf-can-start"'
+      + (s.can_start ? ' checked' : '') + '>'
+      + '🚦 فرایند از همین مرحله شروع می‌شود'
+      + '<span class="hint">متولی‌های این مرحله می‌توانند فرایند «' + label
+      + '» را آغاز کنند.</span></label>';
+  }
+
+  function userById(id) {
+    return (definition.users || []).find(function (u) { return u.id === id; });
   }
 
   function appliesOptions(selected) {
@@ -363,14 +440,12 @@
         + '<span class="wf-stage-badge">مرحله ' + J.toFaDigits(s.stage_number) + '</span>'
         + '<input class="wf-stage-title" value="' + A.esc(s.title) + '">'
         + '</div>'
-        + '<div class="wf-stage-row">'
-        + '<label>متولی</label>'
-        + '<select class="wf-assignee">' + userOptions(s.assignee_id) + '</select>'
-        + '</div>'
+        + ownersRow(s)
         + '<div class="wf-stage-row">'
         + '<label>شامل</label>'
         + '<select class="wf-applies">' + appliesOptions(s.applies_to) + '</select>'
         + '</div>'
+        + startRow(s)
         + (s.description ? '<div class="hint wf-stage-desc">'
             + A.esc(s.description) + '</div>' : '')
         + (zero ? '<div class="hint">این مرحله فقط نوع عملیات را می‌پرسد.</div>'
@@ -531,6 +606,52 @@
   }
 
   /* ── saving ─────────────────────────────────────────────────────────── */
+  function ownerIds(card) {
+    var row = card.querySelector('.wf-owners');
+    if (!row) {
+      // An older page: one متولی in a plain select.
+      var one = card.querySelector('.wf-assignee');
+      return one && one.value ? [Number(one.value)] : [];
+    }
+    return (row.dataset.owners || '').split(',')
+      .filter(Boolean).map(Number);
+  }
+
+  /* Redraw one stage's chips from its data-owners list, without touching the
+     rest of the card — the admin may have half-filled the form below it. */
+  function drawOwners(card) {
+    var row = card.querySelector('.wf-owners');
+    if (!row) return;
+    var ids = ownerIds(card);
+    row.querySelector('.owner-chips').innerHTML = ids.length
+      ? ids.map(function (id, i) {
+          var u = userById(id);
+          return '<span class="owner-chip" data-owner="' + id + '">'
+            + (i === 0 ? '<b title="متولی اصلی">★</b> ' : '')
+            + A.esc(u ? u.full_name : '#' + id)
+            + '<button type="button" class="owner-off" title="برداشتن">×</button>'
+            + '</span>';
+        }).join('')
+      : '<span class="owner-none">هیچ متولی‌ای تعیین نشده</span>';
+    card.classList.toggle('unassigned', !ids.length);
+  }
+
+  function addOwner(card, id) {
+    var row = card.querySelector('.wf-owners');
+    var ids = ownerIds(card);
+    if (!id || ids.indexOf(id) !== -1) return;
+    ids.push(id);
+    row.dataset.owners = ids.join(',');
+    drawOwners(card);
+  }
+
+  function dropOwner(card, id) {
+    var row = card.querySelector('.wf-owners');
+    var ids = ownerIds(card).filter(function (x) { return x !== id; });
+    row.dataset.owners = ids.join(',');
+    drawOwners(card);
+  }
+
   async function saveStage(card) {
     var id = card.dataset.stage;
     var state = card.querySelector('.save-state');
@@ -539,9 +660,13 @@
     try {
       var body = {
         title: card.querySelector('.wf-stage-title').value.trim(),
-        assignee_id: card.querySelector('.wf-assignee').value || null,
+        owner_ids: ownerIds(card),
         applies_to: card.querySelector('.wf-applies').value,
       };
+      var starts = card.querySelector('.wf-can-start');
+      if (starts) body.can_start = starts.checked;
+      var byCenter = card.querySelector('.wf-by-center');
+      if (byCenter) body.route_by_center = byCenter.checked;
       var mode = card.querySelector('.wf-refer-mode');
       if (mode) {
         body.referral_mode = mode.value;
@@ -575,8 +700,7 @@
       state.textContent = '✓ ذخیره شد';
       state.className = 'save-state ok';
       if (A.qs('#wf-conn').open) loadConnections();
-      card.classList.toggle('unassigned',
-                            !card.querySelector('.wf-assignee').value);
+      card.classList.toggle('unassigned', !ownerIds(card).length);
     } catch (err) {
       state.textContent = '✗ ' + err.message;
       state.className = 'save-state err';
@@ -717,6 +841,14 @@
       if (drop) { removeStage(drop.closest('.wf-stage')); return; }
       var back = ev.target.closest('.restore-stage');
       if (back) { restoreStage(back.closest('.wf-stage')); return; }
+      var off = ev.target.closest('.owner-off');
+      if (off) {
+        var chip = off.closest('.owner-chip');
+        var host = chip.closest('.wf-stage');
+        dropOwner(host, Number(chip.dataset.owner));
+        markDirty(host);
+        return;
+      }
       if (ev.target.closest('#wf-add-stage')) { addStage(); return; }
       if (ev.target.closest('#wf-add-intake')) addStage(true);
     });
@@ -736,6 +868,14 @@
       }
       if (ev.target.classList.contains('wf-needs-approval')) {
         card.querySelector('.wf-approve-box').hidden = !ev.target.checked;
+      }
+      if (ev.target.classList.contains('owner-add') && ev.target.value) {
+        addOwner(card, Number(ev.target.value));
+        ev.target.value = '';
+      }
+      if (ev.target.classList.contains('wf-can-start')) {
+        var box = ev.target.closest('.wf-stage-start');
+        if (box) box.classList.toggle('on', ev.target.checked);
       }
     });
 

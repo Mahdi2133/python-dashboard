@@ -12,7 +12,8 @@
   var current = null;          // { instance, stage_number }
   var form = null;
   var schema = null;           // lookups + conditional rules, loaded once
-  var canStart = false;        // is this user the متولی of step zero?
+  var canStart = false;        // does this user own a stage that opens one?
+  var startable = [];          // and which operations that stage admits
   var myStages = [], running = 0;  // what the کارتابل holds when it is empty
 
   /* Where each panel belongs, if the page is missing it. A desktop app is
@@ -162,6 +163,7 @@
          rather than a button hanging over every page. Only its owner gets it,
          and only there does the «شروع فرایند» form exist. */
       canStart = !!res.may_start;
+      startable = res.startable || [];
       myStages = res.my_stages || [];
       running = res.running || 0;
       renderList();
@@ -582,6 +584,29 @@
     A.toast('مستندات بارگذاری شد.', 'success');
   }
 
+  /* Draw the نوع عملیات choices from what this person may actually open.
+
+     کشیدن and نصب start at different stages and so belong to different
+     people: مرکز آبرسانی opens a کشیدن, کارگاه نصب opens a نصب. Offering a
+     radio the server will refuse is worse than not offering it. */
+  function renderKinds() {
+    var box = A.qs('#np-kind');
+    if (!box || !startable.length) return;
+    box.innerHTML = startable.map(function (k, i) {
+      return '<label><input type="radio" name="np_kind" value="' + A.esc(k.value)
+        + '"' + (startable.length === 1 || i === 0 ? ' checked' : '')
+        + '><span class="btn-opt">' + A.esc(k.label) + '</span></label>';
+    }).join('');
+    var hint = box.parentNode && box.parentNode.querySelector('.hint');
+    if (hint) {
+      hint.textContent = startable.length === 1
+        ? 'شما فقط می‌توانید عملیات «' + startable[0].label + '» را آغاز کنید؛ '
+          + 'عملیات دیگر از مرحله‌ی کاربر دیگری شروع می‌شود.'
+        : 'هر عملیات از مرحله‌ای آغاز می‌شود که در فرایندساز برایش تعیین شده '
+          + 'است.';
+    }
+  }
+
   /* ── new process ────────────────────────────────────────────────────── */
   async function startProcess() {
     var kind = A.qs('input[name="np_kind"]:checked');
@@ -613,7 +638,9 @@
     await loadInbox();
 
     A.qs('#inbox-items').addEventListener('click', function (ev) {
-      if (ev.target.closest('[data-start]')) { A.openModal('new-process-modal'); return; }
+      if (ev.target.closest('[data-start]')) {
+        renderKinds(); A.openModal('new-process-modal'); return;
+      }
       var button = ev.target.closest('[data-i]');
       if (button) openStage(items[Number(button.dataset.i)]);
     });

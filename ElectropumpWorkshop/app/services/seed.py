@@ -620,6 +620,45 @@ def _drop_node(node, result):
     result["graph_nodes_removed"] += 1
 
 
+# ── where each operation opens ───────────────────────────────────────────────
+#
+# Until now the code knew: کشیدن begins at stage 1, نصب at stage 3. Now the
+# stages say so themselves, so a database written before that has to be told
+# once what it already meant. After this the admin owns the answer and nothing
+# here touches it again.
+_ENTRY_SEED_KEY = "workflow_entry_stages_v1"
+
+
+def seed_entry_stages() -> dict:
+    """Mark the stages each operation used to begin at."""
+    from ..models.meta import AppMeta
+    from ..models.workflow import (APPLIES_INSTALL, APPLIES_PULL,
+                                   WorkflowStage)
+    from .workflow import STAGE_FIRST_INSTALL, STAGE_FIRST_PULL
+
+    if AppMeta.get(_ENTRY_SEED_KEY):
+        return {}
+    marked = 0
+    for workflow in WorkflowDefinition.query.all():
+        if any(s.can_start for s in workflow.stages):
+            continue                      # an admin has already said so
+        for number in (STAGE_FIRST_PULL, STAGE_FIRST_INSTALL):
+            stage = next((s for s in workflow.stages
+                          if s.stage_number == number and s.is_active), None)
+            if stage is None or stage.can_start:
+                continue
+            # A stage bound to the other branch cannot be this one's door.
+            if number == STAGE_FIRST_PULL and stage.applies_to == APPLIES_INSTALL:
+                continue
+            if number == STAGE_FIRST_INSTALL and stage.applies_to == APPLIES_PULL:
+                continue
+            stage.can_start = True
+            marked += 1
+    AppMeta.set(_ENTRY_SEED_KEY, "done")
+    db.session.commit()
+    return {"entry_stages_marked": marked} if marked else {}
+
+
 def seed_all(force: bool = False) -> dict:
     result = {}
     result.update(seed_admin())
@@ -631,6 +670,7 @@ def seed_all(force: bool = False) -> dict:
     result.update(apply_builtin_field_fixes())
     result.update(rollback_graph_release())
     result.update(seed_workflow())
+    result.update(seed_entry_stages())
     result["changed"] = any(v for k, v in result.items() if isinstance(v, int))
     if result["changed"]:
         log.info("Seed applied: %s", result)

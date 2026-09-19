@@ -3,6 +3,30 @@
   'use strict';
   var A = window.App, J = window.Jalali;
   var meta = null, editing = null, page = 1, sPage = 1;
+  var centers = [];            // the مراکز a user can answer for
+
+  /* Which مراکز this person answers for.
+
+     Only a stage set to «فقط متولی مرکزِ همان چاه» reads this, and only to
+     pick which of its owners gets one job. The list is the مرکز lookup, so
+     adding a ninth centre in «مدیریت گزینه‌ها» puts it here too. */
+  function renderCenters(selected) {
+    var box = A.qs('#u-centers');
+    if (!box) return;
+    var on = selected || [];
+    box.innerHTML = centers.length
+      ? centers.map(function (c) {
+          return '<label class="center-chip"><input type="checkbox" data-center="'
+            + c.id + '"' + (on.indexOf(c.id) !== -1 ? ' checked' : '') + '>'
+            + '<span>' + A.esc(c.label) + '</span></label>';
+        }).join('')
+      : '<span class="hint">هیچ مرکزی در «مدیریت گزینه‌ها» تعریف نشده است.</span>';
+  }
+
+  function selectedCenters() {
+    return A.qsa('#u-centers [data-center]:checked')
+      .map(function (b) { return Number(b.dataset.center); });
+  }
 
   /* ── permission checkboxes ──────────────────────────────────────────── */
   function renderPermissions() {
@@ -122,6 +146,7 @@
     val('#u-email', user && user.email);
     val('#u-position', user && user.position);
     val('#u-unit', user && user.unit);
+    renderCenters(user && user.center_ids);
     val('#u-username', user && user.username);
     val('#u-personnel', user && user.personnel_code);
     val('#u-notes', user && user.notes);
@@ -174,6 +199,7 @@
       email: A.qs('#u-email').value.trim(),
       position: A.qs('#u-position').value.trim(),
       unit: A.qs('#u-unit').value.trim(),
+      center_ids: selectedCenters(),
       username: A.qs('#u-username').value.trim(),
       personnel_code: A.qs('#u-personnel').value.trim(),
       notes: A.qs('#u-notes').value.trim(),
@@ -321,6 +347,9 @@
     A.qsa('.jdate').forEach(function (input) { J.attach(input); });
     try {
       meta = (await A.api.get('/api/users/meta')).data;
+      try {
+        centers = ((await A.api.get('/api/lookups/center')).data || {}).items || [];
+      } catch (err) { centers = []; }
       renderPermissions();
       renderRoles('operator');
     } catch (err) { A.toast(err.message, 'error'); return; }

@@ -831,3 +831,48 @@ select.mini { font-size:11px; padding:2px 4px; width:auto; }
 .restore-stage { background:#e8f3ec; border:1px solid #b9dcc6; color:#1d6b3a;
   font-weight:700; }
 .restore-stage:hover { background:#d8ebe0; }
+
+/* A stage's متولی is a list — one stage can belong to all eight مراکز. */
+.wf-owners { align-items:flex-start; }
+.owner-box { flex:1; display:flex; flex-direction:column; gap:6px; }
+.owner-chips { display:flex; flex-wrap:wrap; gap:6px; min-height:26px; }
+.owner-chip { display:inline-flex; align-items:center; gap:5px; font-size:12px;
+  font-weight:600; background:#e8f1f5; border:1px solid #bcd7e2;
+  color:#0d4f63; border-radius:999px; padding:3px 9px; }
+.owner-chip b { color:#c9871a; font-size:11px; }
+.owner-off { border:none; background:none; cursor:pointer; color:#7b97a3;
+  font-size:14px; line-height:1; padding:0 1px; }
+.owner-off:hover { color:#b3261e; }
+.owner-none { font-size:12px; color:var(--text-muted,#6c8592); }
+.owner-route { display:flex; align-items:center; gap:6px; font-size:12px;
+  font-weight:600; color:var(--text,#12333f); }
+.owner-route input { margin:0; }
+
+/* Where each operation opens — the setting that replaced a rule in the code. */
+.wf-stage-start { display:flex; flex-wrap:wrap; align-items:center; gap:7px;
+  font-size:12.5px; font-weight:700; border-radius:9px; padding:8px 10px;
+  margin:8px 0; background:#f4f7f9; border:1px solid #dfe6ea;
+  color:var(--text,#12333f); cursor:pointer; }
+.wf-stage-start.on { background:#eaf5ec; border-color:#b9dcc6; color:#1d6b3a; }
+.wf-stage-start .hint { flex-basis:100%; font-weight:500; margin:0; }
+
+/* The مراکز a user answers for, on the user editor. */
+.center-picker { display:flex; flex-wrap:wrap; gap:7px; }
+.center-chip { display:inline-flex; align-items:center; gap:6px; font-size:12.5px;
+  border:1px solid var(--border,#dfe6ea); border-radius:999px; padding:5px 11px;
+  cursor:pointer; background:#fff; }
+.center-chip:has(input:checked) { background:#e8f1f5; border-color:#8fc0d2;
+  color:#0d4f63; font-weight:700; }
+.center-chip input { margin:0; }
+
+/* Where each operation opens, stated in words at the top of the panel. */
+.conn-doors { display:flex; flex-wrap:wrap; gap:9px; margin:0 0 10px; }
+.conn-door { display:flex; flex-direction:column; gap:2px; font-size:12.5px;
+  border:1px solid #b9dcc6; background:#eaf5ec; border-radius:10px;
+  padding:8px 12px; min-width:190px; }
+.conn-door.shut { border-color:#f0c98a; background:#fff4e5; }
+.door-kind { font-weight:800; color:#1d6b3a; }
+.conn-door.shut .door-kind { color:#8a5a12; }
+.door-at { color:var(--text,#12333f); }
+.door-who, .door-none { font-size:11.5px; color:var(--text-muted,#6c8592); }
+.badge.start { background:#e6f2ea; color:#1d6b3a; border:1px solid #b9dcc6; }
