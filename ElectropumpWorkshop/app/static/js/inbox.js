@@ -13,6 +13,7 @@
   var form = null;
   var schema = null;           // lookups + conditional rules, loaded once
   var canStart = false;        // is this user the متولی of step zero?
+  var myStages = [], running = 0;  // what the کارتابل holds when it is empty
 
   /* Where each panel belongs, if the page is missing it. A desktop app is
      updated by copying files, so the template and this script can end up a
@@ -66,8 +67,7 @@
     setText('#inbox-count', J.toFaDigits(items.length));
     if (!box) return;
     if (!items.length && !canStart) {
-      box.innerHTML = '<div class="table-empty">در حال حاضر کاری در کارتابل '
-        + 'شما نیست.</div>';
+      box.innerHTML = emptyHtml();
       return;
     }
     var html = canStart
@@ -90,6 +90,36 @@
       }
       return header + itemHtml(it, i);
     }).join('');
+  }
+
+  /* An empty کارتابل that explains itself.
+
+     "The forms I assigned to this user are not connected" is what an empty
+     list looks like; the truth is usually that nothing is running yet. So
+     list the stages this person owns — that is the connection, visible. */
+  function emptyHtml() {
+    var head = '<div class="table-empty">در حال حاضر کاری در کارتابل شما نیست.';
+    if (!myStages.length) {
+      return head + '<div class="hint">هیچ مرحله‌ای در فرایندساز به نام شما '
+        + 'ثبت نشده است. مدیر سیستم می‌تواند در تب «فرایندساز» شما را متولی '
+        + 'یک مرحله کند.</div></div>';
+    }
+    var rows = myStages.map(function (s) {
+      return '<li><span class="wf-stage-no">'
+        + J.toFaDigits(s.stage_number) + '</span> ' + A.esc(s.title)
+        + '<span class="mine-role">'
+        + (s.role === 'approve' ? 'تأییدکننده' : 'متولی') + '</span>'
+        + '<span class="mine-count">' + J.toFaDigits(s.field_count)
+        + ' مورد</span></li>';
+    }).join('');
+    return head
+      + '<div class="hint">' + J.toFaDigits(myStages.length)
+      + ' مرحله به نام شما ثبت شده است؛ '
+      + (running
+          ? 'هیچ‌کدام از ' + J.toFaDigits(running)
+            + ' فرایند باز هنوز به آن‌ها نرسیده است.'
+          : 'در این لحظه هیچ فرایندی در جریان نیست، پس کارتابل خالی است.')
+      + '</div><ul class="mine-stages">' + rows + '</ul></div>';
   }
 
   function itemHtml(it, i) {
@@ -132,6 +162,8 @@
          rather than a button hanging over every page. Only its owner gets it,
          and only there does the «شروع فرایند» form exist. */
       canStart = !!res.may_start;
+      myStages = res.my_stages || [];
+      running = res.running || 0;
       renderList();
     } catch (err) {
       fill('#inbox-items', '<div class="alert error">'

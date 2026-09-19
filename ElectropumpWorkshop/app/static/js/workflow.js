@@ -85,6 +85,7 @@
       renderPalette();
       renderStages();
       renderProcessBox();
+      if (A.qs('#wf-conn').open) loadConnections();
     } catch (err) { A.toast(err.message, 'error'); }
   }
 
@@ -132,12 +133,15 @@
     } catch (err) { A.toast(err.message, 'error'); }
   }
 
-  async function addStage() {
-    var title = window.prompt('عنوان مرحله جدید:');
+  async function addStage(asIntake) {
+    var title = window.prompt(asIntake ? 'عنوان مرحله شروع:'
+                                       : 'عنوان مرحله جدید:',
+                              asIntake ? 'شروع فرایند' : '');
     if (!title || !title.trim()) return;
     try {
       await A.api.post('/api/workflow/stages', {
         workflow_id: definition.workflow.id, title: title.trim(),
+        as_intake: !!asIntake,
       });
       A.toast('مرحله اضافه شد. حالا متولی و فرمش را مشخص کنید.', 'success');
       await switchProcess(definition.workflow.id);
@@ -157,6 +161,84 @@
       A.toast(res.message || 'حذف شد.', 'success');
       await switchProcess(definition.workflow.id);
     } catch (err) { A.toast(err.message, 'error'); }
+  }
+
+  /* Bring a retired stage back into the path. Everything it held — متولی,
+     فرم, ارجاع — was left intact when it was retired, so this is one flag. */
+  async function restoreStage(card) {
+    try {
+      var res = await A.api.put('/api/workflow/stages/' + card.dataset.stage,
+                                { is_active: true });
+      A.toast(res.message || 'مرحله بازگشت.', 'success');
+      await switchProcess(definition.workflow.id);
+    } catch (err) { A.toast(err.message, 'error'); }
+  }
+
+  /* ── who is connected to what ───────────────────────────────────────── */
+  async function loadConnections() {
+    var box = A.qs('#wf-conn-body');
+    if (!box || !definition) return;
+    box.innerHTML = '<div class="loading">در حال بارگذاری</div>';
+    try {
+      var d = (await A.api.get('/api/workflow/connections?workflow_id='
+                               + definition.workflow.id)).data;
+      box.innerHTML = connectionsHtml(d);
+    } catch (err) {
+      box.innerHTML = '<div class="alert error">' + A.esc(err.message) + '</div>';
+    }
+  }
+
+  function connectionsHtml(d) {
+    var warn = [];
+    if (!d.has_intake) {
+      warn.push('این فرایند مرحله ۰ ندارد، پس فقط مدیر سیستم می‌تواند آن را '
+        + 'شروع کند. با دکمهٔ «افزودن مرحله شروع» یکی بسازید.');
+    }
+    if (d.unassigned.length) {
+      warn.push('بدون متولی: ' + d.unassigned.map(function (u) {
+        return 'مرحله ' + J.toFaDigits(u.stage_number) + ' — ' + A.esc(u.title);
+      }).join('، '));
+    }
+    if (d.empty_forms.length) {
+      warn.push('بدون فرم (احتمالاً بخشی که حذف شده): '
+        + d.empty_forms.map(function (u) {
+            return 'مرحله ' + J.toFaDigits(u.stage_number) + ' — '
+              + A.esc(u.title); }).join('، '));
+    }
+    function cards(list, icon) {
+      return list.map(function (c) {
+        return '<li><span class="conn-stage">' + icon + ' مرحله '
+          + J.toFaDigits(c.stage_number) + ' — ' + A.esc(c.title) + '</span>'
+          + '<span class="badge muted">' + A.esc(c.applies_to_label) + '</span>'
+          + '<div class="conn-parts">'
+          + (c.parts.length
+              ? c.parts.map(function (x) {
+                  return '<span class="conn-part' + (x.locked ? ' locked' : '')
+                    + '">' + (x.locked ? '🔒 ' : '') + A.esc(x.title)
+                    + ' <i>' + J.toFaDigits(x.count) + '</i></span>';
+                }).join('')
+              : '<span class="conn-part empty">— هیچ فرمی روی این مرحله نیست —</span>')
+          + '</div></li>';
+      }).join('');
+    }
+    return (warn.length
+        ? '<div class="alert warn">' + warn.map(A.esc).join('<br>') + '</div>'
+        : '')
+      + '<div class="hint">در این لحظه <b>' + J.toFaDigits(d.running)
+      + '</b> فرایند در جریان است. کارتابل هر کاربر تا وقتی فرایندی در جریان '
+      + 'نباشد خالی است — این به معنی وصل‌نبودن فرم‌ها نیست.</div>'
+      + '<div class="conn-grid">' + d.users.map(function (u) {
+          return '<div class="conn-user' + (u.is_active ? '' : ' off') + '">'
+            + '<div class="conn-head"><b>' + A.esc(u.full_name) + '</b>'
+            + '<span class="hint">' + A.esc(u.username) + ' · '
+            + A.esc(u.role_label) + '</span>'
+            + '<span class="badge' + (u.open_work ? '' : ' muted') + '">'
+            + J.toFaDigits(u.open_work) + ' کار باز</span></div>'
+            + '<ul class="conn-list">'
+            + cards(u.owns, '📝') + cards(u.approves, '✅')
+            + cards(u.referred, '🔀')
+            + '</ul></div>';
+        }).join('') + '</div>';
   }
 
   /* ── stages ─────────────────────────────────────────────────────────── */
@@ -256,14 +338,28 @@
   }
 
   function renderStages() {
+    // A retired stage zero is not a stage zero: the server will not start a
+    // process through it, so the builder must offer to make a new one.
+    var hasIntake = definition.workflow.stages.some(function (s) {
+      return s.stage_number === 0 && s.is_active !== false;
+    });
     A.qs('#wf-name').textContent = definition.workflow.name
       + (definition.workflow.description
           ? ' — ' + definition.workflow.description : '');
     A.qs('#wf-stages').innerHTML = definition.workflow.stages.map(function (s) {
       var zero = s.stage_number === 0;
+      // A stage that already carries recorded entries cannot be deleted
+      // outright — the server retires it instead. Say so on the card, or the
+      // admin clicks «حذف» and sees nothing change.
+      var retired = s.is_active === false;
       return '<div class="wf-stage card' + (s.assignee_id ? '' : ' unassigned')
+        + (retired ? ' retired' : '')
         + '" data-stage="' + s.id + '">'
+        + (retired ? '<div class="wf-retired-flag">این مرحله بازنشسته شده '
+            + 'است: در فرایندهای گذشته رکورد دارد، پس پاک نشد و فقط از '
+            + 'مسیر کنار رفت. فرایندهای تازه از آن عبور نمی‌کنند.</div>' : '')
         + '<div class="wf-stage-head">'
+        + '<span class="wf-stage-move" title="برای جابه‌جایی بکشید">⠿</span>'
         + '<span class="wf-stage-badge">مرحله ' + J.toFaDigits(s.stage_number) + '</span>'
         + '<input class="wf-stage-title" value="' + A.esc(s.title) + '">'
         + '</div>'
@@ -285,8 +381,11 @@
         + '</ul>'
         + '<div class="wf-stage-foot">'
         + '<button class="btn-primary btn-sm save-stage" type="button">💾 ذخیره مرحله</button>'
-        + (zero ? '' : '<button class="btn-sm btn-del del-stage" type="button" '
-            + 'title="حذف مرحله">🗑</button>')
+        + (retired
+            ? '<button class="btn-sm restore-stage" type="button" '
+              + 'title="بازگرداندن مرحله">↩ بازگرداندن</button>'
+            : '<button class="btn-sm btn-del del-stage" type="button" '
+              + 'title="حذف مرحله">🗑</button>')
         + '<span class="save-state"></span>'
         + '</div>'
         + '</div>';
@@ -296,8 +395,91 @@
       + '<div class="hint">یک مرحله به این فرایند اضافه کنید، سپس متولی، '
       + 'فرم و ارجاعش را مشخص کنید.</div>'
       + '<button class="btn-ghost btn-sm" id="wf-add-stage" type="button">'
-      + 'افزودن مرحله</button></div>';
+      + 'افزودن مرحله</button>'
+      + (hasIntake ? ''
+          : '<div class="hint warn-text">این فرایند مرحله ۰ ندارد؛ بدون آن '
+            + 'فقط مدیر سیستم می‌تواند فرایند را شروع کند.</div>'
+            + '<button class="btn-ghost btn-sm" id="wf-add-intake" '
+            + 'type="button">افزودن مرحله شروع</button>')
+      + '</div>';
     wireDragTargets();
+    wireStageDrag();
+  }
+
+  /* ── dragging a whole stage, to change the order of the chain ───────── */
+  /* The handle is the draggable thing, not the card. Making the card
+     draggable would collide with the section-and-field drags that happen
+     inside it — the browser would start whichever it liked from the same
+     mousedown. Grabbing ⠿ is unambiguous. */
+  var movingStage = null;
+
+  function clearDropMarks() {
+    A.qsa('.wf-stage').forEach(function (c) {
+      c.classList.remove('drop-before', 'drop-after');
+    });
+  }
+
+  function wireStageDrag() {
+    A.qsa('.wf-stage[data-stage]').forEach(function (card) {
+      var handle = card.querySelector('.wf-stage-move');
+      if (handle) {
+        handle.draggable = true;
+        handle.addEventListener('dragstart', function (ev) {
+          ev.stopPropagation();
+          dragging = null;                    // not an item drag
+          movingStage = card;
+          card.classList.add('moving');
+          ev.dataTransfer.effectAllowed = 'move';
+          ev.dataTransfer.setData('text/plain', 'stage:' + card.dataset.stage);
+        });
+        handle.addEventListener('dragend', function () {
+          card.classList.remove('moving');
+          clearDropMarks();
+          if (movingStage) { movingStage = null; saveOrder(); }
+        });
+      }
+      card.addEventListener('dragover', function (ev) {
+        if (!movingStage || movingStage === card) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        var box = card.getBoundingClientRect();
+        /* The row reads right to left, so the right half of a card is the
+           side a stage lands *before*. */
+        var before = ev.clientX > box.left + box.width / 2;
+        card.classList.toggle('drop-before', before);
+        card.classList.toggle('drop-after', !before);
+      });
+      card.addEventListener('dragleave', function () {
+        card.classList.remove('drop-before', 'drop-after');
+      });
+      card.addEventListener('drop', function (ev) {
+        if (!movingStage || movingStage === card) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        var before = card.classList.contains('drop-before');
+        card.parentNode.insertBefore(movingStage,
+                                     before ? card : card.nextSibling);
+        clearDropMarks();
+      });
+    });
+  }
+
+  async function saveOrder() {
+    var ids = A.qsa('#wf-stages .wf-stage[data-stage]')
+      .map(function (c) { return Number(c.dataset.stage); });
+    var was = definition.workflow.stages
+      .slice().sort(function (a, b) { return a.stage_number - b.stage_number; })
+      .map(function (s) { return s.id; });
+    if (ids.join() === was.join()) return;        // dropped back where it was
+    try {
+      var res = await A.api.put('/api/workflow/stages/order',
+        { workflow_id: definition.workflow.id, stage_ids: ids });
+      A.toast(res.message || 'ترتیب ذخیره شد.', 'success');
+      await switchProcess(definition.workflow.id);
+    } catch (err) {
+      A.toast(err.message, 'error');
+      await switchProcess(definition.workflow.id);   // put the cards back
+    }
   }
 
   /* ── drag and drop ──────────────────────────────────────────────────── */
@@ -392,6 +574,7 @@
       await A.api.put('/api/workflow/stages/' + id + '/items', { items: items });
       state.textContent = '✓ ذخیره شد';
       state.className = 'save-state ok';
+      if (A.qs('#wf-conn').open) loadConnections();
       card.classList.toggle('unassigned',
                             !card.querySelector('.wf-assignee').value);
     } catch (err) {
@@ -481,6 +664,9 @@
     A.qs('#wf-process').addEventListener('change', function () {
       if (this.value) switchProcess(Number(this.value));
     });
+    A.qs('#wf-conn').addEventListener('toggle', function () {
+      if (this.open) loadConnections();
+    });
     A.qs('#wf-proc-save').addEventListener('click', saveProcess);
     A.qs('#wf-proc-new').addEventListener('click', newProcess);
     A.qs('#wf-proc-del').addEventListener('click', deleteProcess);
@@ -529,7 +715,10 @@
       if (save) { saveStage(save.closest('.wf-stage')); return; }
       var drop = ev.target.closest('.del-stage');
       if (drop) { removeStage(drop.closest('.wf-stage')); return; }
-      if (ev.target.closest('#wf-add-stage')) addStage();
+      var back = ev.target.closest('.restore-stage');
+      if (back) { restoreStage(back.closest('.wf-stage')); return; }
+      if (ev.target.closest('#wf-add-stage')) { addStage(); return; }
+      if (ev.target.closest('#wf-add-intake')) addStage(true);
     });
     A.qs('#wf-stages').addEventListener('change', function (ev) {
       var card = ev.target.closest('.wf-stage');

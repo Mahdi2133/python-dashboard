@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  var A = window.App;
+  var A = window.App, J = window.Jalali;
   var schema = null, editingField = null, editingSection = null, dragged = null;
   var optionState = { source: null, readonly: false, rows: [] };
 
@@ -161,6 +161,41 @@
         return { value: o.value, label: o.label || o.value,
                  icon: o.icon || null, is_active: o.is_active };
       });
+  }
+
+  /* What a section or a field takes with it.
+
+     A field lives in the form builder, but it is *used* by the process: a
+     stage carries it, and a person owns that stage. Deleting it here takes it
+     off their کارتابل, so say whose work changes before anything is removed. */
+  async function usageNote(kind, code) {
+    if (!code) return '';
+    try {
+      return await usageText(kind, code);
+    } catch (err) { return ''; }
+  }
+
+  async function usageText(kind, code) {
+    var data = await A.api.get('/api/workflow/uses?kind=' + encodeURIComponent(kind)
+                               + '&code=' + encodeURIComponent(code));
+    var stages = (data && data.data && data.data.stages) || [];
+    if (!stages.length) {
+      return '\n\nاین مورد در هیچ مرحله‌ای از فرایندها به کار نرفته است.';
+    }
+    var who = [];
+    var lines = stages.map(function (s) {
+      var owner = s.assignee || 'بدون متولی';
+      if (s.assignee && who.indexOf(s.assignee) === -1) who.push(s.assignee);
+      return '• مرحله ' + J.toFaDigits(s.stage_number) + ' — ' + s.title
+             + ' (' + owner + ')' + (s.locked ? ' — فقط نمایشی' : '');
+    });
+    var head = '\n\nاین مورد هم‌اکنون در ' + J.toFaDigits(stages.length)
+               + ' مرحله از فرایند به کار رفته است:\n' + lines.join('\n');
+    if (who.length) {
+      head += '\n\nبا حذف آن، این مورد از کارتابل ' + who.join('، ')
+              + ' برداشته می‌شود.';
+    }
+    return head;
   }
 
   function openFieldEditor(field) {
@@ -380,11 +415,12 @@
 
     A.qs('#fb-delete').addEventListener('click', async function () {
       if (!editingField) return;
+      var base = editingField.is_builtin
+        ? 'این فیلد پایه است و حذف نمی‌شود؛ فقط از فرم پنهان می‌گردد.'
+        : 'اگر رکوردی مقدار این فیلد را داشته باشد، فیلد فقط غیرفعال می‌شود.';
       var confirmed = await A.confirmDialog({
         title: 'حذف فیلد',
-        message: editingField.is_builtin
-          ? 'این فیلد پایه است و حذف نمی‌شود؛ فقط از فرم پنهان می‌گردد. ادامه؟'
-          : 'اگر رکوردی مقدار این فیلد را داشته باشد، فیلد فقط غیرفعال می‌شود.'
+        message: base + await usageNote('field', editingField.field_name)
       });
       if (!confirmed) return;
       try {
@@ -397,8 +433,9 @@
 
     A.qs('#sb-delete').addEventListener('click', async function () {
       if (!editingSection) return;
+      var note = await usageNote('section', editingSection.code);
       if (!await A.confirmDialog({ title: 'حذف بخش',
-        message: 'بخش‌های دارای فیلد پایه فقط غیرفعال می‌شوند.' })) return;
+        message: 'بخش‌های دارای فیلد پایه فقط غیرفعال می‌شوند.' + note })) return;
       try {
         var res = await A.api.del('/api/form-builder/sections/' + editingSection.id);
         A.toast(res.message);

@@ -322,6 +322,7 @@ tbody tr.inactive td:first-child::before { content:'⛔ '; }
 .modal.wide { max-width:1000px; }
 .modal h3 { font-size:16px; color:var(--primary); margin-bottom:10px; font-weight:800; }
 .modal p { font-size:13.5px; color:var(--text-muted); margin-bottom:16px; }
+#modal-msg { white-space:pre-line; line-height:1.9; max-height:46vh; overflow:auto; }
 .modal-actions { display:flex; gap:9px; justify-content:flex-start; margin-top:18px; }
 .modal-body dl { display:grid; grid-template-columns:auto 1fr; gap:6px 14px; font-size:13px; }
 .modal-body dt { color:var(--text-muted); font-weight:600; }
@@ -769,3 +770,64 @@ select.mini { font-size:11px; padding:2px 4px; width:auto; }
 .sr-cols label:has(input:checked) { border-color:var(--primary);
   background:#eaf3fa; font-weight:600; }
 .sr-quick { display:flex; gap:6px; margin-top:6px; }
+
+/* ── moving a stage in the chain ──────────────────────────────────────── */
+.wf-stage-move { cursor:grab; color:var(--text-muted); font-size:15px;
+  padding:0 2px; user-select:none; }
+.wf-stage-move:active { cursor:grabbing; }
+.wf-stage.moving { opacity:.45; outline:2px dashed var(--primary-light); }
+.wf-stage.drop-before { box-shadow:6px 0 0 -2px var(--primary-light); }
+.wf-stage.drop-after { box-shadow:-6px 0 0 -2px var(--primary-light); }
+
+/* ── the connections panel ────────────────────────────────────────────── */
+.wf-conn { padding:0; margin-bottom:14px; }
+.wf-conn > summary { cursor:pointer; padding:13px 16px; display:flex;
+  align-items:center; gap:12px; flex-wrap:wrap; }
+.wf-conn > summary::-webkit-details-marker { display:none; }
+.wf-conn[open] > summary { border-bottom:1px solid var(--border); }
+.wf-conn > div { padding:14px 16px; }
+.conn-grid { display:grid; gap:10px; margin-top:10px;
+  grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); }
+.conn-user { border:1px solid var(--border); border-radius:10px;
+  background:var(--input-bg); padding:10px 12px; }
+.conn-user.off { opacity:.55; }
+.conn-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  margin-bottom:6px; }
+.conn-head .hint { margin:0; }
+.conn-head .badge { margin-inline-start:auto; }
+.conn-list { list-style:none; margin:0; padding:0; display:flex;
+  flex-direction:column; gap:7px; }
+.conn-list li { background:var(--card); border:1px solid var(--border);
+  border-radius:8px; padding:7px 9px; }
+.conn-stage { font-size:12.5px; font-weight:600; }
+.conn-list li .badge { margin-inline-start:6px; font-size:10px; }
+.conn-parts { display:flex; flex-wrap:wrap; gap:4px; margin-top:5px; }
+.conn-part { font-size:11px; background:var(--bg); border:1px solid var(--border);
+  border-radius:6px; padding:2px 6px; color:var(--text-muted); }
+.conn-part i { font-style:normal; color:var(--primary); font-weight:700; }
+.conn-part.locked { border-color:var(--info); color:var(--info); }
+.conn-part.empty { border-style:dashed; color:var(--danger); }
+.warn-text { color:var(--danger); }
+
+/* The کارتابل when it is empty: the stages this person owns, so the wiring
+   done in the process builder is visible from the inbox too. */
+.mine-stages { list-style:none; margin:12px auto 0; max-width:520px;
+  display:flex; flex-direction:column; gap:6px; }
+.mine-stages li { display:flex; align-items:center; gap:8px; font-size:13px;
+  background:var(--surface-2,#f4f7f9); border:1px solid var(--border,#dfe6ea);
+  border-radius:9px; padding:7px 10px; color:var(--text,#12333f); }
+.mine-stages .wf-stage-no { flex:none; }
+.mine-stages .mine-role { margin-inline-start:auto; font-size:11.5px;
+  font-weight:700; color:var(--primary,#0a6c86); }
+.mine-stages .mine-count { font-size:11.5px; color:var(--text-muted,#6c8592); }
+
+/* A stage that holds recorded entries is retired, not deleted — the card has
+   to look different or «حذف» seems to have done nothing. */
+.wf-stage.retired { opacity:.72; border-style:dashed; background:#fbfbfc; }
+.wf-stage.retired .wf-stage-badge { background:var(--text-muted,#6c8592); }
+.wf-retired-flag { font-size:12px; line-height:1.85; border-radius:9px;
+  padding:8px 10px; margin-bottom:10px; background:#fff4e5;
+  border:1px solid #f0c98a; color:#8a5a12; }
+.restore-stage { background:#e8f3ec; border:1px solid #b9dcc6; color:#1d6b3a;
+  font-weight:700; }
+.restore-stage:hover { background:#d8ebe0; }

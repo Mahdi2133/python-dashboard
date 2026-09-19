@@ -42,6 +42,18 @@ BLOCKED_SUFFIXES = {".exe", ".dll", ".bat", ".cmd", ".com", ".scr", ".msi",
 MAX_ATTACHMENT_BYTES = 64 * 1024 * 1024        # 64 MB per file
 
 
+def _pick_workflow(wanted):
+    """The process the caller means: the one named, else the active one.
+
+    The builder edits a process that need not be the active one — a process is
+    usually drawn before it is switched on — so an explicit id always wins.
+    """
+    if wanted:
+        return db.session.get(WorkflowDefinition, int(wanted))
+    return (active_workflow()
+            or WorkflowDefinition.query.order_by(WorkflowDefinition.id).first())
+
+
 def _person(raw):
     """Resolve a user id from the builder. Returns (user or None, error)."""
     if raw in (None, "", 0, "0", "-1"):
@@ -77,14 +89,7 @@ def get_definition():
     which need not be the active one: a process is usually drawn before it is
     switched on.
     """
-    wanted = request.args.get("workflow_id")
-    if wanted:
-        workflow = db.session.get(WorkflowDefinition, int(wanted))
-        if workflow is None:
-            return fail("فرایند یافت نشد.", 404)
-    else:
-        workflow = active_workflow() or WorkflowDefinition.query.order_by(
-            WorkflowDefinition.id).first()
+    workflow = _pick_workflow(request.args.get("workflow_id"))
     if workflow is None:
         return fail("هیچ فرایندی تعریف نشده است. با دکمه‌ی «فرایند جدید» "
                     "یکی بسازید.", 404)
@@ -230,7 +235,15 @@ def create_stage():
     title = normalize_text(payload.get("title") or "")
     if not title:
         return fail("عنوان مرحله الزامی است.", 422)
-    highest = max([s.stage_number for s in workflow.stages] or [0])
+    taken = {s.stage_number for s in workflow.stages}
+    if payload.get("as_intake"):
+        # Putting step zero back after it was deleted. Starting a process is
+        # its job, so a process without one can only be opened by an admin.
+        if 0 in taken:
+            return fail("این فرایند از قبل مرحله ۰ دارد.", 422)
+        number = 0
+    else:
+        number = max(taken or {0}) + 1
     person, error = _person(payload.get("assignee_id"))
     if error:
         return fail(error, 422)
@@ -238,7 +251,7 @@ def create_stage():
     if applies not in APPLIES_TO:
         return fail("مقدار «شامل» نامعتبر است.", 422)
     stage = WorkflowStage(
-        workflow_id=workflow.id, stage_number=highest + 1, title=title,
+        workflow_id=workflow.id, stage_number=number, title=title,
         description=(payload.get("description") or "").strip() or None,
         assignee_id=person.id if person else None,
         applies_to=applies, is_active=True)
@@ -252,28 +265,131 @@ def create_stage():
 @bp.delete("/stages/<int:stage_id>")
 @permission_required("workflow.manage")
 def delete_stage(stage_id):
-    """Remove a stage — unless a process has already been through it."""
+    """Remove a stage. Any stage — step zero included.
+
+    Deleting step zero is allowed but it is not free: starting a process is
+    step zero's job, so until another stage numbered 0 exists only an admin
+    can open one. The message says so rather than the route refusing; the
+    builder offers to put one back.
+    """
     stage = db.session.get(WorkflowStage, stage_id)
     if stage is None:
         return fail("مرحله یافت نشد.", 404)
-    if stage.stage_number == 0:
-        return fail("مرحله «شروع فرایند» حذف نمی‌شود؛ هر فرایندی از جایی "
-                    "شروع می‌شود.", 409)
     used = WorkflowStageEntry.query.filter_by(stage_id=stage.id).count()
-    title = stage.title
+    title, number = stage.title, stage.stage_number
+    workflow_id = stage.workflow_id
+
     if used:
         # Somebody's work hangs off it. Take it out of the chain but keep the
         # row, so the history that points at it still reads.
         stage.is_active = False
-        message = ("این مرحله در فرایندهای قبلی سابقه دارد، بنابراین غیرفعال "
-                   "شد تا تاریخچه‌اش از بین نرود.")
+        message = (f"مرحله «{title}» در {used} فرایند سابقه دارد، بنابراین از "
+                   f"مسیر برداشته شد ولی حذف نشد تا تاریخچه‌اش بماند.")
     else:
         db.session.delete(stage)
-        message = "مرحله حذف شد."
+        message = f"مرحله «{title}» حذف شد."
+
+    # A stage other stages route their rejections to is now gone.
+    orphans = WorkflowStage.query.filter_by(workflow_id=workflow_id,
+                                            reject_to_stage=number).all()
+    for other in orphans:
+        if other.id != stage_id:
+            other.reject_to_stage = None
+    if orphans:
+        message += (f" «در صورت رد» در {len(orphans)} مرحله که به این مرحله "
+                    f"اشاره داشت، به حالت پیش‌فرض برگشت.")
+    if number == 0:
+        message += (" توجه: شروع فرایند کار مرحله ۰ است؛ تا وقتی مرحله‌ای با "
+                    "شماره ۰ تعریف نکنید، فقط مدیر سیستم می‌تواند فرایند "
+                    "جدید باز کند.")
     record_audit("delete", "workflow_stage", stage_id,
                  summary=f"حذف مرحله «{title}»")
     db.session.commit()
-    return ok(message=message)
+    return ok({"deleted": not used, "was_intake": number == 0},
+              message=message)
+
+
+@bp.put("/stages/order")
+@permission_required("workflow.manage")
+def reorder_stages():
+    """Renumber the stages of one process into the order they were dragged.
+
+    A stage number is not a label — the engine routes on it, every stage entry
+    carries a copy, attachments are filed under it and «در صورت رد» points at
+    it. So the move has to take all of that with it, or a finished process
+    would start reading somebody else's answers.
+
+    Done in two passes through negative numbers, because both
+    (workflow_id, stage_number) and (instance_id, stage_number) are unique and
+    any one-pass renumbering collides with itself halfway through.
+    """
+    payload = body()
+    workflow = db.session.get(WorkflowDefinition,
+                              int(payload.get("workflow_id") or 0))
+    if workflow is None:
+        return fail("فرایند یافت نشد.", 404)
+    wanted = [int(x) for x in (payload.get("stage_ids") or []) if x]
+    stages = {s.id: s for s in workflow.stages}
+    if sorted(wanted) != sorted(stages):
+        return fail("فهرست مرحله‌ها با فرایند نمی‌خواند؛ صفحه را تازه کنید.",
+                    422)
+
+    moves = {sid: index for index, sid in enumerate(wanted)
+             if stages[sid].stage_number != index}
+    if not moves:
+        return ok({"moved": 0}, message="ترتیب همین بود.")
+    old_of = {sid: stages[sid].stage_number for sid in moves}
+
+    instances = [i.id for i in
+                 WorkflowInstance.query.filter_by(workflow_id=workflow.id).all()]
+
+    # ── pass one: park everything that moves out of the way ────────────────
+    for offset, sid in enumerate(moves):
+        stages[sid].stage_number = -(1000 + offset)
+    db.session.flush()
+    for offset, sid in enumerate(moves):
+        park = -(1000 + offset)
+        WorkflowStageEntry.query.filter(
+            WorkflowStageEntry.stage_id == sid,
+            WorkflowStageEntry.instance_id.in_(instances)).update(
+                {"stage_number": park}, synchronize_session=False)
+        WorkflowAttachment.query.filter(
+            WorkflowAttachment.instance_id.in_(instances),
+            WorkflowAttachment.stage_number == old_of[sid]).update(
+                {"stage_number": park}, synchronize_session=False)
+    db.session.flush()
+
+    # ── pass two: put them where they belong ───────────────────────────────
+    for sid, number in moves.items():
+        stages[sid].stage_number = number
+        WorkflowStageEntry.query.filter(
+            WorkflowStageEntry.stage_id == sid,
+            WorkflowStageEntry.instance_id.in_(instances)).update(
+                {"stage_number": number}, synchronize_session=False)
+    for offset, sid in enumerate(moves):
+        WorkflowAttachment.query.filter(
+            WorkflowAttachment.instance_id.in_(instances),
+            WorkflowAttachment.stage_number == -(1000 + offset)).update(
+                {"stage_number": moves[sid]}, synchronize_session=False)
+    db.session.flush()
+
+    # «در صورت رد» stores a number, so it has to follow the move too.
+    remap = {old_of[sid]: moves[sid] for sid in moves}
+    for stage in workflow.stages:
+        if stage.reject_to_stage in remap:
+            stage.reject_to_stage = remap[stage.reject_to_stage]
+
+    # Wherever a process was sitting is now called something else.
+    for instance in WorkflowInstance.query.filter_by(
+            workflow_id=workflow.id).all():
+        if instance.current_stage in remap:
+            instance.current_stage = remap[instance.current_stage]
+
+    record_audit("update", "workflow_definition", workflow.id,
+                 summary=f"تغییر ترتیب مرحله‌های «{workflow.name}»")
+    db.session.commit()
+    return ok({"moved": len(moves)},
+              message=f"ترتیب {len(moves)} مرحله عوض شد.")
 
 
 @bp.put("/stages/<int:stage_id>")
@@ -407,6 +523,146 @@ def set_stage_items(stage_id):
     return ok(stage.to_dict(), message="فرم این مرحله ذخیره شد.")
 
 
+# ── who is connected to what ─────────────────────────────────────────────────
+@bp.get("/connections")
+@permission_required("workflow.manage")
+def connections():
+    """Every user, and every place in the process they are wired into.
+
+    The workshop assigned forms to مرکز آبرسانی, opened that user's کارتابل,
+    found it empty and concluded nothing had connected. It had — there was
+    simply no process running at the time. This is the view that says so: for
+    each person, the stages they fill, approve or receive referrals on, and
+    which parts of the form each of those stages actually asks for. Delete a
+    stage or a section and the row it came from visibly loses it.
+    """
+    workflow = _pick_workflow(request.args.get("workflow_id"))
+    if workflow is None:
+        return fail("فرایندی تعریف نشده است.", 404)
+
+    rows = {}
+    def row(user):
+        if user is None:
+            return None
+        if user.id not in rows:
+            rows[user.id] = {
+                "user_id": user.id, "username": user.username,
+                "full_name": user.full_name, "role_label": user.role_label,
+                "is_active": user.is_active,
+                "owns": [], "approves": [], "referred": [], "open_work": 0,
+            }
+        return rows[user.id]
+
+    for stage in sorted(workflow.stages, key=lambda s: s.stage_number):
+        if not stage.is_active:
+            continue
+        # What this stage actually asks for. A stage whose form is empty is
+        # worth seeing: it is usually a section somebody deleted.
+        parts = []
+        for item in sorted(stage.items, key=lambda i: i.sort_order):
+            if item.section is not None:
+                parts.append({"kind": "section", "title": item.section.title,
+                              "count": len([f for f in item.section.fields
+                                            if f.is_active]),
+                              "locked": item.is_read_only})
+            elif item.field is not None:
+                parts.append({"kind": "field", "title": item.field.label,
+                              "count": 1, "locked": item.is_read_only})
+        card = {"stage_id": stage.id, "stage_number": stage.stage_number,
+                "title": stage.title, "applies_to": stage.applies_to,
+                "applies_to_label": APPLIES_TO.get(stage.applies_to,
+                                                   stage.applies_to),
+                "parts": parts, "empty": not parts}
+        owner = row(stage.assignee)
+        if owner is not None:
+            owner["owns"].append(card)
+        approver = row(stage.approver)
+        if approver is not None:
+            approver["approves"].append(card)
+        if stage.referral_mode == REFER_USER:
+            target = row(stage.referral_user)
+            if target is not None:
+                target["referred"].append(card)
+
+    # What is actually sitting with each of them right now, so an empty
+    # کارتابل can be told apart from an empty assignment.
+    live = (db.session.query(WorkflowStageEntry)
+            .join(WorkflowInstance,
+                  WorkflowStageEntry.instance_id == WorkflowInstance.id)
+            .filter(WorkflowInstance.workflow_id == workflow.id,
+                    WorkflowInstance.status == INSTANCE_OPEN,
+                    WorkflowStageEntry.status.in_((ENTRY_PENDING,
+                                                   ENTRY_AWAITING,
+                                                   "rejected"))).all())
+    for entry in live:
+        holder = entry.owner_id
+        if holder in rows:
+            rows[holder]["open_work"] += 1
+
+    unassigned = [{"stage_id": s.id, "stage_number": s.stage_number,
+                   "title": s.title}
+                  for s in sorted(workflow.stages, key=lambda x: x.stage_number)
+                  if s.is_active and s.assignee_id is None]
+    empty_forms = [{"stage_id": s.id, "stage_number": s.stage_number,
+                    "title": s.title}
+                   for s in sorted(workflow.stages, key=lambda x: x.stage_number)
+                   if s.is_active and s.stage_number > 0 and not s.items]
+    return ok({
+        "workflow": workflow.to_dict(with_stages=False),
+        "users": sorted(rows.values(), key=lambda r: -(len(r["owns"]))),
+        "unassigned": unassigned,
+        "empty_forms": empty_forms,
+        "has_intake": any(s.stage_number == 0 and s.is_active
+                          for s in workflow.stages),
+        "running": WorkflowInstance.query.filter_by(
+            workflow_id=workflow.id, status=INSTANCE_OPEN).count(),
+    })
+
+
+@bp.get("/uses")
+@permission_required_any("workflow.manage", "form.manage")
+def form_uses():
+    """Which stages — and so which people — a section or field is wired into.
+
+    Asked before a section is deleted in the form builder: removing it takes
+    it off every stage that carried it, and the person who owns that stage is
+    the one who will notice.
+    """
+    kind = request.args.get("kind")
+    code = request.args.get("code")
+    query = WorkflowStageItem.query.join(
+        WorkflowStage, WorkflowStageItem.stage_id == WorkflowStage.id)
+    if kind == "section":
+        section = FormSection.query.filter_by(code=code).first()
+        if section is None:
+            return ok({"stages": [], "title": code})
+        query = query.filter(WorkflowStageItem.section_id == section.id)
+        title = section.title
+    elif kind == "field":
+        field = FormField.query.filter_by(field_name=code).first()
+        if field is None:
+            return ok({"stages": [], "title": code})
+        query = query.filter(WorkflowStageItem.field_id == field.id)
+        title = field.label
+    else:
+        return fail("نوع مورد باید «section» یا «field» باشد.", 422)
+
+    stages = []
+    for item in query.all():
+        stage = item.stage
+        if stage is None or not stage.is_active:
+            continue
+        stages.append({
+            "stage_id": stage.id, "stage_number": stage.stage_number,
+            "title": stage.title,
+            "workflow": stage.workflow.name if stage.workflow else None,
+            "assignee": stage.assignee.full_name if stage.assignee else None,
+            "locked": item.is_read_only,
+        })
+    return ok({"title": title, "kind": kind, "code": code,
+               "stages": sorted(stages, key=lambda s: s["stage_number"])})
+
+
 # ── instances ────────────────────────────────────────────────────────────────
 @bp.post("/instances")
 @permission_required("workflow.act")
@@ -495,8 +751,33 @@ def inbox():
             })
             rows.append(data)
     db.session.commit()
+    # An empty کارتابل reads as "my forms are not connected to me". It is
+    # almost never that: the stages are wired, there is simply no process
+    # running that has reached them. Say so, and name them, so the wiring
+    # done in the process builder is visible from here too.
+    mine_stages = []
+    for stage in (WorkflowStage.query.join(
+            WorkflowDefinition,
+            WorkflowStage.workflow_id == WorkflowDefinition.id)
+            .filter(WorkflowDefinition.is_active.is_(True),
+                    WorkflowStage.is_active.is_(True))
+            .order_by(WorkflowStage.stage_number).all()):
+        if stage.assignee_id == user.id:
+            role = "fill"
+        elif stage.approver_id == user.id:
+            role = "approve"
+        else:
+            continue
+        mine_stages.append({
+            "stage_number": stage.stage_number, "title": stage.title,
+            "role": role, "field_count": len(stage.items),
+            "workflow": stage.workflow.name if stage.workflow else None,
+        })
     # Only step zero's owner opens processes, so only they get the button.
-    return ok(rows, total=len(rows), may_start=may_start(user))
+    return ok(rows, total=len(rows), may_start=may_start(user),
+              my_stages=mine_stages,
+              running=WorkflowInstance.query.filter_by(
+                  status=INSTANCE_OPEN).count())
 
 
 @bp.get("/instances/<int:instance_id>")
