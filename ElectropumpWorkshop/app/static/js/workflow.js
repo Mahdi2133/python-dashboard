@@ -73,6 +73,62 @@
       + '</li>';
   }
 
+  /* Where a stage's work goes when it is finished, and who signs it off.
+     The workshop's process is a chain of handovers — «ارجاع به کارگاه مکانیک»,
+     «برگشت به کارتابل بهره‌بردار» — so this is the part the admin spends most
+     of their time in, and it is spelled out rather than hidden in a dialog. */
+  function referralPanel(s) {
+    var stages = definition.workflow.stages.filter(function (x) {
+      return x.stage_number > 0;
+    });
+    return '<details class="wf-refer"' + (s.needs_approval
+        || s.referral_mode !== 'next' ? ' open' : '') + '>'
+      + '<summary>🔀 ارجاع و تأیید'
+      + '<span class="wf-refer-tag">' + A.esc(s.referral_mode_label || '')
+      + (s.needs_approval ? ' · تأیید لازم' : '') + '</span></summary>'
+      + '<div class="wf-stage-row">'
+      + '<label>ارجاع به</label>'
+      + '<select class="wf-refer-mode">' + referralModeOptions(s.referral_mode)
+      + '</select></div>'
+      + '<div class="wf-stage-row wf-refer-user"'
+      + (s.referral_mode === 'next' ? ' hidden' : '') + '>'
+      + '<label>کاربر</label>'
+      + '<select class="wf-refer-user-id">' + userOptions(s.referral_user_id)
+      + '</select></div>'
+      + '<div class="wf-stage-row wf-refer-hint-row"'
+      + (s.referral_mode === 'choose' ? '' : ' hidden') + '>'
+      + '<label>راهنما</label>'
+      + '<input class="wf-refer-hint" value="' + A.esc(s.referral_hint || '')
+      + '" placeholder="مثلاً: به کارتابل چه کسی ارجاع می‌دهید؟"></div>'
+      + '<label class="mini-check wf-approve-toggle">'
+      + '<input type="checkbox" class="wf-needs-approval"'
+      + (s.needs_approval ? ' checked' : '')
+      + '> این مرحله باید تأیید شود</label>'
+      + '<div class="wf-approve-box"' + (s.needs_approval ? '' : ' hidden') + '>'
+      + '<div class="wf-stage-row"><label>تأییدکننده</label>'
+      + '<select class="wf-approver">' + userOptions(s.approver_id)
+      + '</select></div>'
+      + '<div class="wf-stage-row"><label>در صورت رد</label>'
+      + '<select class="wf-reject-to">'
+      + '<option value="">برگشت به همین مرحله</option>'
+      + stages.map(function (x) {
+          return '<option value="' + x.stage_number + '"'
+            + (s.reject_to_stage === x.stage_number ? ' selected' : '') + '>'
+            + 'مرحله ' + J.toFaDigits(x.stage_number) + ' — ' + A.esc(x.title)
+            + '</option>';
+        }).join('')
+      + '</select></div></div>'
+      + '</details>';
+  }
+
+  function referralModeOptions(current) {
+    return (definition.referral_modes || []).map(function (m) {
+      return '<option value="' + m.value + '"'
+        + (m.value === current ? ' selected' : '') + '>' + A.esc(m.label)
+        + '</option>';
+    }).join('');
+  }
+
   function renderStages() {
     A.qs('#wf-name').textContent = definition.workflow.name
       + ' — ' + definition.workflow.description;
@@ -94,7 +150,8 @@
         + '</div>'
         + (s.description ? '<div class="hint wf-stage-desc">'
             + A.esc(s.description) + '</div>' : '')
-        + (zero ? '<div class="hint">این مرحله فقط نوع عملیات را می‌پرسد.</div>' : '')
+        + (zero ? '<div class="hint">این مرحله فقط نوع عملیات را می‌پرسد.</div>'
+                : referralPanel(s))
         + '<ul class="wf-drop" data-stage="' + s.id + '">'
         + (s.items.map(itemHtml).join('')
            || '<li class="wf-drop-empty">موردی اینجا نیست — از پالت بکشید</li>')
@@ -162,17 +219,28 @@
     state.textContent = 'در حال ذخیره…';
     state.className = 'save-state';
     try {
-      await A.api.put('/api/workflow/stages/' + id, {
+      var body = {
         title: card.querySelector('.wf-stage-title').value.trim(),
         assignee_id: card.querySelector('.wf-assignee').value || null,
         applies_to: card.querySelector('.wf-applies').value,
-      });
+      };
+      var mode = card.querySelector('.wf-refer-mode');
+      if (mode) {
+        body.referral_mode = mode.value;
+        body.referral_user_id = card.querySelector('.wf-refer-user-id').value || null;
+        body.referral_hint = card.querySelector('.wf-refer-hint').value.trim();
+        body.needs_approval = card.querySelector('.wf-needs-approval').checked;
+        body.approver_id = card.querySelector('.wf-approver').value || null;
+        body.reject_to_stage = card.querySelector('.wf-reject-to').value || null;
+      }
+      await A.api.put('/api/workflow/stages/' + id, body);
       var items = A.qsa('.wf-drop-item', card).map(function (li) {
         return {
           kind: li.dataset.itemKind,
           id: Number(li.dataset.itemId),
           applies_to: li.querySelector('.applies').value,
           is_optional: li.querySelector('.optional').checked,
+          is_read_only: li.querySelector('.readonly').checked,
         };
       });
       await A.api.put('/api/workflow/stages/' + id + '/items', { items: items });
@@ -306,7 +374,22 @@
       if (save) saveStage(save.closest('.wf-stage'));
     });
     A.qs('#wf-stages').addEventListener('change', function (ev) {
-      markDirty(ev.target.closest('.wf-stage'));
+      var card = ev.target.closest('.wf-stage');
+      markDirty(card);
+      if (!card) return;
+      /* Only show what the chosen kind of referral actually needs: a fixed
+         user needs a name, a submitter's choice needs a prompt, and the
+         default needs neither. */
+      if (ev.target.classList.contains('wf-refer-mode')) {
+        var mode = ev.target.value;
+        card.querySelector('.wf-refer-user').hidden = mode === 'next';
+        card.querySelector('.wf-refer-hint-row').hidden = mode !== 'choose';
+        card.querySelector('.wf-refer-user').querySelector('label').textContent =
+          mode === 'choose' ? 'پیش‌فرض' : 'کاربر';
+      }
+      if (ev.target.classList.contains('wf-needs-approval')) {
+        card.querySelector('.wf-approve-box').hidden = !ev.target.checked;
+      }
     });
 
     A.qs('#tab-design').addEventListener('click', function () { showPane('design'); });

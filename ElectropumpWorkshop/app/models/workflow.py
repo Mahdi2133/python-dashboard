@@ -40,19 +40,37 @@ APPLIES_TO = {
     APPLIES_INSTALL: "فقط نصب",
 }
 
+# Who a stage hands its work to when it is done. The workshop's process is a
+# chain of referrals — «ارجاع به کارگاه مکانیک», «برگشت به کارتابل بهره‌بردار»
+# — so the admin says, per stage, how the next owner is chosen.
+REFER_NEXT = "next"      # whoever owns the next stage (the default)
+REFER_USER = "user"      # always this one person
+REFER_CHOOSE = "choose"  # the person finishing this stage picks, from a list
+REFERRAL_MODES = {
+    REFER_NEXT: "متولی مرحله بعد",
+    REFER_USER: "همیشه به یک کاربر مشخص",
+    REFER_CHOOSE: "ثبت‌کننده هنگام ارسال انتخاب می‌کند",
+}
+
 # What happened to a stage in one particular run.
 ENTRY_PENDING = "pending"      # waiting for its owner
 ENTRY_SUBMITTED = "submitted"  # owner filled and sent it on
 ENTRY_SKIPPED = "skipped"      # the branch does not visit this stage
 ENTRY_ARCHIVED = "archived"    # visited, but its form was set aside by a rule
 ENTRY_DEFERRED = "deferred"    # visited, its form left for later on purpose
+ENTRY_AWAITING = "awaiting"    # filled, now sitting with its approver
+ENTRY_REJECTED = "rejected"    # the approver sent it back to be redone
 ENTRY_STATUS = {
     ENTRY_PENDING: "در انتظار",
     ENTRY_SUBMITTED: "ثبت شده",
     ENTRY_SKIPPED: "طی نشده",
     ENTRY_ARCHIVED: "بایگانی",
     ENTRY_DEFERRED: "موکول به بعد",
+    ENTRY_AWAITING: "در انتظار تأیید",
+    ENTRY_REJECTED: "برگشت خورده",
 }
+# Statuses that mean the stage has had its say and the process may move on.
+ENTRY_DONE = (ENTRY_SUBMITTED, ENTRY_ARCHIVED, ENTRY_DEFERRED)
 
 INSTANCE_OPEN = "open"
 INSTANCE_COMPLETED = "completed"
@@ -116,8 +134,29 @@ class WorkflowStage(db.Model):
     applies_to = db.Column(db.String(10), nullable=False, default=APPLIES_BOTH)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
 
+    # ── the referral: where this stage's work goes when it is done ──────────
+    referral_mode = db.Column(db.String(10), nullable=False, default=REFER_NEXT)
+    # For REFER_USER. For REFER_CHOOSE this is merely the default offered.
+    referral_user_id = db.Column(db.Integer,
+                                 db.ForeignKey("app_users.id",
+                                               ondelete="SET NULL"),
+                                 index=True)
+    # A note the submitter sees next to the referral box — «به کدام کارتابل».
+    referral_hint = db.Column(db.String(200))
+
+    # ── the approval: whether somebody has to sign this stage off ───────────
+    needs_approval = db.Column(db.Boolean, nullable=False, default=False)
+    approver_id = db.Column(db.Integer, db.ForeignKey("app_users.id",
+                                                      ondelete="SET NULL"),
+                            index=True)
+    # Where a rejection sends it. Empty means back to this stage's own owner,
+    # which is what «برگشت به کارگاه جهت اصلاح» means.
+    reject_to_stage = db.Column(db.Integer)
+
     workflow = db.relationship("WorkflowDefinition", back_populates="stages")
     assignee = db.relationship("AppUser", foreign_keys=[assignee_id])
+    referral_user = db.relationship("AppUser", foreign_keys=[referral_user_id])
+    approver = db.relationship("AppUser", foreign_keys=[approver_id])
     items = db.relationship("WorkflowStageItem", back_populates="stage",
                             cascade="all, delete-orphan",
                             order_by="WorkflowStageItem.sort_order")
@@ -132,6 +171,18 @@ class WorkflowStage(db.Model):
             "applies_to": self.applies_to,
             "applies_to_label": APPLIES_TO.get(self.applies_to, self.applies_to),
             "is_active": self.is_active,
+            "referral_mode": self.referral_mode,
+            "referral_mode_label": REFERRAL_MODES.get(self.referral_mode,
+                                                      self.referral_mode),
+            "referral_user_id": self.referral_user_id,
+            "referral_user_name": (self.referral_user.full_name
+                                   if self.referral_user else None),
+            "referral_hint": self.referral_hint,
+            "needs_approval": self.needs_approval,
+            "approver_id": self.approver_id,
+            "approver_name": (self.approver.full_name
+                              if self.approver else None),
+            "reject_to_stage": self.reject_to_stage,
             "items": [i.to_dict() for i in self.items],
         }
 
@@ -159,6 +210,10 @@ class WorkflowStageItem(db.Model):
     applies_to = db.Column(db.String(10), nullable=False, default=APPLIES_BOTH)
     # An optional item never blocks the stage from being submitted.
     is_optional = db.Column(db.Boolean, nullable=False, default=False)
+    # Shown with what an earlier stage put in it, but not editable here. This
+    # is how a checklist filled in one stage is carried, read-only, into the
+    # stages after it — and the admin decides, item by item, which it is.
+    is_read_only = db.Column(db.Boolean, nullable=False, default=False)
 
     stage = db.relationship("WorkflowStage", back_populates="items")
     section = db.relationship("FormSection")
@@ -180,6 +235,7 @@ class WorkflowStageItem(db.Model):
             "applies_to": self.applies_to,
             "applies_to_label": APPLIES_TO.get(self.applies_to, self.applies_to),
             "is_optional": self.is_optional,
+            "is_read_only": self.is_read_only,
         }
 
 
@@ -290,9 +346,44 @@ class WorkflowStageEntry(db.Model):
     started_at = db.Column(db.DateTime, default=local_now, nullable=False)
     submitted_at = db.Column(db.DateTime)
 
+    # ── the referral, on this run ───────────────────────────────────────────
+    # Who this piece of work is actually sitting with. Empty means the stage's
+    # own متولی; set, it overrides them for this run and this run only, which
+    # is what «ارجاع به کارگاه مکانیک» does.
+    referred_to_id = db.Column(db.Integer, db.ForeignKey("app_users.id"),
+                               index=True)
+    referred_by_id = db.Column(db.Integer, db.ForeignKey("app_users.id"))
+    referred_at = db.Column(db.DateTime)
+    referral_note = db.Column(db.Text)
+
+    # ── the approval, on this run ───────────────────────────────────────────
+    approver_id = db.Column(db.Integer, db.ForeignKey("app_users.id"),
+                            index=True)
+    decided_by_id = db.Column(db.Integer, db.ForeignKey("app_users.id"))
+    decided_at = db.Column(db.DateTime)
+    decision_note = db.Column(db.Text)
+
     instance = db.relationship("WorkflowInstance", back_populates="entries")
     stage = db.relationship("WorkflowStage")
     user = db.relationship("AppUser", foreign_keys=[user_id])
+    referred_to = db.relationship("AppUser", foreign_keys=[referred_to_id])
+    referred_by = db.relationship("AppUser", foreign_keys=[referred_by_id])
+    approver = db.relationship("AppUser", foreign_keys=[approver_id])
+    decided_by = db.relationship("AppUser", foreign_keys=[decided_by_id])
+
+    @property
+    def owner_id(self):
+        """Whose کارتابل this entry belongs in right now.
+
+        A referral wins over the stage's standing متولی: the whole point of
+        «ارجاع» is that this particular job goes to this particular person,
+        without changing who owns the stage in general.
+        """
+        if self.status == ENTRY_AWAITING:
+            return self.approver_id
+        if self.referred_to_id:
+            return self.referred_to_id
+        return self.stage.assignee_id if self.stage else None
 
     @property
     def payload(self) -> dict:
@@ -325,6 +416,22 @@ class WorkflowStageEntry(db.Model):
             "submitted_at_time": (tehran_time_str(self.submitted_at,
                                                   with_seconds=False)
                                   if self.submitted_at else None),
+            "owner_id": self.owner_id,
+            "referred_to_id": self.referred_to_id,
+            "referred_to_name": (self.referred_to.full_name
+                                 if self.referred_to else None),
+            "referred_by_name": (self.referred_by.full_name
+                                 if self.referred_by else None),
+            "referred_at_j": (to_jalali_str(self.referred_at)
+                              if self.referred_at else None),
+            "referral_note": self.referral_note,
+            "approver_id": self.approver_id,
+            "approver_name": self.approver.full_name if self.approver else None,
+            "decided_by_name": (self.decided_by.full_name
+                                if self.decided_by else None),
+            "decided_at_j": (to_jalali_str(self.decided_at)
+                             if self.decided_at else None),
+            "decision_note": self.decision_note,
             "payload": self.payload,
         }
 

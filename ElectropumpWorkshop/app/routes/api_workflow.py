@@ -10,8 +10,9 @@ from ..extensions import db
 from ..models import (AppUser, FormField, FormSection, WorkflowAttachment,
                       WorkflowDefinition, WorkflowInstance, WorkflowStage,
                       WorkflowStageEntry, WorkflowStageItem)
-from ..models.workflow import (APPLIES_TO, ENTRY_PENDING, INSTANCE_OPEN,
-                               INSTANCE_STATUS, OPERATION_KINDS)
+from ..models.workflow import (APPLIES_TO, ENTRY_AWAITING, ENTRY_PENDING,
+                               INSTANCE_OPEN, INSTANCE_STATUS, OPERATION_KINDS,
+                               REFERRAL_MODES, REFER_CHOOSE, REFER_USER)
 from ..paths import instance_dir
 from ..services.audit import record_audit
 from ..services.auth import (current_user, login_required,
@@ -19,11 +20,12 @@ from ..services.auth import (current_user, login_required,
                              permission_required_any)
 from ..services.lookups import normalize_text
 from ..services.workflow import (WorkflowError, active_workflow,
-                                 applicable_stages, cancel_instance,
-                                 current_stage_of, may_act,
+                                 applicable_stages, awaiting_approval,
+                                 cancel_instance, current_stage_of,
+                                 decide_stage, may_act, owner_of,
                                  pending_stages, previous_values_for,
-                                 may_start, stage_by_number, stage_form,
-                                 stages_of_user,
+                                 may_start, referral_choices, stage_by_number,
+                                 stage_form, stages_of_user,
                                  submitted_summary,
                                  start_instance, submit_stage, sync_entries,
                                  waiting_before)
@@ -36,6 +38,21 @@ bp = Blueprint("api_workflow", __name__, url_prefix="/api/workflow")
 BLOCKED_SUFFIXES = {".exe", ".dll", ".bat", ".cmd", ".com", ".scr", ".msi",
                     ".ps1", ".vbs", ".js", ".jar", ".sh", ".php"}
 MAX_ATTACHMENT_BYTES = 64 * 1024 * 1024        # 64 MB per file
+
+
+def _person(raw):
+    """Resolve a user id from the builder. Returns (user or None, error)."""
+    if raw in (None, "", 0, "0", "-1"):
+        return None, None
+    try:
+        user = db.session.get(AppUser, int(raw))
+    except (TypeError, ValueError):
+        return None, "شناسه‌ی کاربر نامعتبر است."
+    if user is None:
+        return None, "کاربر انتخاب‌شده یافت نشد."
+    if not user.is_active:
+        return None, f"کاربر «{user.full_name}» غیرفعال است."
+    return user, None
 
 
 def _attachment_dir():
@@ -75,6 +92,8 @@ def get_definition():
                "palette": {"sections": palette_sections, "fields": palette_fields},
                "users": users,
                "applies_to": [{"value": k, "label": v} for k, v in APPLIES_TO.items()],
+               "referral_modes": [{"value": k, "label": v}
+                                  for k, v in REFERRAL_MODES.items()],
                "operation_kinds": [{"value": k, "label": v}
                                    for k, v in OPERATION_KINDS.items()]})
 
@@ -111,6 +130,48 @@ def update_stage(stage_id):
         stage.applies_to = payload["applies_to"]
     if "is_active" in payload:
         stage.is_active = payload["is_active"] in (True, "true", "1", 1)
+
+    # ── the referral: where this stage's work goes when it is finished ──────
+    if "referral_mode" in payload:
+        if payload["referral_mode"] not in REFERRAL_MODES:
+            return fail("نوع ارجاع نامعتبر است.", 422)
+        stage.referral_mode = payload["referral_mode"]
+    if "referral_user_id" in payload:
+        person, error = _person(payload["referral_user_id"])
+        if error:
+            return fail(error, 422)
+        stage.referral_user_id = person.id if person else None
+    if "referral_hint" in payload:
+        stage.referral_hint = (payload["referral_hint"] or "").strip() or None
+    if stage.referral_mode == REFER_USER and stage.referral_user_id is None:
+        return fail("برای ارجاع «همیشه به یک کاربر مشخص»، کاربر مقصد را "
+                    "انتخاب کنید.", 422)
+
+    # ── the approval: who signs it off, and where a rejection lands ─────────
+    if "needs_approval" in payload:
+        stage.needs_approval = payload["needs_approval"] in (True, "true", "1", 1)
+    if "approver_id" in payload:
+        person, error = _person(payload["approver_id"])
+        if error:
+            return fail(error, 422)
+        stage.approver_id = person.id if person else None
+    if "reject_to_stage" in payload:
+        raw = payload["reject_to_stage"]
+        if raw in (None, "", "-1"):
+            stage.reject_to_stage = None
+        else:
+            target = WorkflowStage.query.filter_by(
+                workflow_id=stage.workflow_id, stage_number=int(raw)).first()
+            if target is None:
+                return fail("مرحله‌ی مقصدِ برگشت پیدا نشد.", 422)
+            stage.reject_to_stage = target.stage_number
+    if stage.needs_approval and stage.approver_id is None:
+        return fail("مرحله‌ای که نیاز به تأیید دارد باید تأییدکننده داشته "
+                    "باشد.", 422)
+    if stage.needs_approval and stage.approver_id == stage.assignee_id:
+        return fail("تأییدکننده نمی‌تواند خودِ متولی مرحله باشد؛ آن‌وقت تأیید "
+                    "معنایی ندارد.", 422)
+
     record_audit("update", "workflow_stage", stage.id,
                  summary=f"ویرایش مرحله «{stage.title}»")
     db.session.commit()
@@ -145,14 +206,16 @@ def set_stage_items(stage_id):
                 return fail("بخش انتخاب‌شده یافت نشد.", 422)
             cleaned.append(WorkflowStageItem(
                 stage_id=stage.id, section_id=target.id, sort_order=order,
-                applies_to=applies, is_optional=bool(raw.get("is_optional"))))
+                applies_to=applies, is_optional=bool(raw.get("is_optional")),
+                is_read_only=bool(raw.get("is_read_only"))))
         elif kind == "field":
             target = db.session.get(FormField, int(raw.get("id") or 0))
             if target is None:
                 return fail("فیلد انتخاب‌شده یافت نشد.", 422)
             cleaned.append(WorkflowStageItem(
                 stage_id=stage.id, field_id=target.id, sort_order=order,
-                applies_to=applies, is_optional=bool(raw.get("is_optional"))))
+                applies_to=applies, is_optional=bool(raw.get("is_optional")),
+                is_read_only=bool(raw.get("is_read_only"))))
         else:
             return fail("نوع مورد باید «section» یا «field» باشد.", 422)
 
@@ -215,19 +278,38 @@ def inbox():
         outstanding = {s.stage_number for s in pending_stages(instance)}
         mine = [s for s in stages_of_user(instance, user)
                 if s.stage_number in outstanding]
-        if not mine and user.role != "admin":
-            continue
-        for stage in (mine or ([] if user.role != "admin" else
-                               [s for s in applicable_stages(instance)
-                                if s.stage_number in outstanding])):
+        # Two kinds of work land here: a stage to fill, and a stage somebody
+        # has sent me to approve. They read differently and are answered with
+        # different buttons, so the کارتابل says which is which.
+        to_decide = awaiting_approval(instance, user)
+        # A stage sitting with its approver belongs to them as a *decision*,
+        # not as a form to fill again — and `owner_of` hands it to them either
+        # way, so the decision has to win.
+        deciding = {s.stage_number for s in to_decide}
+        todo = [(s, "approve") for s in to_decide] + \
+               [(s, "fill") for s in mine
+                if s.stage_number not in deciding]
+        if not todo and user.role == "admin":
+            todo = [(s, "fill") for s in applicable_stages(instance)
+                    if s.stage_number in outstanding]
+        for stage, task in todo:
             waiting = waiting_before(instance, stage.stage_number)
+            entry = next((e for e in instance.entries
+                          if e.stage_number == stage.stage_number), None)
             data = instance.to_dict(with_entries=False)
             data.update({
                 "stage_number": stage.stage_number,
                 "stage_title": stage.title,
                 "stage_id": stage.id,
-                "is_mine": stage.assignee_id == user.id,
-                "unassigned": stage.assignee_id is None,
+                "task_kind": task,
+                "entry_status": entry.status if entry else ENTRY_PENDING,
+                "is_mine": owner_of(instance, stage) == user.id,
+                "unassigned": owner_of(instance, stage) is None,
+                "referred_to_name": (entry.referred_to.full_name
+                                     if entry and entry.referred_to else None),
+                "referred_by_name": (entry.referred_by.full_name
+                                     if entry and entry.referred_by else None),
+                "referral_note": entry.referral_note if entry else None,
                 "waiting_on": [{"stage_number": w.stage_number, "title": w.title,
                                 "assignee": (w.assignee.full_name
                                              if w.assignee else None)}
@@ -266,6 +348,20 @@ def get_instance(instance_id):
 
     data["may_act"] = may_act(user, instance, stage)
     data["form"] = stage_form(instance, stage) if stage else None
+    # Who this stage's work goes to when it is sent on, and whether this user
+    # is the one being asked to approve it rather than to fill it.
+    entry = next((e for e in instance.entries
+                  if stage and e.stage_number == stage.stage_number), None)
+    data["referral"] = referral_choices(instance, stage) if stage else None
+    data["entry_status"] = entry.status if entry else None
+    data["awaiting_my_decision"] = bool(
+        stage and stage.stage_number in
+        {s.stage_number for s in awaiting_approval(instance, user)})
+    data["referred_to_name"] = (entry.referred_to.full_name
+                                if entry and entry.referred_to else None)
+    data["referred_by_name"] = (entry.referred_by.full_name
+                                if entry and entry.referred_by else None)
+    data["referral_note"] = entry.referral_note if entry else None
     data["my_stages"] = [s.stage_number for s in stages_of_user(instance, user)]
     data["waiting_on"] = [
         {"stage_number": w.stage_number, "title": w.title,
@@ -316,13 +412,41 @@ def submit(instance_id):
         submit_stage(instance, payload.get("data") or {}, current_user(),
                      note=payload.get("note"),
                      stage_number=(int(stage_number)
-                                   if stage_number not in (None, "") else None))
+                                   if stage_number not in (None, "") else None),
+                     refer_to=payload.get("refer_to") or None,
+                     referral_note=payload.get("referral_note"))
     except WorkflowError as exc:
         return fail(str(exc), 422)
     data = instance.to_dict()
-    message = ("فرایند تکمیل شد و رکورد ثبت گردید."
-               if instance.record_id else "مرحله ثبت شد و به مرحله بعد رفت.")
+    if instance.record_id:
+        message = "فرایند تکمیل شد و رکورد ثبت گردید."
+    elif any(e.status == ENTRY_AWAITING for e in instance.entries):
+        message = "مرحله ثبت شد و برای تأیید ارسال گردید."
+    else:
+        message = "مرحله ثبت و ارجاع شد."
     return ok(data, message=message)
+
+
+@bp.post("/instances/<int:instance_id>/decide")
+@permission_required("workflow.act")
+def decide(instance_id):
+    """Approve a stage, or send it back with a reason."""
+    instance = db.session.get(WorkflowInstance, instance_id)
+    if instance is None:
+        return fail("فرایند یافت نشد.", 404)
+    payload = body()
+    number = payload.get("stage_number")
+    if number in (None, ""):
+        return fail("مرحله‌ی موردنظر مشخص نیست.", 422)
+    approved = payload.get("approved") in (True, "true", "1", 1, "approve")
+    try:
+        decide_stage(instance, int(number), current_user(), approved,
+                     comment=payload.get("comment"))
+    except WorkflowError as exc:
+        return fail(str(exc), 422)
+    return ok(instance.to_dict(),
+              message="تأیید شد و به مرحله بعد ارجاع گردید." if approved
+                      else "برگشت داده شد.")
 
 
 @bp.post("/instances/<int:instance_id>/cancel")

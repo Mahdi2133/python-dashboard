@@ -666,3 +666,37 @@ select.mini { font-size:11px; padding:2px 4px; width:auto; }
 .wf-item-start { border-style:dashed; border-color:var(--primary-light);
   background:#f5faff; }
 .wf-item-start:hover { background:#eaf3fa; }
+
+/* ── referral and approval, on a stage card ───────────────────────────── */
+.wf-refer { margin:8px 0; border:1px solid var(--border); border-radius:10px;
+  background:var(--input-bg); }
+.wf-refer > summary { cursor:pointer; padding:7px 10px; font-size:12.5px;
+  font-weight:700; display:flex; align-items:center; gap:8px; }
+.wf-refer > summary::-webkit-details-marker { display:none; }
+.wf-refer[open] > summary { border-bottom:1px solid var(--border); }
+.wf-refer-tag { margin-inline-start:auto; font-weight:400; font-size:11px;
+  color:var(--text-muted); }
+.wf-refer .wf-stage-row { margin:7px 10px; }
+.wf-refer .wf-stage-row[hidden] { display:none; }
+.wf-approve-toggle { margin:8px 10px; font-size:12.5px; color:var(--text); }
+.wf-approve-box { border-top:1px dashed var(--border); padding-top:4px;
+  margin-bottom:6px; }
+.wf-approve-box[hidden] { display:none; }
+
+/* A stage item the admin locked reads as locked in the builder too. */
+.wf-drop-item .mini-check input.readonly:checked + span,
+.wf-drop-item:has(input.readonly:checked) .wf-item-name { color:var(--info); }
+
+/* ── the referral and the verdict, in the کارتابل ─────────────────────── */
+.wf-refer-box, .wf-decide-box { border:1px solid var(--border);
+  border-radius:var(--radius); padding:12px 14px; margin-top:14px;
+  background:var(--input-bg); }
+.wf-decide-box { border-color:var(--accent); background:#fffaf0; }
+.wf-refer-box .field, .wf-decide-box .field { margin-bottom:8px; }
+.wf-refer-box select, .wf-refer-box input, .wf-decide-box textarea { width:100%; }
+.wf-decide-box .form-actions { margin-top:10px; position:static; box-shadow:none;
+  border:0; background:transparent; padding:0; justify-content:flex-start; }
+/* An item somebody referred to me reads differently from my own stage. */
+.wf-item.referred { border-inline-start:4px solid var(--info); }
+.wf-item.to-approve { border-inline-start:4px solid var(--accent); }
+.wf-item-refer { font-size:11px; color:var(--info); }

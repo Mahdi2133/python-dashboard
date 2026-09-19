@@ -96,16 +96,28 @@
     var waiting = (it.waiting_on || []).length;
     var active = current && current.id === it.id
       && current.stage_number === it.stage_number;
+    var approving = it.task_kind === 'approve';
+    var referred = !!it.referred_to_name;
     return '<button class="wf-item' + (active ? ' active' : '')
+      + (approving ? ' to-approve' : referred ? ' referred' : '')
       + '" data-i="' + i + '" type="button">'
       + '<div class="wf-item-top">'
-      + '<span class="wf-stage-no">' + J.toFaDigits(it.stage_number) + '</span>'
+      + '<span class="wf-stage-no">'
+      + (approving ? '✅' : J.toFaDigits(it.stage_number)) + '</span>'
       + '<span class="wf-item-title">' + A.esc(it.stage_title) + '</span>'
-      + '<span class="badge ' + (it.operation_kind === 'pull' ? 'warn' : '')
-      + '">' + A.esc(it.operation_label) + '</span>'
+      + '<span class="badge ' + (approving ? 'warn'
+          : it.operation_kind === 'pull' ? 'warn' : '') + '">'
+      + (approving ? 'تأیید' : A.esc(it.operation_label)) + '</span>'
       + '</div>'
+      + (it.referred_by_name
+          ? '<div class="wf-item-refer">🔀 ارجاع از ' + A.esc(it.referred_by_name)
+            + (it.referral_note ? ' — ' + A.esc(it.referral_note) : '')
+            + '</div>'
+          : '')
       + '<div class="wf-item-sub">'
       + A.esc(it.created_at_j || '')
+      + (it.entry_status === 'rejected'
+          ? ' · <span class="badge warn">برگشت خورده</span>' : '')
       + (it.unassigned ? ' · <span class="badge warn">بدون متولی</span>' : '')
       + (waiting ? ' · <span class="badge warn">' + J.toFaDigits(waiting)
           + ' مرحله عقب‌تر ثبت نشده</span>' : '')
@@ -292,6 +304,8 @@
         submit.disabled = !detail.may_act;
         submit.title = detail.may_act ? '' : 'این مرحله در اختیار شما نیست.';
       }
+      renderReferral(detail);
+      renderDecision(detail);
 
       renderPath(detail);
       renderGuide(detail);
@@ -300,6 +314,100 @@
       renderAttachments(detail);
       renderList();
       A.qs('#wf-detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) {
+      A.toast(err.message, 'error');
+      fill('#inbox-alert', '<div class="alert error">' + A.esc(err.message)
+           + '</div>');
+    }
+  }
+
+  /* Where this stage's work goes when it is sent on. The admin decided the
+     shape of this in the process builder: a fixed person, the next stage's own
+     متولی, or — the case this box exists for — whoever the person finishing
+     the stage names. */
+  function renderReferral(detail) {
+    var box = A.qs('#wf-refer-box');
+    var refer = detail.referral || {};
+    if (!box) return;
+    var choosing = refer.mode === 'choose' && detail.may_act
+      && !detail.awaiting_my_decision;
+    box.classList.toggle('hidden', !detail.may_act || detail.awaiting_my_decision
+                         || (refer.mode === 'next' && !refer.needs_approval));
+    A.qs('#wf-refer-pick').classList.toggle('hidden', !choosing);
+
+    var where;
+    if (refer.needs_approval) {
+      where = 'این مرحله پس از ثبت، برای تأیید به <b>'
+        + A.esc(refer.approver_name || 'تأییدکننده تعیین‌نشده')
+        + '</b> ارسال می‌شود.';
+    } else if (refer.mode === 'user') {
+      where = 'پس از ثبت، کار به <b>'
+        + A.esc(refer.default_user_name || 'کاربر تعیین‌نشده')
+        + '</b> ارجاع می‌شود.';
+    } else if (choosing) {
+      where = A.esc(refer.hint || 'کار را به کارتابل چه کسی ارجاع می‌دهید؟');
+    } else {
+      where = 'پس از ثبت، کار به متولی مرحله بعد می‌رود'
+        + (refer.next_stage && refer.next_stage.assignee_name
+            ? ' (<b>' + A.esc(refer.next_stage.assignee_name) + '</b>)' : '')
+        + '.';
+    }
+    fill('#wf-refer-info', where);
+
+    var select = A.qs('#wf-refer-to');
+    if (select && choosing) {
+      select.innerHTML = '<option value="">— انتخاب کنید —</option>'
+        + (refer.users || []).map(function (u) {
+            return '<option value="' + u.id + '"'
+              + (u.id === refer.default_user_id ? ' selected' : '') + '>'
+              + A.esc(u.full_name) + ' (' + A.esc(u.role_label) + ')</option>';
+          }).join('');
+    }
+  }
+
+  /* The approver's view: the work is filled in and read-only, and the only
+     thing left is a verdict. */
+  function renderDecision(detail) {
+    var box = A.qs('#wf-decide-box');
+    var actions = A.qs('#wf-submit-actions');
+    if (!box) return;
+    var deciding = !!detail.awaiting_my_decision;
+    box.classList.toggle('hidden', !deciding);
+    if (actions) actions.classList.toggle('hidden', deciding);
+    if (!deciding) return;
+    /* The approver is here to judge what was written, not to rewrite it. The
+       form stays on screen — they need to read it — but the pen is taken away
+       so nothing can be changed behind the submitter's back. */
+    if (form && form.lock) form.lock();
+    var entry = (detail.entries || []).filter(function (e) {
+      return e.stage_number === current.stage_number;
+    })[0] || {};
+    fill('#wf-decide-info',
+      'این مرحله را <b>' + A.esc(entry.user_name || '—') + '</b> ثبت کرده و '
+      + 'برای تأیید شما فرستاده است'
+      + (entry.submitted_at_j ? ' (' + A.esc(entry.submitted_at_j) + ')' : '')
+      + '. با «تأیید» کار به مرحله بعد می‌رود؛ با «برگشت» همراه دلیل، به '
+      + 'ثبت‌کننده بازمی‌گردد.');
+  }
+
+  async function decide(approved) {
+    if (!current) return;
+    var note = (A.qs('#wf-decide-note') || {}).value || '';
+    if (!approved && !note.trim()) {
+      A.toast('برای برگشت دادن، ذکر دلیل الزامی است.', 'error');
+      A.qs('#wf-decide-note').focus();
+      return;
+    }
+    try {
+      var res = await A.api.post('/api/workflow/instances/' + current.id
+                                 + '/decide',
+        { stage_number: current.stage_number, approved: approved,
+          comment: note });
+      A.toast(res.message || 'ثبت شد.', 'success');
+      A.qs('#wf-decide-note').value = '';
+      A.qs('#wf-detail').classList.add('hidden');
+      current = null;
+      await loadInbox();
     } catch (err) {
       A.toast(err.message, 'error');
       fill('#inbox-alert', '<div class="alert error">' + A.esc(err.message)
@@ -398,8 +506,18 @@
     button.disabled = true;
     form.clearErrors();
     try {
+      var refer = (current.detail && current.detail.referral) || {};
+      var pick = A.qs('#wf-refer-to');
+      if (refer.mode === 'choose' && !(pick && pick.value)) {
+        A.toast('ارجاع به کدام کاربر؟ یکی را انتخاب کنید.', 'error');
+        if (pick) pick.focus();
+        button.disabled = false;
+        return;
+      }
       var res = await A.api.post('/api/workflow/instances/' + current.id + '/submit',
-        { stage_number: current.stage_number, data: form.collect() });
+        { stage_number: current.stage_number, data: form.collect(),
+          refer_to: pick ? (pick.value || null) : null,
+          referral_note: (A.qs('#wf-refer-note') || {}).value || null });
       A.toast(res.message || 'ثبت شد.', 'success');
       A.qs('#wf-detail').classList.add('hidden');
       current = null;
@@ -474,6 +592,8 @@
       renderList();
     });
     A.qs('#wf-submit').addEventListener('click', submitStage);
+    A.qs('#wf-approve').addEventListener('click', function () { decide(true); });
+    A.qs('#wf-reject').addEventListener('click', function () { decide(false); });
     A.qs('#wf-file').addEventListener('change', function () {
       uploadFiles(this.files);
       this.value = '';

@@ -22,12 +22,14 @@ from ..extensions import db
 from ..models import (FormField, FormSection, Record, WorkflowAttachment,
                       WorkflowDefinition, WorkflowInstance, WorkflowStage,
                       WorkflowStageEntry, WorkflowStageItem)
-from ..models.workflow import (APPLIES_BOTH, ENTRY_ARCHIVED, ENTRY_DEFERRED,
-                               ENTRY_STATUS,
-                               ENTRY_PENDING, ENTRY_SKIPPED, ENTRY_SUBMITTED,
-                               INSTANCE_CANCELLED, INSTANCE_COMPLETED,
-                               INSTANCE_OPEN, OPERATION_INSTALL, OPERATION_KINDS,
-                               OPERATION_PULL)
+from ..models.workflow import (APPLIES_BOTH, ENTRY_ARCHIVED, ENTRY_AWAITING,
+                               ENTRY_DEFERRED, ENTRY_DONE, ENTRY_PENDING,
+                               ENTRY_REJECTED, ENTRY_SKIPPED, ENTRY_STATUS,
+                               ENTRY_SUBMITTED, INSTANCE_CANCELLED,
+                               INSTANCE_COMPLETED, INSTANCE_OPEN,
+                               OPERATION_INSTALL, OPERATION_KINDS,
+                               OPERATION_PULL, REFER_CHOOSE, REFER_NEXT,
+                               REFER_USER)
 from .audit import record_audit
 from .jalali import local_now, to_jalali_str
 from .lookups import normalize_text
@@ -113,6 +115,8 @@ def _already_owned(instance: WorkflowInstance, except_stage: int) -> set:
         if entry.stage is None:
             continue
         for item in entry.stage.items:
+            if item.is_read_only:
+                continue     # this one is meant to be shown again, locked
             if item.section:
                 owned.add(("section", item.section.code))
             elif item.field:
@@ -136,7 +140,7 @@ def stage_items(instance: WorkflowInstance, stage: WorkflowStage,
             continue
         key = (("section", item.section.code) if item.section
                else ("field", item.field.field_name) if item.field else None)
-        if key is None or key in owned:
+        if key is None or (key in owned and not item.is_read_only):
             continue
         if (stage.stage_number == STAGE_WELL_INSTALL
                 and item.section is not None
@@ -145,6 +149,18 @@ def stage_items(instance: WorkflowInstance, stage: WorkflowStage,
             continue          # archived or deferred by the action decision
         visible.append(item)
     return visible
+
+
+def _settled_values(instance: WorkflowInstance, except_stage: int) -> dict:
+    """Everything the other stages of this run have already answered."""
+    values = {}
+    for entry in instance.entries:
+        if entry.stage_number == except_stage or entry.status not in ENTRY_DONE:
+            continue
+        for name, value in (entry.payload or {}).items():
+            if value not in (None, "", [], {}):
+                values.setdefault(name, value)
+    return values
 
 
 def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
@@ -179,17 +195,47 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
             kept.append(field)
         return kept
 
+    settled = _settled_values(instance, stage.stage_number)
+
+    def locked(fields):
+        """Show what an earlier stage put here, and refuse the pen.
+
+        This is what «قفل» means on a stage item: the checklist the workshop
+        ticked is carried into the stages after it, visible in full, and not
+        theirs to change. The admin decides which items are like this.
+        """
+        out = []
+        for field in fields:
+            field = dict(field)
+            field["read_only"] = True
+            value = settled.get(field.get("field_name"))
+            if value not in (None, "", [], {}):
+                field["read_only_value"] = (
+                    "، ".join(str(v) for v in value if v not in (None, ""))
+                    if isinstance(value, list) else value)
+            else:
+                field["read_only_value"] = "—"
+            field["help_text"] = (field.get("help_text")
+                                  or "در مرحله‌ی پیشین ثبت شده است.")
+            out.append(field)
+        return out
+
     blocks = []
     for item in stage_items(instance, stage, draft):
         if item.section:
             block = item.section.to_dict(include_fields=True, active_only=True)
             block["fields"] = usable(block.get("fields") or [])
+            if item.is_read_only:
+                block["fields"] = locked(block["fields"])
+                block["is_locked"] = True
             if not block["fields"]:
                 continue
             block["is_optional"] = item.is_optional
             blocks.append(block)
         elif item.field:
             fields = usable([item.field.to_dict()])
+            if item.is_read_only:
+                fields = locked(fields)
             if not fields:
                 continue
             blocks.append({
@@ -197,6 +243,7 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
                 "title": item.field.label, "icon": "◽", "columns": 1,
                 "full_width": True, "is_active": True,
                 "is_optional": item.is_optional,
+                "is_locked": item.is_read_only,
                 "description": None,
                 "fields": fields,
             })
@@ -224,7 +271,7 @@ def submitted_summary(instance: WorkflowInstance, except_stage: int = None) -> l
     for entry in sorted(instance.entries, key=lambda e: e.stage_number):
         if entry.stage_number == except_stage or entry.stage_number == STAGE_INTAKE:
             continue
-        if entry.status not in (ENTRY_SUBMITTED, ENTRY_ARCHIVED, ENTRY_DEFERRED):
+        if entry.status not in ENTRY_DONE:
             continue
         values = []
         for name, value in (entry.payload or {}).items():
@@ -378,7 +425,7 @@ def sync_entries(instance: WorkflowInstance):
 def pending_stages(instance: WorkflowInstance) -> list:
     """Applicable stages nobody has submitted yet."""
     done = {e.stage_number for e in instance.entries
-            if e.status in (ENTRY_SUBMITTED, ENTRY_ARCHIVED, ENTRY_DEFERRED)}
+            if e.status in ENTRY_DONE}
     return [s for s in applicable_stages(instance) if s.stage_number not in done]
 
 
@@ -410,11 +457,26 @@ def stage_by_number(instance: WorkflowInstance, number: int):
                  if s.stage_number == number), None)
 
 
+def owner_of(instance: WorkflowInstance, stage: WorkflowStage):
+    """Whose کارتابل this stage sits in, on this run.
+
+    Normally the stage's standing متولی. But a referral — «ارجاع به کارگاه
+    مکانیک» — puts this one job with one particular person, and an approval
+    puts it with the approver until they have ruled. The entry knows; the
+    stage only knows the default.
+    """
+    entry = _entry_for(instance, stage.stage_number)
+    if entry is not None and entry.owner_id is not None:
+        return entry.owner_id
+    return stage.assignee_id
+
+
 def stages_of_user(instance: WorkflowInstance, user) -> list:
-    """Which applicable stages this person owns on this instance."""
+    """Which applicable stages this person holds on this instance."""
     if user is None:
         return []
-    return [s for s in applicable_stages(instance) if s.assignee_id == user.id]
+    return [s for s in applicable_stages(instance)
+            if owner_of(instance, s) == user.id]
 
 
 def may_act(user, instance: WorkflowInstance, stage: WorkflowStage = None) -> bool:
@@ -424,18 +486,40 @@ def may_act(user, instance: WorkflowInstance, stage: WorkflowStage = None) -> bo
     if user.role == "admin" or user.can("workflow.manage"):
         return True
     if stage is not None:
-        return stage.assignee_id == user.id
+        return owner_of(instance, stage) == user.id
     return bool(stages_of_user(instance, user))
+
+
+def awaiting_approval(instance: WorkflowInstance, user) -> list:
+    """Stages of this run that are sitting with ``user`` for a decision."""
+    if user is None:
+        return []
+    manager = user.role == "admin" or user.can("workflow.manage")
+    out = []
+    for stage in applicable_stages(instance):
+        entry = _entry_for(instance, stage.stage_number)
+        if entry is None or entry.status != ENTRY_AWAITING:
+            continue
+        if manager or entry.approver_id == user.id:
+            out.append(stage)
+    return out
 
 
 def submit_stage(instance: WorkflowInstance, payload: dict, user,
                  note: str | None = None,
-                 stage_number: int | None = None) -> WorkflowInstance:
-    """Record one stage's answers.
+                 stage_number: int | None = None,
+                 refer_to: int | None = None,
+                 referral_note: str | None = None) -> WorkflowInstance:
+    """Record one stage's answers, then hand the work on.
 
     Stages are independent: the owner of stage 3 does not wait for stage 2.
     The process completes on its own once no applicable stage is outstanding,
     whichever order they came in.
+
+    What happens after the answers are stored depends on how the admin set the
+    stage up. If it needs an approval, the entry goes to the approver and the
+    process waits. Otherwise the next stage is referred onward — to its own
+    متولی, to a fixed person, or to whoever ``refer_to`` names.
     """
     if instance.status != INSTANCE_OPEN:
         raise WorkflowError("این فرایند بسته شده است.")
@@ -485,6 +569,24 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
     entry.set_payload(payload or {})
     instance.set_payload(merged)
 
+    # An approval holds the work here until somebody rules on it; only then is
+    # it referred onward. Anything else goes on its way immediately.
+    if entry.status == ENTRY_SUBMITTED and stage.needs_approval:
+        approver = _approver_for(stage)
+        if approver is None:
+            raise WorkflowError(
+                f"مرحله «{stage.title}» نیاز به تأیید دارد ولی تأییدکننده‌ای "
+                f"برایش تعیین نشده است. از مدیر سیستم بخواهید در فرایندساز "
+                f"تأییدکننده را مشخص کند.")
+        entry.status = ENTRY_AWAITING
+        entry.approver_id = approver
+        entry.decided_by_id = entry.decided_at = entry.decision_note = None
+        record_audit("update", "workflow", instance.id,
+                     summary=f"ارسال مرحله {stage.stage_number} "
+                             f"«{stage.title}» برای تأیید")
+    else:
+        _refer_onward(instance, stage, user, refer_to, referral_note)
+
     # A well named at any stage belongs to the instance, not just the payload.
     if payload and payload.get("well") and not instance.well_id:
         well, raw = resolve_well(payload["well"], create_missing=False)
@@ -496,6 +598,143 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
 
     if not refresh_position(instance):
         finalize(instance, user)
+    db.session.commit()
+    return instance
+
+
+# ── referrals ────────────────────────────────────────────────────────────────
+def _approver_for(stage: WorkflowStage):
+    """Who signs this stage off. Falls back to nobody rather than guessing."""
+    return stage.approver_id
+
+
+def next_stage_after(instance: WorkflowInstance, stage_number: int):
+    """The next stage of this run that is still owed."""
+    return next((s for s in pending_stages(instance)
+                 if s.stage_number > stage_number), None)
+
+
+def referral_choices(instance: WorkflowInstance, stage: WorkflowStage) -> dict:
+    """What the submit form should offer for «ارجاع به».
+
+    Only meaningful for a stage the admin set to ``choose``; the other modes
+    decide by themselves and the page shows who it will go to.
+    """
+    target = next_stage_after(instance, stage.stage_number)
+    data = {
+        "mode": stage.referral_mode,
+        "hint": stage.referral_hint,
+        "needs_approval": stage.needs_approval,
+        "approver_name": stage.approver.full_name if stage.approver else None,
+        "next_stage": (
+            {"stage_number": target.stage_number, "title": target.title,
+             "assignee_name": (target.assignee.full_name
+                               if target.assignee else None)}
+            if target else None),
+        "default_user_id": stage.referral_user_id,
+        "default_user_name": (stage.referral_user.full_name
+                              if stage.referral_user else None),
+        "users": [],
+    }
+    if stage.referral_mode == REFER_CHOOSE:
+        from ..models.auth import AppUser
+        data["users"] = [
+            {"id": u.id, "full_name": u.full_name, "username": u.username,
+             "role_label": u.role_label}
+            for u in AppUser.query.filter_by(is_active=True)
+            .order_by(AppUser.first_name, AppUser.username).all()]
+    return data
+
+
+def _refer_onward(instance, stage, user, refer_to=None, referral_note=None):
+    """Put the next stage in somebody's کارتابل, by name.
+
+    «ارجاع به کارگاه مکانیک جهت دمونتاژ» is not a figure of speech in this
+    workshop: the next person is chosen when the work is handed over, and the
+    handover is recorded — who sent it, to whom, and what they said.
+    """
+    target = next_stage_after(instance, stage.stage_number)
+    if target is None:
+        return None
+    entry = _ensure_entry(instance, target)
+    if entry.status not in (ENTRY_PENDING, ENTRY_REJECTED):
+        return None                       # already dealt with; leave it alone
+
+    if stage.referral_mode == REFER_USER:
+        chosen = stage.referral_user_id
+    elif stage.referral_mode == REFER_CHOOSE:
+        chosen = refer_to or stage.referral_user_id
+    else:
+        chosen = None                     # the next stage's own متولی
+    if chosen is None:
+        return None
+
+    from ..models.auth import AppUser
+    person = db.session.get(AppUser, int(chosen))
+    if person is None or not person.is_active:
+        raise WorkflowError("کاربری که کار به او ارجاع شده پیدا نشد یا "
+                            "غیرفعال است.")
+    entry.status = ENTRY_PENDING
+    entry.referred_to_id = person.id
+    entry.referred_by_id = user.id if user else None
+    entry.referred_at = local_now()
+    entry.referral_note = referral_note or None
+    record_audit("update", "workflow", instance.id,
+                 summary=f"ارجاع مرحله {target.stage_number} «{target.title}» "
+                         f"به «{person.full_name}»")
+    return entry
+
+
+def decide_stage(instance: WorkflowInstance, stage_number: int, user,
+                 approved: bool, comment: str | None = None):
+    """Approve a stage, or send it back to be redone.
+
+    A rejection is not a dead end — it returns the work to whoever filled it
+    (or to whichever stage the admin nominated) with the reason attached, so
+    «برگشت به کارگاه جهت اصلاح» is a round trip rather than a full stop.
+    """
+    if instance.status != INSTANCE_OPEN:
+        raise WorkflowError("این فرایند بسته شده است.")
+    stage = stage_by_number(instance, stage_number)
+    entry = _entry_for(instance, stage_number)
+    if stage is None or entry is None:
+        raise WorkflowError("مرحله‌ی موردنظر پیدا نشد.")
+    if entry.status != ENTRY_AWAITING:
+        raise WorkflowError(f"مرحله «{stage.title}» در انتظار تأیید نیست.")
+    manager = user is not None and (user.role == "admin"
+                                    or user.can("workflow.manage"))
+    if not manager and entry.approver_id != (user.id if user else None):
+        raise WorkflowError("تأیید این مرحله در اختیار شما نیست.")
+    if not approved and not (comment or "").strip():
+        raise WorkflowError("برای برگشت دادن، ذکر دلیل الزامی است.")
+
+    entry.decided_by_id = user.id if user else None
+    entry.decided_at = local_now()
+    entry.decision_note = comment or None
+
+    if approved:
+        entry.status = ENTRY_SUBMITTED
+        record_audit("update", "workflow", instance.id,
+                     summary=f"تأیید مرحله {stage.stage_number} «{stage.title}»")
+        _refer_onward(instance, stage, user)
+        if not refresh_position(instance):
+            finalize(instance, user)
+    else:
+        back = (stage_by_number(instance, stage.reject_to_stage)
+                if stage.reject_to_stage is not None else None) or stage
+        target = _ensure_entry(instance, back)
+        target.status = ENTRY_REJECTED
+        target.referred_to_id = entry.user_id or target.referred_to_id
+        target.referred_by_id = user.id if user else None
+        target.referred_at = local_now()
+        target.referral_note = comment
+        target.note = (f"برگشت از «{stage.title}»: {comment}")
+        if back.stage_number != stage.stage_number:
+            entry.status = ENTRY_PENDING        # this stage waits to re-judge
+        record_audit("update", "workflow", instance.id,
+                     summary=f"برگشت مرحله {stage.stage_number} "
+                             f"«{stage.title}» به «{back.title}»")
+        refresh_position(instance)
     db.session.commit()
     return instance
 

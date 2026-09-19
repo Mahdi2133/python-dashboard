@@ -5,7 +5,7 @@
     "threads": 16,
     "secret_key": "change-me-electropump-workshop",
     "database_filename": "wells.db",
-    "database_path": "",
+    "database_path": "/tmp/claude-0/user_db.db",
     "log_level": "INFO",
     "backup_keep": 30,
     "app_title": "سامانه مدیریت کارگاه الکتروپمپ",

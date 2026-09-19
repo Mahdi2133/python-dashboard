@@ -47,7 +47,38 @@
       <div id="wf-attachments" class="mt-1"></div>
     </div>
 
-    <div class="form-actions">
+    <!-- Where this stage's work goes next. Shown only when the stage was set
+         up to let the person finishing it choose. -->
+    <div class="wf-refer-box hidden" id="wf-refer-box">
+      <div class="section-title"><span>🔀</span><span>ارجاع</span></div>
+      <div id="wf-refer-info" class="hint"></div>
+      <div class="field" id="wf-refer-pick">
+        <label>ارجاع به <span class="req">*</span></label>
+        <select id="wf-refer-to"></select>
+      </div>
+      <div class="field">
+        <label>توضیح ارجاع</label>
+        <input type="text" id="wf-refer-note"
+               placeholder="مثلاً: جهت دمونتاژ و ارائه گزارش">
+      </div>
+    </div>
+
+    <!-- The approver's side: the same page, a verdict instead of a form. -->
+    <div class="wf-decide-box hidden" id="wf-decide-box">
+      <div class="section-title"><span>✅</span><span>تأیید این مرحله</span></div>
+      <div id="wf-decide-info" class="hint"></div>
+      <div class="field">
+        <label>نظر شما <span class="hint">(برای برگشت دادن الزامی است)</span></label>
+        <textarea id="wf-decide-note" rows="2"
+                  placeholder="مثلاً: پلاک موتور با گزارش نمی‌خواند."></textarea>
+      </div>
+      <div class="form-actions">
+        <button class="btn-primary" id="wf-approve" type="button">✅ تأیید و ارجاع به مرحله بعد</button>
+        <button class="btn-danger" id="wf-reject" type="button">↩ برگشت جهت اصلاح</button>
+      </div>
+    </div>
+
+    <div class="form-actions" id="wf-submit-actions">
       <button class="btn-primary" id="wf-submit" type="button">✅ ثبت و ارسال مرحله</button>
       <button class="btn-secondary" id="wf-close" type="button">↩ بستن</button>
     </div>
