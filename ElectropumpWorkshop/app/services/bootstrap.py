@@ -33,6 +33,17 @@ _MOVED_FK = {
 }
 
 
+# Columns a later release added and this one removed again. ALTER TABLE can
+# add a column but never drop one, so a table still carrying one has to be
+# rebuilt — and it must be, not merely tidied: the graph release wrote
+# `workflow_definitions.version` as NOT NULL with no default, and the model
+# that replaced it does not know the column exists, so every INSERT into that
+# table fails until it is gone.  table -> (a column only that release had, why)
+_REMOVED_COLUMNS = {
+    "workflow_definitions": ("version", "process templates are not versioned"),
+}
+
+
 def _rebuild_stale_fk_tables() -> list:
     """Rebuild tables still carrying a foreign key to the old users table.
 
@@ -56,6 +67,14 @@ def _rebuild_stale_fk_tables() -> list:
                and column in (fk.get("constrained_columns") or [])
                for fk in insp.get_foreign_keys(table)):
             todo.append((table, [c["name"] for c in insp.get_columns(table)]))
+    for table, (column, why) in _REMOVED_COLUMNS.items():
+        if table not in tables or table not in db.metadata.tables:
+            continue
+        present = {c["name"] for c in insp.get_columns(table)}
+        if column in present and column not in db.metadata.tables[table].columns:
+            log.warning("Rebuilding %s to drop the leftover column %r: %s",
+                        table, column, why)
+            todo.append((table, sorted(present)))
     if not todo:
         return []
 
@@ -108,8 +127,7 @@ def _rebuild_stale_fk_tables() -> list:
                 conn.execute(f'DROP TABLE "{table}__old"')
                 conn.execute("COMMIT")
                 rebuilt.append(table)
-                log.warning("Rebuilt %s so its user reference points at app_users",
-                            table)
+                log.warning("Rebuilt %s to match the current models", table)
             except Exception:
                 conn.execute("ROLLBACK")
                 log.exception("Could not rebuild %s; the original table is intact",

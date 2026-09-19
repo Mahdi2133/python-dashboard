@@ -11,6 +11,7 @@
   'use strict';
   var A = window.App, J = window.Jalali;
   var definition = null;      // { workflow, palette, users, applies_to }
+  var processes = [];         // every defined process, for the selector
   var dragging = null;        // { kind, id, title, from }
 
   /* ── palette ────────────────────────────────────────────────────────── */
@@ -36,6 +37,126 @@
           + '<span class="pal-meta">' + A.esc(f.section_title || '') + '</span>'
           + '</div>';
       }).join('') || '<div class="hint">موردی یافت نشد.</div>';
+  }
+
+  /* ── the process itself ─────────────────────────────────────────────── */
+  async function loadProcesses(selectId) {
+    try {
+      processes = (await A.api.get('/api/workflow/definitions')).data || [];
+    } catch (err) { processes = []; }
+    var select = A.qs('#wf-process');
+    if (!select) return;
+    var current = selectId || (definition && definition.workflow.id);
+    select.innerHTML = processes.map(function (p) {
+      return '<option value="' + p.id + '"'
+        + (p.id === current ? ' selected' : '') + '>' + A.esc(p.name)
+        + (p.is_active ? ' — فعال' : '') + '</option>';
+    }).join('') || '<option value="">— فرایندی تعریف نشده —</option>';
+    renderProcessBox();
+  }
+
+  function renderProcessBox() {
+    var wf = definition && definition.workflow;
+    if (!wf) return;
+    var row = processes.filter(function (p) { return p.id === wf.id; })[0] || {};
+    A.qs('#wf-proc-name').value = wf.name || '';
+    A.qs('#wf-proc-desc').value = wf.description || '';
+    A.qs('#wf-proc-active').checked = !!wf.is_active;
+    var note = [];
+    if (row.instance_count) {
+      note.push('این فرایند ' + J.toFaDigits(row.instance_count)
+        + ' بار اجرا شده است، بنابراین حذف نمی‌شود — فقط می‌توان غیرفعالش کرد.');
+    }
+    if (!wf.is_active) {
+      note.push('غیرفعال است: فرایند تازه‌ای روی آن شروع نمی‌شود.');
+    }
+    fillNote(note.join(' '));
+  }
+
+  function fillNote(text) {
+    var box = A.qs('#wf-proc-note');
+    if (box) box.textContent = text || '';
+  }
+
+  async function switchProcess(id) {
+    try {
+      definition = (await A.api.get('/api/workflow/definition?workflow_id='
+                                    + id)).data;
+      renderPalette();
+      renderStages();
+      renderProcessBox();
+    } catch (err) { A.toast(err.message, 'error'); }
+  }
+
+  async function saveProcess() {
+    if (!definition) return;
+    try {
+      await A.api.put('/api/workflow/definitions/' + definition.workflow.id, {
+        name: A.qs('#wf-proc-name').value.trim(),
+        description: A.qs('#wf-proc-desc').value.trim(),
+        is_active: A.qs('#wf-proc-active').checked,
+      });
+      A.toast('فرایند ذخیره شد.', 'success');
+      await switchProcess(definition.workflow.id);
+      await loadProcesses(definition.workflow.id);
+    } catch (err) { A.toast(err.message, 'error'); }
+  }
+
+  async function newProcess() {
+    var name = window.prompt('نام فرایند جدید:');
+    if (!name || !name.trim()) return;
+    try {
+      var res = await A.api.post('/api/workflow/definitions',
+                                 { name: name.trim() });
+      A.toast(res.message || 'ساخته شد.', 'success');
+      await switchProcess(res.data.id);
+      await loadProcesses(res.data.id);
+    } catch (err) { A.toast(err.message, 'error'); }
+  }
+
+  async function deleteProcess() {
+    if (!definition) return;
+    var okToGo = await A.confirmDialog({
+      title: 'حذف فرایند',
+      message: 'فرایند «' + definition.workflow.name + '» با همه‌ی مرحله‌هایش '
+        + 'حذف شود؟ اگر اجرایی داشته باشد، حذف نمی‌شود.',
+    });
+    if (!okToGo) return;
+    try {
+      var res = await A.api.del('/api/workflow/definitions/'
+                                + definition.workflow.id);
+      A.toast(res.message || 'حذف شد.', 'success');
+      definition = (await A.api.get('/api/workflow/definition')).data;
+      renderPalette(); renderStages();
+      await loadProcesses();
+    } catch (err) { A.toast(err.message, 'error'); }
+  }
+
+  async function addStage() {
+    var title = window.prompt('عنوان مرحله جدید:');
+    if (!title || !title.trim()) return;
+    try {
+      await A.api.post('/api/workflow/stages', {
+        workflow_id: definition.workflow.id, title: title.trim(),
+      });
+      A.toast('مرحله اضافه شد. حالا متولی و فرمش را مشخص کنید.', 'success');
+      await switchProcess(definition.workflow.id);
+      await loadProcesses(definition.workflow.id);
+    } catch (err) { A.toast(err.message, 'error'); }
+  }
+
+  async function removeStage(card) {
+    var title = card.querySelector('.wf-stage-title').value;
+    var okToGo = await A.confirmDialog({
+      title: 'حذف مرحله',
+      message: 'مرحله «' + title + '» حذف شود؟',
+    });
+    if (!okToGo) return;
+    try {
+      var res = await A.api.del('/api/workflow/stages/' + card.dataset.stage);
+      A.toast(res.message || 'حذف شد.', 'success');
+      await switchProcess(definition.workflow.id);
+    } catch (err) { A.toast(err.message, 'error'); }
   }
 
   /* ── stages ─────────────────────────────────────────────────────────── */
@@ -131,7 +252,8 @@
 
   function renderStages() {
     A.qs('#wf-name').textContent = definition.workflow.name
-      + ' — ' + definition.workflow.description;
+      + (definition.workflow.description
+          ? ' — ' + definition.workflow.description : '');
     A.qs('#wf-stages').innerHTML = definition.workflow.stages.map(function (s) {
       var zero = s.stage_number === 0;
       return '<div class="wf-stage card' + (s.assignee_id ? '' : ' unassigned')
@@ -158,10 +280,18 @@
         + '</ul>'
         + '<div class="wf-stage-foot">'
         + '<button class="btn-primary btn-sm save-stage" type="button">💾 ذخیره مرحله</button>'
+        + (zero ? '' : '<button class="btn-sm btn-del del-stage" type="button" '
+            + 'title="حذف مرحله">🗑</button>')
         + '<span class="save-state"></span>'
         + '</div>'
         + '</div>';
-    }).join('');
+    }).join('')
+      + '<div class="wf-stage card wf-add-stage">'
+      + '<h4>➕ مرحله تازه</h4>'
+      + '<div class="hint">یک مرحله به این فرایند اضافه کنید، سپس متولی، '
+      + 'فرم و ارجاعش را مشخص کنید.</div>'
+      + '<button class="btn-ghost btn-sm" id="wf-add-stage" type="button">'
+      + 'افزودن مرحله</button></div>';
     wireDragTargets();
   }
 
@@ -329,8 +459,15 @@
     }
     renderPalette();
     renderStages();
+    loadProcesses();
 
     A.qs('#pal-search').addEventListener('input', renderPalette);
+    A.qs('#wf-process').addEventListener('change', function () {
+      if (this.value) switchProcess(Number(this.value));
+    });
+    A.qs('#wf-proc-save').addEventListener('click', saveProcess);
+    A.qs('#wf-proc-new').addEventListener('click', newProcess);
+    A.qs('#wf-proc-del').addEventListener('click', deleteProcess);
 
     /* One delegated listener each, so redrawing the stages never leaves a
        stale handler behind. */
@@ -371,7 +508,10 @@
         return;
       }
       var save = ev.target.closest('.save-stage');
-      if (save) saveStage(save.closest('.wf-stage'));
+      if (save) { saveStage(save.closest('.wf-stage')); return; }
+      var drop = ev.target.closest('.del-stage');
+      if (drop) { removeStage(drop.closest('.wf-stage')); return; }
+      if (ev.target.closest('#wf-add-stage')) addStage();
     });
     A.qs('#wf-stages').addEventListener('change', function (ev) {
       var card = ev.target.closest('.wf-stage');

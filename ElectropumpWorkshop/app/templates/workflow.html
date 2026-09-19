@@ -16,10 +16,39 @@
 
 <!-- ── designer ──────────────────────────────────────────────────────── -->
 <section id="pane-design">
+  <!-- Which process is being edited, and the box for defining another one.
+       A workshop runs one at a time, but the one it runs is not fixed. -->
+  <div class="wf-processes card">
+    <div class="wf-proc-row">
+      <div class="field">
+        <label>فرایند</label>
+        <select id="wf-process"></select>
+      </div>
+      <div class="field">
+        <label>نام فرایند</label>
+        <input type="text" id="wf-proc-name" placeholder="نام این فرایند">
+      </div>
+      <div class="field wide">
+        <label>توضیح</label>
+        <input type="text" id="wf-proc-desc" placeholder="این فرایند برای چیست؟">
+      </div>
+      <label class="mini-check" title="فرایندهای تازه روی همین تعریف شروع می‌شوند">
+        <input type="checkbox" id="wf-proc-active"> فرایند فعال
+      </label>
+      <div class="wf-proc-actions">
+        <button class="btn-primary btn-sm" id="wf-proc-save" type="button">💾 ذخیره</button>
+        <button class="btn-ghost btn-sm" id="wf-proc-new" type="button">➕ فرایند جدید</button>
+        <button class="btn-ghost btn-sm danger" id="wf-proc-del" type="button">🗑 حذف</button>
+      </div>
+    </div>
+    <div class="hint" id="wf-proc-note"></div>
+  </div>
+
   <div class="alert info">
     برای هر مرحله، <b>متولی</b> را از فهرست کاربران انتخاب کنید و بخش‌ها یا
     فیلدهای موردنیاز آن مرحله را از پالت سمت چپ <b>بکشید و رها کنید</b>.
-    هر مورد می‌تواند فقط در «کشیدن»، فقط در «نصب»، یا در هر دو ظاهر شود.
+    در بخش <b>«ارجاع و تأیید»</b> هر مرحله مشخص کنید کار پس از ثبت به کدام
+    کارتابل برود و چه کسی باید آن را تأیید کند.
   </div>
 
   <div class="wf-builder">

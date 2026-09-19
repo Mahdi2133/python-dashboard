@@ -68,10 +68,24 @@ def _attachment_dir():
 # documents filter needs it.
 @permission_required_any("workflow.view", "workflow.act", "workflow.manage")
 def get_definition():
-    """The process as it stands, plus everything droppable onto a stage."""
-    workflow = active_workflow()
+    """The process as it stands, plus everything droppable onto a stage.
+
+    Without ``workflow_id`` this is the active process — what the کارتابل
+    runs. With one, it is whichever process the builder's selector is on,
+    which need not be the active one: a process is usually drawn before it is
+    switched on.
+    """
+    wanted = request.args.get("workflow_id")
+    if wanted:
+        workflow = db.session.get(WorkflowDefinition, int(wanted))
+        if workflow is None:
+            return fail("فرایند یافت نشد.", 404)
+    else:
+        workflow = active_workflow() or WorkflowDefinition.query.order_by(
+            WorkflowDefinition.id).first()
     if workflow is None:
-        return fail("هیچ فرایند فعالی تعریف نشده است.", 404)
+        return fail("هیچ فرایندی تعریف نشده است. با دکمه‌ی «فرایند جدید» "
+                    "یکی بسازید.", 404)
     sections = (FormSection.query.filter_by(is_active=True)
                 .order_by(FormSection.sort_order).all())
     palette_sections = [{"kind": "section", "id": s.id, "code": s.code,
@@ -96,6 +110,168 @@ def get_definition():
                                   for k, v in REFERRAL_MODES.items()],
                "operation_kinds": [{"value": k, "label": v}
                                    for k, v in OPERATION_KINDS.items()]})
+
+
+# ── defining a process ───────────────────────────────────────────────────────
+@bp.get("/definitions")
+@permission_required("workflow.manage")
+def list_definitions():
+    """Every process the workshop has defined, with how many stages each has."""
+    rows = []
+    for wf in WorkflowDefinition.query.order_by(WorkflowDefinition.id).all():
+        rows.append({**wf.to_dict(with_stages=False),
+                     "stage_count": len([s for s in wf.stages if s.is_active]),
+                     "instance_count": WorkflowInstance.query.filter_by(
+                         workflow_id=wf.id).count()})
+    return ok(rows)
+
+
+@bp.post("/definitions")
+@permission_required("workflow.manage")
+def create_definition():
+    """A new process: a name, and a step zero to start it from.
+
+    Everything after that is adding stages and saying who does what — the
+    same screen the existing process uses, because it is the same thing.
+    """
+    payload = body()
+    name = normalize_text(payload.get("name") or "")
+    if not name:
+        return fail("نام فرایند الزامی است.", 422)
+    code = normalize_text(payload.get("code") or "") or f"p{secrets.token_hex(3)}"
+    if WorkflowDefinition.query.filter_by(code=code).first():
+        return fail(f"فرایندی با شناسه «{code}» از قبل هست.", 422)
+    workflow = WorkflowDefinition(
+        code=code, name=name,
+        description=(payload.get("description") or "").strip() or None,
+        is_active=False)
+    db.session.add(workflow)
+    db.session.flush()
+    # Step zero exists in every process: it is what the «شروع فرایند» card in
+    # the کارتابل opens, and it is where the operation and the well are set.
+    intake = WorkflowStage(workflow_id=workflow.id, stage_number=0,
+                           title="شروع فرایند",
+                           description="این مرحله فرایند را آغاز می‌کند.",
+                           is_active=True)
+    db.session.add(intake)
+    db.session.flush()
+    section = FormSection.query.filter_by(code="intake").first()
+    if section is not None:
+        db.session.add(WorkflowStageItem(stage_id=intake.id,
+                                         section_id=section.id, sort_order=0))
+    record_audit("create", "workflow_definition", workflow.id,
+                 summary=f"تعریف فرایند «{name}»")
+    db.session.commit()
+    return ok(workflow.to_dict(), message="فرایند ساخته شد. حالا مرحله‌ها را "
+                                          "اضافه کنید.")
+
+
+@bp.put("/definitions/<int:workflow_id>")
+@permission_required("workflow.manage")
+def update_definition(workflow_id):
+    workflow = db.session.get(WorkflowDefinition, workflow_id)
+    if workflow is None:
+        return fail("فرایند یافت نشد.", 404)
+    payload = body()
+    if "name" in payload:
+        name = normalize_text(payload["name"])
+        if not name:
+            return fail("نام فرایند الزامی است.", 422)
+        workflow.name = name
+    if "description" in payload:
+        workflow.description = (payload["description"] or "").strip() or None
+    if "is_active" in payload:
+        active = payload["is_active"] in (True, "true", "1", 1)
+        if active:
+            if not [s for s in workflow.stages if s.stage_number > 0
+                    and s.is_active]:
+                return fail("فرایندی که هیچ مرحله‌ای ندارد فعال نمی‌شود؛ "
+                            "اول مرحله‌ها را تعریف کنید.", 422)
+            # Exactly one process runs at a time; activating this retires the
+            # others rather than leaving two «فرایند فعال» to choose between.
+            (WorkflowDefinition.query
+             .filter(WorkflowDefinition.id != workflow.id)
+             .update({"is_active": False}, synchronize_session=False))
+        workflow.is_active = active
+    record_audit("update", "workflow_definition", workflow.id,
+                 summary=f"ویرایش فرایند «{workflow.name}»")
+    db.session.commit()
+    return ok(workflow.to_dict(), message="فرایند ذخیره شد.")
+
+
+@bp.delete("/definitions/<int:workflow_id>")
+@permission_required("workflow.manage")
+def delete_definition(workflow_id):
+    workflow = db.session.get(WorkflowDefinition, workflow_id)
+    if workflow is None:
+        return fail("فرایند یافت نشد.", 404)
+    if WorkflowInstance.query.filter_by(workflow_id=workflow.id).count():
+        return fail("این فرایند اجرا داشته است و حذف نمی‌شود؛ می‌توانید "
+                    "غیرفعالش کنید تا فرایند تازه‌ای روی آن شروع نشود.", 409)
+    name = workflow.name
+    db.session.delete(workflow)
+    record_audit("delete", "workflow_definition", workflow_id,
+                 summary=f"حذف فرایند «{name}»")
+    db.session.commit()
+    return ok(message="فرایند حذف شد.")
+
+
+@bp.post("/stages")
+@permission_required("workflow.manage")
+def create_stage():
+    """Add a stage to a process: a title, and who does it."""
+    payload = body()
+    workflow = db.session.get(WorkflowDefinition,
+                              int(payload.get("workflow_id") or 0))
+    if workflow is None:
+        return fail("فرایند یافت نشد.", 404)
+    title = normalize_text(payload.get("title") or "")
+    if not title:
+        return fail("عنوان مرحله الزامی است.", 422)
+    highest = max([s.stage_number for s in workflow.stages] or [0])
+    person, error = _person(payload.get("assignee_id"))
+    if error:
+        return fail(error, 422)
+    applies = payload.get("applies_to") or "both"
+    if applies not in APPLIES_TO:
+        return fail("مقدار «شامل» نامعتبر است.", 422)
+    stage = WorkflowStage(
+        workflow_id=workflow.id, stage_number=highest + 1, title=title,
+        description=(payload.get("description") or "").strip() or None,
+        assignee_id=person.id if person else None,
+        applies_to=applies, is_active=True)
+    db.session.add(stage)
+    record_audit("create", "workflow_stage", workflow.id,
+                 summary=f"افزودن مرحله «{title}» به «{workflow.name}»")
+    db.session.commit()
+    return ok(stage.to_dict(), message="مرحله اضافه شد.")
+
+
+@bp.delete("/stages/<int:stage_id>")
+@permission_required("workflow.manage")
+def delete_stage(stage_id):
+    """Remove a stage — unless a process has already been through it."""
+    stage = db.session.get(WorkflowStage, stage_id)
+    if stage is None:
+        return fail("مرحله یافت نشد.", 404)
+    if stage.stage_number == 0:
+        return fail("مرحله «شروع فرایند» حذف نمی‌شود؛ هر فرایندی از جایی "
+                    "شروع می‌شود.", 409)
+    used = WorkflowStageEntry.query.filter_by(stage_id=stage.id).count()
+    title = stage.title
+    if used:
+        # Somebody's work hangs off it. Take it out of the chain but keep the
+        # row, so the history that points at it still reads.
+        stage.is_active = False
+        message = ("این مرحله در فرایندهای قبلی سابقه دارد، بنابراین غیرفعال "
+                   "شد تا تاریخچه‌اش از بین نرود.")
+    else:
+        db.session.delete(stage)
+        message = "مرحله حذف شد."
+    record_audit("delete", "workflow_stage", stage_id,
+                 summary=f"حذف مرحله «{title}»")
+    db.session.commit()
+    return ok(message=message)
 
 
 @bp.put("/stages/<int:stage_id>")

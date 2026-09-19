@@ -700,3 +700,21 @@ select.mini { font-size:11px; padding:2px 4px; width:auto; }
 .wf-item.referred { border-inline-start:4px solid var(--info); }
 .wf-item.to-approve { border-inline-start:4px solid var(--accent); }
 .wf-item-refer { font-size:11px; color:var(--info); }
+
+/* ── choosing and defining a process ──────────────────────────────────── */
+.wf-processes { padding:12px 14px; margin-bottom:14px; }
+.wf-proc-row { display:flex; flex-wrap:wrap; align-items:flex-end; gap:10px; }
+.wf-proc-row .field { margin:0; min-width:170px; }
+.wf-proc-row .field.wide { flex:1; min-width:220px; }
+.wf-proc-row .field label { display:block; font-size:11.5px;
+  color:var(--text-muted); margin-bottom:3px; }
+.wf-proc-row .field input, .wf-proc-row .field select { width:100%; }
+.wf-proc-actions { display:flex; gap:6px; margin-inline-start:auto; }
+.btn-ghost.danger { color:var(--danger); border-color:#e3b6b0; }
+.btn-ghost.danger:hover { background:#fdecea; }
+#wf-proc-note { margin-top:8px; }
+
+/* Adding a stage sits at the end of the stage list, where a new one lands. */
+.wf-stage.wf-add-stage { border-style:dashed; background:var(--input-bg);
+  display:flex; flex-direction:column; gap:8px; justify-content:center; }
+.wf-stage.wf-add-stage h4 { font-size:13px; color:var(--primary); }
