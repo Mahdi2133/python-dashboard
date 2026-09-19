@@ -18,6 +18,11 @@ from ..extensions import db
 FIELD_TYPES = (
     "text", "number", "textarea", "date", "jalali_date", "select", "radio",
     "checkbox", "multiselect", "autocomplete",
+    # A checklist is a checkbox group that reads as a list of things to do:
+    # one item per line, ticked off. It is its own type because a stage often
+    # wants to *show* the list somebody else ticked, and «چندانتخابی» laid out
+    # as a row of buttons is unreadable once there are a dozen of them.
+    "checklist",
 )
 
 
@@ -91,7 +96,8 @@ class FormField(db.Model):
                               cascade="all, delete-orphan",
                               order_by="FormFieldOption.sort_order")
 
-    CHOICE_TYPES = ("select", "radio", "checkbox", "multiselect", "autocomplete")
+    CHOICE_TYPES = ("select", "radio", "checkbox", "multiselect",
+                    "autocomplete", "checklist")
 
     @property
     def is_choice(self):

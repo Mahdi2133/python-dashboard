@@ -7,7 +7,8 @@
   var TYPE_LABELS = {
     text: 'متن', number: 'عدد', textarea: 'متن بلند', date: 'تاریخ میلادی',
     jalali_date: 'تاریخ شمسی', select: 'لیست کشویی', radio: 'تک‌انتخابی',
-    checkbox: 'چندانتخابی', multiselect: 'چندانتخابی (لیست)', autocomplete: 'جستجوی خودکار'
+    checkbox: 'چندانتخابی', multiselect: 'چندانتخابی (لیست)',
+    autocomplete: 'جستجوی خودکار', checklist: 'چک‌لیست'
   };
 
   async function load() {
@@ -106,7 +107,8 @@
     A.qs('#fb-options-bulk').classList.add('hidden');
     A.qs('#fb-options-bulk').value = '';
 
-    var choiceTypes = ['select', 'radio', 'checkbox', 'multiselect', 'autocomplete'];
+    var choiceTypes = ['select', 'radio', 'checkbox', 'multiselect',
+                       'autocomplete', 'checklist'];
     if (!field) {
       /* New field: options are typed in before the field exists. */
       wrap.classList.toggle('hidden', !choiceTypes.includes(A.qs('#fb-type').value));

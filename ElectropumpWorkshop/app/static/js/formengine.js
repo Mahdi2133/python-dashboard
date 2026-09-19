@@ -108,6 +108,45 @@
       }
     }
 
+    /* A checklist: one item per line with a box to tick, and — when it is
+       being shown rather than filled — the same lines with what was ticked
+       already marked. Reading «۷ مورد از ۱۲» off a row of buttons is the
+       thing this type exists to avoid. */
+    function renderChecklist(field, locked) {
+      var items = optionsFor(field);
+      if (!items.length) {
+        return '<div class="hint">برای این چک‌لیست موردی تعریف نشده است.</div>';
+      }
+      var done = [];
+      if (locked) {
+        var raw = field.read_only_value;
+        done = Array.isArray(raw) ? raw.map(String)
+          : String(raw == null ? '' : raw).split(/[،,]/)
+              .map(function (x) { return x.trim(); }).filter(Boolean);
+      }
+      return '<ul class="checklist' + (locked ? ' locked' : '') + '" data-field="'
+        + A.esc(field.field_name) + '">'
+        + items.map(function (opt, i) {
+            var value = opt.value === undefined ? opt : opt.value;
+            var label = opt.label || value;
+            var ticked = locked && done.indexOf(String(value)) >= 0;
+            return '<li class="checklist-item' + (ticked ? ' done' : '') + '">'
+              + '<label>'
+              + '<input type="checkbox" name="' + A.esc(field.field_name) + '"'
+              + ' id="fld-' + A.esc(field.field_name) + '-' + i + '"'
+              + ' value="' + A.esc(value) + '"'
+              + (ticked ? ' checked' : '') + (locked ? ' disabled' : '') + '>'
+              + '<span class="checklist-mark"></span>'
+              + '<span class="checklist-text">' + A.esc(label) + '</span>'
+              + '</label></li>';
+          }).join('')
+        + '</ul>'
+        + (locked
+            ? '<div class="hint checklist-count">'
+              + done.length + ' مورد از ' + items.length + ' انجام شده</div>'
+            : '');
+    }
+
     function renderField(field) {
       var body;
       if (field.field_type === 'radio') body = renderChoice(field, false);
@@ -118,16 +157,21 @@
           + A.esc(field.field_name) + '" name="' + A.esc(field.field_name)
           + '" value="1"><span class="btn-opt">بله</span></label></div>';
       } else if (field.field_type === 'multiselect') body = renderChoice(field, true);
+      else if (field.field_type === 'checklist') body = renderChecklist(field);
       else if (field.field_type === 'select') body = renderSelect(field);
       else body = renderInput(field);
 
       /* Settled upstream: shown and filled so the stage can see it, but not
-         editable here — the well is chosen once, at step zero. */
+         editable here — the well is chosen once, at step zero, and a checklist
+         somebody already ticked is carried forward as a record of what they
+         ticked rather than as a form to fill again. */
       if (field.read_only) {
-        body = '<input type="text" id="fld-' + A.esc(field.field_name) + '"'
-          + ' value="' + A.esc(field.read_only_value == null ? ''
-                               : String(field.read_only_value)) + '"'
-          + ' readonly disabled>';
+        body = field.field_type === 'checklist'
+          ? renderChecklist(field, true)
+          : '<input type="text" id="fld-' + A.esc(field.field_name) + '"'
+            + ' value="' + A.esc(field.read_only_value == null ? ''
+                                 : String(field.read_only_value)) + '"'
+            + ' readonly disabled>';
       }
       var span = field.col_span > 1 ? ' span-' + Math.min(field.col_span, 2) : '';
       /* Long option lists and free text need the whole row; squeezing 20
@@ -407,7 +451,7 @@
         var other = otherValue(name);
         return other || value;
       }
-      if (field.field_type === 'checkbox' || field.field_type === 'multiselect') {
+      if (['checkbox', 'multiselect', 'checklist'].includes(field.field_type)) {
         if (optionsFor(field).length) {
           var values = checkedValues(name);
           var extra = otherValue(name);
@@ -478,7 +522,7 @@
         if (other && value) other.value = value;
         return;
       }
-      if (field.field_type === 'checkbox' || field.field_type === 'multiselect') {
+      if (['checkbox', 'multiselect', 'checklist'].includes(field.field_type)) {
         if (optionsFor(field).length) {
           var wanted = Array.isArray(value) ? value
             : String(value || '').split(',').map(function (v) { return v.trim(); });

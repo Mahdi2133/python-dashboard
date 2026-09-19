@@ -718,3 +718,34 @@ select.mini { font-size:11px; padding:2px 4px; width:auto; }
 .wf-stage.wf-add-stage { border-style:dashed; background:var(--input-bg);
   display:flex; flex-direction:column; gap:8px; justify-content:center; }
 .wf-stage.wf-add-stage h4 { font-size:13px; color:var(--primary); }
+
+/* ── checklists ───────────────────────────────────────────────────────── */
+/* One item per line with a box to tick. When a later stage is shown a
+   checklist somebody else filled, the same lines appear with the ticks in
+   place and the boxes disabled — a record of what was done, not a form. */
+.checklist { list-style:none; margin:4px 0 0; padding:0; display:grid;
+  gap:4px; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); }
+.checklist-item label { display:flex; align-items:flex-start; gap:8px;
+  padding:7px 10px; border:1px solid var(--border); border-radius:9px;
+  background:var(--card); cursor:pointer; font-size:13px; line-height:1.6;
+  transition:border-color .15s, background .15s; }
+.checklist-item label:hover { border-color:var(--primary-light);
+  background:#f4f9fd; }
+.checklist-item input { position:absolute; opacity:0; width:0; height:0; }
+.checklist-mark { flex:none; width:18px; height:18px; margin-top:2px;
+  border:2px solid var(--border); border-radius:5px; background:var(--card);
+  position:relative; transition:all .15s; }
+.checklist-item input:checked + .checklist-mark { background:var(--success);
+  border-color:var(--success); }
+.checklist-item input:checked + .checklist-mark::after { content:'✓';
+  position:absolute; inset:0; color:#fff; font-size:13px; font-weight:800;
+  display:flex; align-items:center; justify-content:center; line-height:1; }
+.checklist-item input:focus-visible + .checklist-mark {
+  box-shadow:0 0 0 3px rgba(30,111,165,.25); }
+.checklist-item input:checked ~ .checklist-text { font-weight:600; }
+.checklist.locked .checklist-item label { cursor:default; background:var(--bg); }
+.checklist.locked .checklist-item label:hover { border-color:var(--border);
+  background:var(--bg); }
+.checklist.locked .checklist-item:not(.done) .checklist-text {
+  color:var(--text-muted); }
+.checklist-count { margin-top:6px; font-weight:600; }

@@ -250,7 +250,7 @@ def _apply_dynamic(record, payload, errors):
                 holder.value_date = dt.date.fromisoformat(str(raw))
             except ValueError:
                 errors[name] = "قالب تاریخ نامعتبر است."
-        elif field.field_type in ("checkbox", "multiselect"):
+        elif field.field_type in ("checkbox", "multiselect", "checklist"):
             holder.value_text = ", ".join(raw) if isinstance(raw, list) else str(raw)
         else:
             holder.value_text = str(raw)
