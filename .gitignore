@@ -34,3 +34,12 @@ Thumbs.db
 /production_unmatched_wells.xlsx
 /aid_reconciliation.xlsx
 /remaining_duplicates.xlsx
+
+# Hand-over artefacts. These are copies of ElectropumpWorkshop/ built for
+# delivery — a zip, a tarball, a git bundle — not sources. An earlier session
+# committed one of each, which put a second copy of the whole project in the
+# history; they are rebuilt on demand and do not belong in it.
+/ElectropumpWorkshop_FULL/
+/ElectropumpWorkshop_*.zip
+/ElectropumpWorkshop_*.tar.gz
+/ElectropumpWorkshop_*.bundle
