@@ -142,6 +142,26 @@ def _rebuild_stale_fk_tables() -> list:
     return rebuilt
 
 
+def _default_literal(column):
+    """A column's default as a SQL literal, or None when it has no plain one.
+
+    Used to fill in the rows that predate a column: SQLite's ALTER TABLE gives
+    them NULL, which is the wrong answer for a column the model declares NOT
+    NULL with a default — those rows would read as «تعیین نشده» instead of as
+    the default the model promises.
+    """
+    default = getattr(column.default, "arg", None)
+    if default is None or callable(default):
+        return None
+    if default is True:
+        return "1"
+    if default is False:
+        return "0"
+    if isinstance(default, (int, float)):
+        return str(default)
+    return "'" + str(default).replace("'", "''") + "'"
+
+
 def _add_missing_columns() -> list:
     """Add columns the models gained since the database file was created.
 
@@ -171,6 +191,15 @@ def _add_missing_columns() -> list:
                 with db.engine.begin() as conn:
                     conn.execute(text(
                         f'ALTER TABLE "{name}" ADD COLUMN "{column.name}" {ddl}'))
+                    # SQLite fills the existing rows with NULL, which is wrong
+                    # for a column the model declares NOT NULL with a default:
+                    # the rows that predate the column would read as «تعیین
+                    # نشده» rather than as the default the model promises.
+                    backfill = _default_literal(column)
+                    if backfill is not None:
+                        conn.execute(text(
+                            f'UPDATE "{name}" SET "{column.name}" = {backfill} '
+                            f'WHERE "{column.name}" IS NULL'))
                 added.append(f"{name}.{column.name}")
                 log.warning("Added missing column %s.%s (%s)", name, column.name, ddl)
             except Exception:
@@ -180,6 +209,42 @@ def _add_missing_columns() -> list:
 
 # Key in app_meta recording which clock the stored timestamps are on.
 _CLOCK_KEY = "timestamp_clock"
+
+
+def _backfill_defaults() -> list:
+    """Give the model's default to rows that were left NULL.
+
+    ``_add_missing_columns`` fills the rows behind a column it adds itself.
+    This catches the other case: a column an *earlier* release added without a
+    backfill, which then sat NULL in a table the model says is NOT NULL.
+    Cheap and idempotent — after the first run it matches nothing.
+    """
+    filled = []
+    insp = inspect(db.engine)
+    tables = set(insp.get_table_names())
+    for name, table in db.metadata.tables.items():
+        if name not in tables:
+            continue
+        present = {c["name"] for c in insp.get_columns(name)}
+        for column in table.columns:
+            if column.nullable or column.name not in present:
+                continue
+            literal = _default_literal(column)
+            if literal is None:
+                continue
+            try:
+                with db.engine.begin() as conn:
+                    count = conn.execute(text(
+                        f'UPDATE "{name}" SET "{column.name}" = {literal} '
+                        f'WHERE "{column.name}" IS NULL')).rowcount or 0
+            except Exception:
+                log.exception("Could not backfill %s.%s", name, column.name)
+                continue
+            if count:
+                filled.append(f"{name}.{column.name} ({count})")
+                log.warning("Filled %s empty %s.%s with %s",
+                            count, name, column.name, literal)
+    return filled
 
 
 def _localise_timestamps(fresh_database: bool) -> dict:
@@ -251,6 +316,7 @@ def ensure_database(app) -> dict:
     status["tables_added"] = sorted(missing)
 
     status["columns_added"] = _add_missing_columns()
+    status["defaults_filled"] = _backfill_defaults()
     status["tables_rebuilt"] = _rebuild_stale_fk_tables()
     # A database with no tables at all before this run is brand new, so its
     # timestamps are already local and must not be shifted.
