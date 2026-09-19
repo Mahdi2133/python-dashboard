@@ -181,7 +181,8 @@
     return '<li class="wf-drop-item" draggable="true" data-item-kind="'
       + A.esc(item.kind) + '" data-item-id="' + (item.section_id || item.field_id)
       + '" data-applies="' + A.esc(item.applies_to) + '"'
-      + ' data-optional="' + (item.is_optional ? '1' : '') + '">'
+      + ' data-optional="' + (item.is_optional ? '1' : '') + '"'
+      + ' data-readonly="' + (item.is_read_only ? '1' : '') + '">'
       + '<span class="grip">⠿</span>'
       + '<span class="wf-item-name">'
       + (item.kind === 'section' ? '📦 ' : '◽ ') + A.esc(item.title || item.code)
@@ -190,6 +191,10 @@
       + '<label class="mini-check" title="اختیاری — نبودنش مانع ثبت مرحله نمی‌شود">'
       + '<input type="checkbox" class="optional"' + (item.is_optional ? ' checked' : '')
       + '> اختیاری</label>'
+      + '<label class="mini-check" title="قفل — آنچه مرحله‌ی قبل پر کرده نشان '
+      + 'داده می‌شود ولی اینجا قابل تغییر نیست">'
+      + '<input type="checkbox" class="readonly"' + (item.is_read_only ? ' checked' : '')
+      + '> 🔒 فقط نمایش</label>'
       + '<button class="btn-sm btn-del remove" type="button" title="حذف">×</button>'
       + '</li>';
   }
@@ -321,7 +326,8 @@
             section_id: dragging.kind === 'section' ? dragging.id : null,
             field_id: dragging.kind === 'field' ? dragging.id : null,
             title: dragging.title, applies_to: dragging.applies || 'both',
-            is_optional: false,
+            is_optional: !!dragging.optional,
+            is_read_only: !!dragging.readonly,
           }));
         }
         markDirty(list.closest('.wf-stage'));
@@ -364,13 +370,23 @@
         body.reject_to_stage = card.querySelector('.wf-reject-to').value || null;
       }
       await A.api.put('/api/workflow/stages/' + id, body);
+      /* Read each control if it is there, fall back to what the row was
+         drawn with if it is not. A desktop install is updated by copying
+         files, so the script and the page it is running against can end up a
+         version apart — and when they do, saving a stage must not die on a
+         checkbox that template does not have yet. */
+      function flag(li, css, attr) {
+        var box = li.querySelector(css);
+        return box ? box.checked : li.dataset[attr] === '1';
+      }
       var items = A.qsa('.wf-drop-item', card).map(function (li) {
+        var applies = li.querySelector('.applies');
         return {
           kind: li.dataset.itemKind,
           id: Number(li.dataset.itemId),
-          applies_to: li.querySelector('.applies').value,
-          is_optional: li.querySelector('.optional').checked,
-          is_read_only: li.querySelector('.readonly').checked,
+          applies_to: applies ? applies.value : (li.dataset.applies || 'both'),
+          is_optional: flag(li, '.optional', 'optional'),
+          is_read_only: flag(li, '.readonly', 'readonly'),
         };
       });
       await A.api.put('/api/workflow/stages/' + id + '/items', { items: items });
@@ -483,6 +499,8 @@
         dragging = { kind: item.dataset.itemKind, id: Number(item.dataset.itemId),
                      title: item.querySelector('.wf-item-name').textContent.trim(),
                      applies: item.querySelector('.applies').value,
+                     optional: item.querySelector('.optional').checked,
+                     readonly: item.querySelector('.readonly').checked,
                      from: item.parentNode, node: item };
         item.classList.add('dragging');
       }
