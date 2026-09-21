@@ -210,6 +210,71 @@
     return value.toLocaleString('fa-IR', { maximumFractionDigits: 3 });
   }
 
+  /* ── the side nav ───────────────────────────────────────────────────── */
+  /* The page's tabs run down the right-hand edge. Two things have to be kept
+     honest from here: where the column starts (the header is sticky and wraps
+     to two lines at some widths, so its height is measured rather than
+     guessed) and whether the column is folded away (remembered per browser,
+     because it is a preference about this screen, not about the data). */
+  var NAV_KEY = 'ew.nav.collapsed';
+
+  function measureHeader() {
+    var header = document.querySelector('.app-header');
+    if (!header) return;
+    document.documentElement.style.setProperty(
+      '--header-h', Math.round(header.getBoundingClientRect().height) + 'px');
+  }
+
+  function setupNav() {
+    var toggle = document.getElementById('nav-toggle');
+    var scrim = document.getElementById('nav-scrim');
+    if (!toggle) return;
+    var wide = function () { return window.innerWidth > 900; };
+
+    var collapsed = false;
+    try { collapsed = localStorage.getItem(NAV_KEY) === '1'; } catch (err) { }
+    document.body.classList.toggle('nav-collapsed', collapsed);
+    toggle.setAttribute('aria-expanded', String(!collapsed));
+
+    function close() {
+      document.body.classList.remove('nav-open');
+      if (scrim) scrim.hidden = true;
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+
+    toggle.addEventListener('click', function () {
+      if (wide()) {
+        // On a wide screen the column folds to its icons and stays put.
+        var now = !document.body.classList.contains('nav-collapsed');
+        document.body.classList.toggle('nav-collapsed', now);
+        toggle.setAttribute('aria-expanded', String(!now));
+        try { localStorage.setItem(NAV_KEY, now ? '1' : '0'); } catch (err) { }
+      } else {
+        // On a narrow one it slides over the page, so it needs a way out.
+        var open = !document.body.classList.contains('nav-open');
+        document.body.classList.toggle('nav-open', open);
+        if (scrim) scrim.hidden = !open;
+        toggle.setAttribute('aria-expanded', String(open));
+      }
+    });
+    if (scrim) scrim.addEventListener('click', close);
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape' && document.body.classList.contains('nav-open')) {
+        close();
+      }
+    });
+    window.addEventListener('resize', function () {
+      if (wide()) close();
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    measureHeader();
+    setupNav();
+  });
+  window.addEventListener('resize', debounce(measureHeader, 120));
+  window.addEventListener('load', measureHeader);
+
   global.App = {
     api: api, request: request, toast: toast, confirmDialog: confirmDialog,
     openModal: openModal, closeModal: closeModal, esc: esc, el: el, qs: qs, qsa: qsa,

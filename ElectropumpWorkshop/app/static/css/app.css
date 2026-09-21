@@ -61,20 +61,51 @@ body {
   text-decoration:none; font-size:12px; font-weight:600; transition:all .18s; }
 .btn-logout:hover { background:var(--secondary); border-color:var(--secondary); }
 
-.app-nav { background:rgba(0,0,0,.12); }
-.nav-inner { display:flex; gap:4px; padding:0 20px; max-width:1800px; margin:0 auto;
-  overflow-x:auto; scrollbar-width:thin; }
+/* ── SIDE NAV ────────────────────────────────────────────────────────────
+   The tabs sit down the right-hand edge rather than across the top: there
+   are fourteen of them, and a column reads them in one glance where a row
+   had to scroll. --header-h is measured in core.js, because the header wraps
+   to two lines at some widths and the nav has to start exactly below it. */
+.nav-toggle { background:rgba(255,255,255,.14); color:#fff; font-size:17px;
+  line-height:1; border:1px solid rgba(255,255,255,.25); border-radius:9px;
+  width:34px; height:34px; cursor:pointer; flex:none; transition:all .18s; }
+.nav-toggle:hover { background:rgba(255,255,255,.26); }
+
+.app-shell { display:flex; align-items:stretch; gap:0; }
+.app-nav {
+  flex:none; width:212px; align-self:stretch;
+  background:linear-gradient(180deg,var(--primary) 0%,var(--primary-light) 140%);
+  box-shadow:-2px 0 14px rgba(10,61,98,.18);
+  position:sticky; top:var(--header-h,104px);
+  min-height:calc(100vh - var(--header-h,104px));
+  max-height:calc(100vh - var(--header-h,104px));
+  overflow-y:auto; overflow-x:hidden; scrollbar-width:thin;
+  transition:width .2s ease, transform .2s ease;
+}
+.nav-inner { display:flex; flex-direction:column; gap:2px; padding:10px 8px 22px; }
 .nav-btn {
   background:transparent; color:rgba(255,255,255,.85); border:0;
-  border-bottom:3px solid transparent; padding:10px 14px; cursor:pointer;
+  border-right:3px solid transparent; border-radius:9px;
+  padding:9px 11px; cursor:pointer;
   font-family:inherit; font-size:13px; font-weight:600; white-space:nowrap;
-  transition:all .18s; display:flex; align-items:center; gap:6px; text-decoration:none;
+  transition:background .18s, color .18s; display:flex; align-items:center;
+  gap:9px; text-decoration:none;
 }
+.nav-btn .nav-icon { flex:none; width:19px; text-align:center; font-size:15px; }
+.nav-btn .nav-label { overflow:hidden; text-overflow:ellipsis; }
 .nav-btn:hover { background:rgba(255,255,255,.12); color:#fff; }
-.nav-btn.active { background:rgba(255,255,255,.18); color:#fff;
-  border-bottom-color:var(--accent); }
+.nav-btn.active { background:rgba(255,255,255,.2); color:#fff;
+  border-right-color:var(--accent); }
 
-.main-container { max-width:1800px; margin:0 auto; padding:18px 20px 60px; }
+/* Collapsed: the list folds away to its icons, so the page gets the width
+   back without losing the way to move between pages. */
+body.nav-collapsed .app-nav { width:52px; }
+body.nav-collapsed .nav-label { display:none; }
+body.nav-collapsed .nav-btn { justify-content:center; padding:9px 4px; gap:0; }
+
+.nav-scrim { display:none; }
+.main-container { flex:1; min-width:0; padding:18px 20px 60px;
+  max-width:1620px; margin-inline-start:auto; }
 
 /* ── PAGE HEADINGS ───────────────────────────────────────────────────────── */
 .page-head { display:flex; align-items:center; justify-content:space-between;
@@ -446,6 +477,7 @@ tbody tr.inactive td:first-child::before { content:'⛔ '; }
   .filter-row, .no-print { display:none !important; }
   body { background:#fff; font-size:11px; }
   .main-container { max-width:none; padding:0; }
+  .app-shell { display:block; }
   .card, .table-wrapper, .chart-card { box-shadow:none; border:1px solid #999;
     break-inside:avoid; }
   .table-scroll { max-height:none; overflow:visible; }
@@ -458,12 +490,25 @@ tbody tr.inactive td:first-child::before { content:'⛔ '; }
 /* ── RESPONSIVE ──────────────────────────────────────────────────────────── */
 @media (max-width:1400px) { .form-grid { columns:2; } }
 @media (max-width:1000px) { .form-grid { columns:1; } }
+/* Under this width the page cannot spare 212px, so the list slides over it
+   and closes again on the way out. */
+@media (max-width:900px) {
+  .app-nav { position:fixed; top:var(--header-h,104px); right:0; bottom:0;
+    width:232px; max-height:none; z-index:880; }
+  body:not(.nav-open) .app-nav { transform:translateX(105%); }
+  body.nav-collapsed .app-nav { width:232px; }
+  body.nav-collapsed .nav-label { display:inline; }
+  body.nav-collapsed .nav-btn { justify-content:flex-start; padding:9px 11px;
+    gap:9px; }
+  body.nav-open .nav-scrim { display:block; position:fixed;
+    top:var(--header-h,104px); inset-inline:0; bottom:0;
+    background:rgba(10,37,48,.45); z-index:870; }
+}
 @media (max-width:640px) {
   .main-container { padding:12px; }
   .header-inner { padding:10px 12px; }
   .header-title h1 { font-size:15px; }
   .header-meta { display:none; }
-  .nav-inner { padding:0 8px; }
   .field-group, .field-group.cols-2, .field-group.cols-3 { grid-template-columns:1fr; }
   .field.span-2 { grid-column:span 1; }
   .charts-grid { grid-template-columns:1fr; }
