@@ -55,7 +55,15 @@ SECTION_WELL_INSTALL = "well_install"
 
 
 class WorkflowError(Exception):
-    """A process rule refused the move. Carries a Persian message."""
+    """A process rule refused the move. Carries a Persian message.
+
+    ``fields`` names the individual answers at fault, so the form can mark
+    each one rather than leaving the operator to hunt for them.
+    """
+
+    def __init__(self, message, fields=None):
+        super().__init__(message)
+        self.fields = fields or {}
 
 
 # ── definition ───────────────────────────────────────────────────────────────
@@ -88,10 +96,36 @@ def entry_stage(workflow, kind: str | None):
     """
     if workflow is None:
         return None
-    doors = [s for s in sorted(workflow.stages, key=lambda x: x.stage_number)
-             if s.is_active and s.can_start
-             and _kind_matches(s.applies_to, kind)]
+    doors = doors_for(workflow, kind)
     return doors[0] if doors else None
+
+
+def doors_for(workflow, kind: str | None) -> list:
+    """Every stage a ``kind`` process may be opened at, earliest first."""
+    if workflow is None:
+        return []
+    return [s for s in sorted(workflow.stages, key=lambda x: x.stage_number)
+            if s.is_active and s.can_start
+            and _kind_matches(s.start_kind or s.applies_to, kind)]
+
+
+def door_of(workflow, kind: str | None, user):
+    """The door this person opens a ``kind`` process at.
+
+    Their own, when they hold one: «نصب از کارگاه نصب» means the workshop's
+    owner starts an install at the workshop's stage, even though stage 1 may
+    admit both operations too. An admin holds every key and starts at the
+    earliest door.
+    """
+    doors = doors_for(workflow, kind)
+    if not doors:
+        return None
+    if user is not None and not (user.role == "admin"
+                                 or user.can("workflow.manage")):
+        mine = [d for d in doors if user.id in stage_owner_ids(d)]
+        if mine:
+            return mine[0]
+    return doors[0]
 
 
 def first_stage_number(kind: str | None, workflow=None) -> int:
@@ -126,10 +160,11 @@ def startable_kinds(user) -> list:
         return list(OPERATION_KINDS)
     out = []
     for kind in OPERATION_KINDS:
-        door = entry_stage(workflow, kind)
-        if door is not None and user.id in stage_owner_ids(door):
+        doors = doors_for(workflow, kind)
+        if any(user.id in stage_owner_ids(d) for d in doors):
             out.append(kind)
             continue
+        door = doors[0] if doors else None
         # A process that still has its intake step keeps the old rule: whoever
         # owns step zero opens everything.
         intake = next((s for s in workflow.stages
@@ -330,6 +365,7 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
                 "description": None,
                 "fields": fields,
             })
+    blocks += _dependent_sections(blocks, usable, settled)
     return {
         "stage": stage.to_dict(),
         "sections": blocks,
@@ -338,6 +374,80 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
                                    {**instance.payload, **(draft or {})})
                                if carries_well_install(stage) else None),
     }
+
+
+def _missing_required(instance: WorkflowInstance, stage: WorkflowStage,
+                      payload: dict) -> dict:
+    """Required answers this stage asked for and did not get.
+
+    Checked here, at the stage that owns the question, rather than only when
+    the final record is written: otherwise a cause ticked at stage 1 with its
+    readings left blank surfaces as an error in front of the stage-5 engineer,
+    who can neither see nor fill them. A section still closed by its rule —
+    a cause nobody ticked — asks for nothing.
+    """
+    from .records import _hidden_by_condition
+    merged = dict(instance.payload)
+    merged.update(payload or {})
+    hidden = _hidden_by_condition(merged, unanswered_hides=True)
+    missing = {}
+    for block in stage_form(instance, stage, payload)["sections"]:
+        if block.get("is_locked") or block.get("is_optional"):
+            continue
+        for f in block.get("fields") or []:
+            name = f.get("field_name")
+            if (not f.get("is_required") or f.get("read_only")
+                    or name in hidden):
+                continue
+            # An answer another stage already recorded counts: a stage adds
+            # to the record, it does not re-type what is on it.
+            if merged.get(name) in (None, "", [], {}):
+                missing[name] = f"«{f.get('label') or name}» الزامی است."
+    return missing
+
+
+def _dependent_sections(blocks: list, usable, settled=None) -> list:
+    """Sections that open off a field this stage is asking for.
+
+    A section with «نمایش فقط وقتی علت خرابی = سوختن الکتروپمپ» belongs with
+    whichever stage asks «علت خرابی» — it is the second half of that question.
+    Attaching all ten cause forms to that stage by hand, and again every time
+    one is added, is exactly the kind of wiring that gets forgotten; so they
+    follow the field on their own, drawn hidden and opened in the browser the
+    moment their cause is ticked. Only a field this stage may still answer
+    pulls them in: a cause settled at an earlier stage brought its readings
+    with it there.
+    """
+    asked = set()
+    present = set()
+    already = set((settled or {}).keys())
+    for block in blocks:
+        present.add(block.get("code"))
+        if block.get("is_locked"):
+            continue
+        for f in block.get("fields") or []:
+            # A question an earlier stage already answered brought its forms
+            # with it there; asking them again here would only duplicate them.
+            if not f.get("read_only") and f.get("field_name") not in already:
+                asked.add(f.get("field_name"))
+    if not asked:
+        return []
+    out = []
+    for section in (FormSection.query.filter(
+            FormSection.visible_when.isnot(None),
+            FormSection.is_active.is_(True))
+            .order_by(FormSection.sort_order).all()):
+        on = (section.visible_when or "").partition("=")[0].strip()
+        if on not in asked or section.code in present:
+            continue
+        block = section.to_dict(include_fields=True, active_only=True)
+        block["fields"] = usable(block.get("fields") or [])
+        if not block["fields"]:
+            continue
+        block["is_optional"] = False
+        block["conditional"] = True
+        out.append(block)
+    return out
 
 
 def submitted_summary(instance: WorkflowInstance, except_stage: int = None,
@@ -450,10 +560,13 @@ def start_instance(payload: dict, user) -> WorkflowInstance:
     if well is None:
         raise WorkflowError(f"چاهی با نام «{raw}» در فهرست چاه‌ها نیست. "
                             f"از فهرست پیشنهادی یک چاه را انتخاب کنید.")
+    door = door_of(workflow, kind, user)
+    start_at = (door.stage_number if door is not None
+                else first_stage_number(kind, workflow))
     instance = WorkflowInstance(
         workflow_id=workflow.id, operation_kind=kind,
         well_id=well.id if well else None, well_name_raw=raw,
-        current_stage=first_stage_number(kind, workflow), status=INSTANCE_OPEN,
+        current_stage=start_at, entry_stage=start_at, status=INSTANCE_OPEN,
         created_by=user.id if user else None)
     # The مرکز is decided by the well, not by whoever fills the form, so it
     # is settled here with the well and shown locked from then on.
@@ -490,7 +603,8 @@ def applicable_stages(instance: WorkflowInstance) -> list:
     Step zero is excluded: it is answered by the act of starting.
     """
     kind = instance.operation_kind
-    start = first_stage_number(kind, instance.workflow)
+    start = (instance.entry_stage if instance.entry_stage is not None
+             else first_stage_number(kind, instance.workflow))
     return [s for s in sorted(instance.workflow.stages, key=lambda x: x.stage_number)
             if s.is_active and s.stage_number > STAGE_INTAKE
             and s.stage_number >= start
@@ -595,8 +709,8 @@ def owners_of(instance: WorkflowInstance, stage: WorkflowStage) -> list:
       the other seven centres are not shown somebody else's job.
     """
     entry = _entry_for(instance, stage.stage_number)
-    if entry is not None and entry.pinned_owner_id is not None:
-        return [entry.pinned_owner_id]
+    if entry is not None and entry.pinned_owner_ids:
+        return list(entry.pinned_owner_ids)
     people = stage.all_owners
     # A disabled account cannot open its کارتابل, so work must not rest there
     # while somebody else on the stage could do it. If every owner is disabled
@@ -713,9 +827,42 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
             f"مرحله «{hold.title}» در انتظار تأیید «{who}» است و تا زمانی که "
             f"تأیید نشود، مرحله‌های بعدی ثبت نمی‌شوند.")
 
+    # When several people share one stage, what an earlier one of them wrote
+    # counts — the second is confirming the form, not typing it again.
+    shared = _entry_for(instance, stage.stage_number)
+    so_far = (shared.payload or {}) if shared is not None and shared.refer_all \
+        else {}
+    missing = _missing_required(instance, stage, {**so_far, **(payload or {})})
+    if missing:
+        raise WorkflowError(
+            "این مرحله کامل نیست؛ " + str(len(missing))
+            + " مورد الزامی پر نشده است.", fields=missing)
+
     merged = dict(instance.payload)
     merged.update(payload or {})
     entry = _ensure_entry(instance, stage)
+
+    # Referred to several people who must *all* record: this submission is one
+    # of theirs. Keep what they wrote, note that they are done, and hold the
+    # stage until the last of them has recorded too. An admin stepping in
+    # closes it outright.
+    if entry.refer_all and user is not None and user.id in entry.recipient_ids:
+        done = entry.done_ids
+        if user.id not in done:
+            done.append(user.id)
+        left = [p for p in entry.recipient_ids if p not in done]
+        if left:
+            entry.done_by_ids = ",".join(str(x) for x in done)
+            entry.set_payload({**(entry.payload or {}), **(payload or {})})
+            instance.set_payload(merged)
+            record_audit("update", "workflow", instance.id,
+                         summary=f"ثبت سهم «{user.full_name}» در مرحله "
+                                 f"{stage.stage_number} «{stage.title}»؛ "
+                                 f"{len(left)} نفر دیگر مانده")
+            db.session.commit()
+            return instance
+        entry.done_by_ids = ",".join(str(x) for x in done)
+        payload = {**(entry.payload or {}), **(payload or {})}
 
     if carries_well_install(stage):
         state = well_install_state(instance.operation_kind, merged)
@@ -824,6 +971,29 @@ def next_stage_after(instance: WorkflowInstance, stage_number: int):
                  if s.stage_number > stage_number), None)
 
 
+def _users(ids) -> list:
+    """Users by id, in the given order, skipping any that are gone."""
+    out = []
+    for i in ids or []:
+        person = db.session.get(AppUser, int(i))
+        if person is not None:
+            out.append(person)
+    return out
+
+
+def referral_progress(entry) -> dict | None:
+    """Who a shared hand-off went to, and who of them has recorded."""
+    if entry is None or not entry.recipient_ids:
+        return None
+    done = entry.done_ids
+    return {
+        "all_must": entry.refer_all,
+        "people": [{"id": p.id, "full_name": p.full_name,
+                    "done": p.id in done}
+                   for p in _users(entry.recipient_ids)],
+    }
+
+
 def referral_choices(instance: WorkflowInstance, stage: WorkflowStage) -> dict:
     """What the submit form should offer for «ارجاع به».
 
@@ -844,6 +1014,9 @@ def referral_choices(instance: WorkflowInstance, stage: WorkflowStage) -> dict:
         "default_user_id": stage.referral_user_id,
         "default_user_name": (stage.referral_user.full_name
                               if stage.referral_user else None),
+        "default_user_ids": stage.referral_ids,
+        "default_user_names": [p.full_name for p in _users(stage.referral_ids)],
+        "refer_all": stage.refer_all,
         "users": [],
     }
     if stage.referral_mode == REFER_CHOOSE:
@@ -871,27 +1044,39 @@ def _refer_onward(instance, stage, user, refer_to=None, referral_note=None):
         return None                       # already dealt with; leave it alone
 
     if stage.referral_mode == REFER_USER:
-        chosen = stage.referral_user_id
+        chosen = stage.referral_ids
     elif stage.referral_mode == REFER_CHOOSE:
-        chosen = refer_to or stage.referral_user_id
+        # One id or several — «ارجاع به دفتر فنی و بهره‌بردار» picks two.
+        picked = refer_to if isinstance(refer_to, (list, tuple)) else [refer_to]
+        chosen = [int(x) for x in picked if str(x or "").strip().isdigit()]
+        chosen = chosen or stage.referral_ids
     else:
-        chosen = None                     # the next stage's own متولی
-    if chosen is None:
+        chosen = []                       # the next stage's own متولی
+    if not chosen:
         return None
 
     from ..models.auth import AppUser
-    person = db.session.get(AppUser, int(chosen))
-    if person is None or not person.is_active:
-        raise WorkflowError("کاربری که کار به او ارجاع شده پیدا نشد یا "
-                            "غیرفعال است.")
+    people = []
+    for pid in dict.fromkeys(chosen):
+        person = db.session.get(AppUser, int(pid))
+        if person is None or not person.is_active:
+            raise WorkflowError("کاربری که کار به او ارجاع شده پیدا نشد یا "
+                                "غیرفعال است.")
+        people.append(person)
     entry.status = ENTRY_PENDING
-    entry.referred_to_id = person.id
+    entry.referred_to_id = people[0].id
+    entry.referred_to_ids = ",".join(str(p.id) for p in people)
+    # «همه باید ثبت کنند» only means something with more than one recipient.
+    entry.refer_all = bool(stage.refer_all and len(people) > 1)
+    entry.done_by_ids = None
     entry.referred_by_id = user.id if user else None
     entry.referred_at = local_now()
     entry.referral_note = referral_note or None
+    names = "، ".join(p.full_name for p in people)
     record_audit("update", "workflow", instance.id,
                  summary=f"ارجاع مرحله {target.stage_number} «{target.title}» "
-                         f"به «{person.full_name}»")
+                         f"به «{names}»"
+                         + (" (همه باید ثبت کنند)" if entry.refer_all else ""))
     return entry
 
 

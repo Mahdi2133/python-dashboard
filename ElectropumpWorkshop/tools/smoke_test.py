@@ -747,9 +747,13 @@ def main():
     check("مرحله ۳ پیش از مرحله ۲ ثبت می‌شود", rr.status_code == 200,
           str(rr.get_json().get("error")))
     det = markaz.get(f"/api/workflow/instances/{pid}?stage=1").get_json()["data"]
+    # «علت خرابی» is still owed, and the cause forms travel with it (closed
+    # until a cause is ticked); «اطلاعات پایه» must not come back.
+    codes = [s["code"] for s in det["form"]["sections"]]
     check("«اطلاعات پایه» دوباره پرسیده نمی‌شود",
-          [s["code"] for s in det["form"]["sections"]] == ["field_failure"],
-          str([s["code"] for s in det["form"]["sections"]]))
+          codes[0] == "field_failure" and "basic" not in codes
+          and all(c.startswith("fail_") for c in codes[1:]),
+          str(codes[:3]))
     rr = kahani.post(f"/api/workflow/instances/{pid}/submit",
                      json={"stage_number": 3, "data": {}})
     check("متولی دیگری نمی‌تواند مرحله را ثبت کند", rr.status_code == 422)
@@ -767,9 +771,18 @@ def main():
     check("و مقدارش نمایش داده می‌شود",
           wells[0].get("read_only_value") == "امام رضا 11",
           str(wells[0].get("read_only_value")))
-    markaz.post(f"/api/workflow/instances/{seen}/submit", json={
-        "stage_number": 1, "data": {"op_jdate": "1405/06/22", "center": "سوران",
-                                    "failure": ["شولات", "اهم دار"]}})
+    # Two causes ticked means both of their reading forms are owed.
+    rr = markaz.post(f"/api/workflow/instances/{seen}/submit", json={
+        "stage_number": 1, "data": {
+            "op_jdate": "1405/06/22", "center": "سوران",
+            "failure": ["شولات", "اهم دار"],
+            "fail_sanding_p01": "تخلیه شده", "fail_sanding_p02": "انجام شده",
+            "fail_sanding_p03": "نشده", "fail_sanding_p04": "دارد",
+            "fail_sanding_p05": 12, "fail_sanding_p06": 30,
+            "fail_ohmdrop_p01": 1.5, "fail_ohmdrop_p02": 1.2,
+            "fail_ohmdrop_p03": 0.8, "fail_ohmdrop_p04": 0.6}})
+    check("مرحله ۱ با پارامترهای دو علت ثبت می‌شود", rr.status_code == 200,
+          str(rr.get_json().get("fields") or rr.get_json().get("error"))[:90])
     det = bozorg.get(f"/api/workflow/instances/{seen}?stage=2").get_json()["data"]
     summary = det.get("summary") or []
     check("مرحله ۲ کار مرحله ۱ را می‌بیند",
@@ -805,7 +818,11 @@ def main():
                         ).get_json()["data"]["id"]
         markaz.post(f"/api/workflow/instances/{i}/submit", json={
             "stage_number": 1, "data": {"op_jdate": "1405/06/22",
-            "well": "امام رضا 11", "center": "سوران", "failure": ["شولات"]}})
+            "well": "امام رضا 11", "center": "سوران", "failure": ["شولات"],
+            # «شولات» ticked, so its readings are owed at this stage.
+            "fail_sanding_p01": "تخلیه شده", "fail_sanding_p02": "انجام شده",
+            "fail_sanding_p03": "نشده", "fail_sanding_p04": "دارد",
+            "fail_sanding_p05": 12, "fail_sanding_p06": 30}})
         bozorg.post(f"/api/workflow/instances/{i}/submit", json={
             "stage_number": 2, "data": {"review_decision": "نیاز به کشیدن دارد"}})
         yaghouti.post(f"/api/workflow/instances/{i}/submit", json={
@@ -857,8 +874,11 @@ def main():
         "stage_number": 5, "data": {"test_flow": 30, "starter": "سافت",
                                     "workshop_opinion": ["شولاتی"]}})
     body_ = rr.get_json()
+    d_ = kahani.get(f"/api/workflow/instances/{last}").get_json()["data"]
     check("با ثبت مرحله ۵ رکورد ساخته می‌شود",
-          bool(body_.get("data", {}).get("record_id")), str(body_.get("error")))
+          bool(body_.get("data", {}).get("record_id")),
+          str(body_.get("error")) + " | " + str(body_.get("fields"))[:120]
+          + " | " + str([(e["stage_number"], e["status"]) for e in d_["entries"]]))
     new_id = body_["data"]["record_id"]
     rec = c.get(f"/api/records/{new_id}").get_json()["data"]
     check("رکورد نوع عملیات را دارد",
@@ -925,6 +945,124 @@ def main():
     check("گزینه قفل‌شده غیرفعال نمی‌شود", rr.status_code == 409)
     rr = c.put(f"/api/lookups/item/{locked.id}", json={"label": "جمع‌آوری چاه"})
     check("ولی برچسبش قابل تغییر است", rr.status_code == 200)
+
+    print("\n— فرم علت خرابی در کارتابل باز می‌شود —")
+    with app.app_context():
+        from app.extensions import db as _db
+        from app.models import AppUser
+        from app.services.workflow import (WorkflowError, active_workflow,
+                                           stage_by_number, stage_form,
+                                           start_instance, submit_stage,
+                                           sync_entries)
+        boss = AppUser.query.filter_by(role="admin").first()
+        inst = start_instance({"operation_kind": "کشیدن",
+                               "well": "امام رضا 11"}, boss)
+        sync_entries(inst)
+        _db.session.commit()
+        st1 = stage_by_number(inst, 1)
+        codes = [b["code"] for b in stage_form(inst, st1)["sections"]]
+        check("مرحله‌ای که «علت خرابی» می‌پرسد فرم علت‌ها را هم دارد",
+              sum(1 for c in codes if c.startswith("fail_")) == 10,
+              f"{sum(1 for c in codes if c.startswith('fail_'))} فرم")
+        # A cause ticked with its readings blank is refused at this stage —
+        # not five stages later in front of somebody who cannot fill them.
+        try:
+            submit_stage(inst, {"op_jdate": "1405/07/03", "center": "سوران",
+                                "failure": ["هوادهی"]}, boss, stage_number=1)
+            refused, fields = False, {}
+        except WorkflowError as exc:
+            refused, fields = True, exc.fields
+        check("پارامترهای علت انتخاب‌شده همان‌جا الزامی‌اند",
+              refused and any(k.startswith("fail_aeration") for k in fields),
+              "، ".join(sorted(fields))[:80])
+        check("ولی پارامترهای علت‌های انتخاب‌نشده خواسته نمی‌شوند",
+              not any(k.startswith("fail_burn") for k in fields))
+
+    print("\n— شروع هر عملیات از درِ خود متولی —")
+    with app.app_context():
+        from app.extensions import db as _db
+        from app.models import AppUser
+        from app.services.workflow import (active_workflow, applicable_stages,
+                                           start_instance, startable_kinds,
+                                           sync_entries)
+        wf = active_workflow()
+        s1 = next(x for x in wf.stages if x.stage_number == 1)
+        s3 = next(x for x in wf.stages if x.stage_number == 3)
+        # The reported setup: stage 1 is passed through by both operations,
+        # stage 3 is the نصب door.
+        s1.applies_to, s1.can_start, s1.start_kind = "both", True, "pull"
+        s3.can_start, s3.start_kind = True, "install"
+        _db.session.commit()
+        mk = AppUser.query.filter_by(username="markaz").one()
+        yq = AppUser.query.filter_by(username="yaghouti").one()
+        check("مرکز آبرسانی فقط «کشیدن» را شروع می‌کند",
+              startable_kinds(mk) == ["pull"], str(startable_kinds(mk)))
+        check("متولی مرحله ۳ «نصب» را شروع می‌کند",
+              startable_kinds(yq) == ["install"], str(startable_kinds(yq)))
+        inst = start_instance({"operation_kind": "نصب",
+                               "well": "امام رضا 11"}, yq)
+        sync_entries(inst)
+        _db.session.commit()
+        check("و فرایند نصب از مرحله ۳ آغاز می‌شود",
+              inst.entry_stage == 3
+              and [x.stage_number for x in applicable_stages(inst)][0] == 3,
+              str([x.stage_number for x in applicable_stages(inst)]))
+
+    print("\n— ارجاع همزمان به چند نفر —")
+    with app.app_context():
+        from app.extensions import db as _db
+        from app.models import AppUser
+        from app.models.workflow import ENTRY_DONE, REFER_CHOOSE
+        from app.services.workflow import (active_workflow, owners_of,
+                                           stage_by_number, start_instance,
+                                           submit_stage, sync_entries)
+        wf = active_workflow()
+        boss = AppUser.query.filter_by(role="admin").first()
+        bz = AppUser.query.filter_by(username="bozorg").one()
+        kh = AppUser.query.filter_by(username="kahani").one()
+        s3 = next(x for x in wf.stages if x.stage_number == 3)
+        s3.referral_mode = REFER_CHOOSE
+        s3.refer_all = True
+        _db.session.commit()
+
+        inst = start_instance({"operation_kind": "نصب",
+                               "well": "امام رضا 11"}, boss)
+        sync_entries(inst)
+        _db.session.commit()
+        stage4 = stage_by_number(inst, 4)
+        # Stage 3 hands stage 4 to two people at once, both of whom must record.
+        from app.services.workflow import _refer_onward
+        _refer_onward(inst, s3, boss, refer_to=[bz.id, kh.id])
+        _db.session.commit()
+        check("کار همزمان در کارتابل هر دو نفر است",
+              sorted(owners_of(inst, stage4)) == sorted([bz.id, kh.id]))
+        e4 = next(e for e in inst.entries if e.stage_number == 4)
+        submit_stage(inst, {"required_action": "ویدئومتری"}, bz, stage_number=4)
+        check("با ثبت نفر اول، مرحله هنوز باز می‌ماند",
+              e4.status not in ENTRY_DONE, e4.status)
+        check("و فقط در کارتابل نفر دوم می‌ماند",
+              owners_of(inst, stage4) == [kh.id])
+        submit_stage(inst, {}, kh, stage_number=4)
+        check("با ثبت نفر دوم، مرحله بسته می‌شود",
+              e4.status in ENTRY_DONE, e4.status)
+        check("و پاسخ نفر اول نگه داشته شده",
+              (e4.payload or {}).get("required_action") == "ویدئومتری")
+
+        # «یکی کافی است»: the first to record closes it for everybody.
+        s3.refer_all = False
+        _db.session.commit()
+        inst2 = start_instance({"operation_kind": "نصب",
+                                "well": "امام رضا 11"}, boss)
+        sync_entries(inst2)
+        _db.session.commit()
+        _refer_onward(inst2, s3, boss, refer_to=[bz.id, kh.id])
+        _db.session.commit()
+        submit_stage(inst2, {"required_action": "ویدئومتری"}, kh, stage_number=4)
+        e4b = next(e for e in inst2.entries if e.stage_number == 4)
+        check("وقتی یکی کافی است، ثبت یک نفر مرحله را می‌بندد",
+              e4b.status in ENTRY_DONE, e4b.status)
+        s3.referral_mode = "next"
+        _db.session.commit()
 
     print("\n— ستون‌های محاسباتی در گزارش‌ساز —")
     # A row with both readings, so the arithmetic is checked against a known
@@ -1034,7 +1172,7 @@ def main():
         sync_entries(inst)
         _db.session.commit()
         # Stage 1 first, so there is something to choose to share.
-        submit_stage(inst, {"failure": ["هوادهی"],
+        submit_stage(inst, {"failure": ["هوادهی"], "op_jdate": "1405/07/03",
                             "fail_aeration_p01": ["وضعیت لوله و اتصالات بررسی شده است"],
                             "fail_aeration_p02": 3, "fail_aeration_p03": 12},
                      boss, stage_number=1)
@@ -1067,7 +1205,7 @@ def main():
                                 "well": "امام رضا 11"}, boss)
         sync_entries(inst2)
         _db.session.commit()
-        submit_stage(inst2, {"failure": ["هوادهی"],
+        submit_stage(inst2, {"failure": ["هوادهی"], "op_jdate": "1405/07/03",
                              "fail_aeration_p01": ["وضعیت لوله و اتصالات بررسی شده است"],
                              "fail_aeration_p02": 3, "fail_aeration_p03": 12},
                      boss, stage_number=1)

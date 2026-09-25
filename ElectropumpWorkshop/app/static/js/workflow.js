@@ -320,14 +320,21 @@
      نصب» said as data: mark the stage, and «شامل» decides which operation it
      opens. Nothing about the start point lives in the code any more. */
   function startRow(s) {
-    var label = s.applies_to === 'pull' ? 'کشیدن'
-              : s.applies_to === 'install' ? 'نصب' : 'هر دو عملیات';
-    return '<label class="wf-stage-start' + (s.can_start ? ' on' : '') + '">'
-      + '<input type="checkbox" class="wf-can-start"'
+    /* «شامل» says which runs pass through this stage; this says which run
+       *starts* here. کارگاه مکانیک is passed through by both, but only a نصب
+       opens there — two different questions, so two different settings. */
+    var kind = s.start_kind || s.applies_to || 'both';
+    return '<div class="wf-stage-start' + (s.can_start ? ' on' : '') + '">'
+      + '<label><input type="checkbox" class="wf-can-start"'
       + (s.can_start ? ' checked' : '') + '>'
-      + '🚦 فرایند از همین مرحله شروع می‌شود'
-      + '<span class="hint">متولی‌های این مرحله می‌توانند فرایند «' + label
-      + '» را آغاز کنند.</span></label>';
+      + '🚦 فرایند از همین مرحله شروع می‌شود</label>'
+      + '<div class="start-kind-row"' + (s.can_start ? '' : ' hidden') + '>'
+      + '<span>برای شروع عملیات</span>'
+      + '<select class="wf-start-kind">' + appliesOptions(kind) + '</select>'
+      + '</div>'
+      + '<span class="hint">متولی‌های این مرحله می‌توانند همین عملیات را '
+      + 'آغاز کنند و فرایند از همین مرحله شروع می‌شود. اگر چند مرحله در '
+      + 'شروع یک عملیات باشند، هر کس از مرحلهٔ خودش شروع می‌کند.</span></div>';
   }
 
   function userById(id) {
@@ -381,11 +388,19 @@
       + '<label>ارجاع به</label>'
       + '<select class="wf-refer-mode">' + referralModeOptions(s.referral_mode)
       + '</select></div>'
+      /* One recipient or several — «ارجاع به دفتر فنی و بهره‌بردار» names
+         two at once. The same chip list the owners use. */
       + '<div class="wf-stage-row wf-refer-user"'
       + (s.referral_mode === 'next' ? ' hidden' : '') + '>'
       + '<label>کاربر</label>'
-      + '<select class="wf-refer-user-id">' + userOptions(s.referral_user_id)
-      + '</select></div>'
+      + referPicker(s)
+      + '</div>'
+      + '<label class="mini-check wf-refer-all-row"'
+      + (s.referral_mode === 'next' ? ' hidden' : '') + '>'
+      + '<input type="checkbox" class="wf-refer-all"'
+      + (s.refer_all ? ' checked' : '') + '>'
+      + ' اگر به چند نفر ارجاع شد، <b>همه</b> باید ثبت کنند '
+      + '(وگرنه یکی کافی است)</label>'
       + '<div class="wf-stage-row wf-refer-hint-row"'
       + (s.referral_mode === 'choose' ? '' : ' hidden') + '>'
       + '<label>راهنما</label>'
@@ -429,6 +444,41 @@
       + 'تعیین کند تأییدکننده کدام‌ها را ببیند.</span>'
       + '</div>'
       + '</details>';
+  }
+
+  function referPicker(s) {
+    var ids = (s.referral_user_ids && s.referral_user_ids.length)
+      ? s.referral_user_ids
+      : (s.referral_user_id ? [s.referral_user_id] : []);
+    return '<div class="owner-box wf-refer-users" data-ids="' + ids.join(',') + '">'
+      + '<div class="owner-chips">' + referChips(ids) + '</div>'
+      + '<select class="refer-add">' + userOptions(null, 'افزودن گیرنده…')
+      + '</select></div>';
+  }
+
+  function referChips(ids) {
+    return ids.length
+      ? ids.map(function (id) {
+          var u = userById(id);
+          return '<span class="owner-chip" data-refer="' + id + '">'
+            + A.esc(u ? u.full_name : '#' + id)
+            + '<button type="button" class="refer-off" title="برداشتن">×</button>'
+            + '</span>';
+        }).join('')
+      : '<span class="owner-none">گیرنده‌ای انتخاب نشده</span>';
+  }
+
+  function referIds(card) {
+    var box = card.querySelector('.wf-refer-users');
+    return box ? (box.dataset.ids || '').split(',').filter(Boolean).map(Number)
+               : [];
+  }
+
+  function setReferIds(card, ids) {
+    var box = card.querySelector('.wf-refer-users');
+    if (!box) return;
+    box.dataset.ids = ids.join(',');
+    box.querySelector('.owner-chips').innerHTML = referChips(ids);
   }
 
   function referralModeOptions(current) {
@@ -690,12 +740,18 @@
       };
       var starts = card.querySelector('.wf-can-start');
       if (starts) body.can_start = starts.checked;
+      var startKind = card.querySelector('.wf-start-kind');
+      if (startKind) body.start_kind = startKind.value;
       var byCenter = card.querySelector('.wf-by-center');
       if (byCenter) body.route_by_center = byCenter.checked;
       var mode = card.querySelector('.wf-refer-mode');
       if (mode) {
         body.referral_mode = mode.value;
-        body.referral_user_id = card.querySelector('.wf-refer-user-id').value || null;
+        var recipients = referIds(card);
+        body.referral_user_ids = recipients;
+        body.referral_user_id = recipients.length ? recipients[0] : null;
+        var all = card.querySelector('.wf-refer-all');
+        if (all) body.refer_all = all.checked;
         body.referral_hint = card.querySelector('.wf-refer-hint').value.trim();
         body.needs_approval = card.querySelector('.wf-needs-approval').checked;
         body.approver_id = card.querySelector('.wf-approver').value || null;
@@ -870,6 +926,16 @@
       if (drop) { removeStage(drop.closest('.wf-stage')); return; }
       var back = ev.target.closest('.restore-stage');
       if (back) { restoreStage(back.closest('.wf-stage')); return; }
+      var roff = ev.target.closest('.refer-off');
+      if (roff) {
+        var rchip = roff.closest('.owner-chip');
+        var rcard = rchip.closest('.wf-stage');
+        setReferIds(rcard, referIds(rcard).filter(function (x) {
+          return x !== Number(rchip.dataset.refer);
+        }));
+        markDirty(rcard);
+        return;
+      }
       var off = ev.target.closest('.owner-off');
       if (off) {
         var chip = off.closest('.owner-chip');
@@ -891,6 +957,8 @@
       if (ev.target.classList.contains('wf-refer-mode')) {
         var mode = ev.target.value;
         card.querySelector('.wf-refer-user').hidden = mode === 'next';
+        var allRow = card.querySelector('.wf-refer-all-row');
+        if (allRow) allRow.hidden = mode === 'next';
         card.querySelector('.wf-refer-hint-row').hidden = mode !== 'choose';
         card.querySelector('.wf-refer-user').querySelector('label').textContent =
           mode === 'choose' ? 'پیش‌فرض' : 'کاربر';
@@ -902,13 +970,24 @@
         var row = ev.target.closest('.wf-blocks-row');
         if (row) row.classList.toggle('on', ev.target.checked);
       }
+      if (ev.target.classList.contains('refer-add') && ev.target.value) {
+        var ids = referIds(card);
+        var pick = Number(ev.target.value);
+        if (ids.indexOf(pick) === -1) ids.push(pick);
+        setReferIds(card, ids);
+        ev.target.value = '';
+      }
       if (ev.target.classList.contains('owner-add') && ev.target.value) {
         addOwner(card, Number(ev.target.value));
         ev.target.value = '';
       }
       if (ev.target.classList.contains('wf-can-start')) {
         var box = ev.target.closest('.wf-stage-start');
-        if (box) box.classList.toggle('on', ev.target.checked);
+        if (box) {
+          box.classList.toggle('on', ev.target.checked);
+          var kindRow = box.querySelector('.start-kind-row');
+          if (kindRow) kindRow.hidden = !ev.target.checked;
+        }
       }
     });
 

@@ -49,6 +49,7 @@
 
     <!-- Filled when a blocking approval in front of this stage holds it up. -->
     <div id="wf-blocked"></div>
+    <div id="wf-progress"></div>
 
     <!-- Where this stage's work goes next. Shown only when the stage was set
          up to let the person finishing it choose. -->
@@ -56,8 +57,11 @@
       <div class="section-title"><span>🔀</span><span>ارجاع</span></div>
       <div id="wf-refer-info" class="hint"></div>
       <div class="field" id="wf-refer-pick">
-        <label>ارجاع به <span class="req">*</span></label>
-        <select id="wf-refer-to"></select>
+        <label>ارجاع به <span class="req">*</span>
+          <span class="hint">یک نفر یا چند نفر</span></label>
+        <input type="search" id="wf-refer-search" placeholder="جستجوی کاربر…">
+        <div class="refer-list" id="wf-refer-list"></div>
+        <div class="hint" id="wf-refer-all-note"></div>
       </div>
       <div class="field">
         <label>توضیح ارجاع</label>

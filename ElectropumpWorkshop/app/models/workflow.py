@@ -120,6 +120,16 @@ class WorkflowDefinition(db.Model):
         return data
 
 
+def _ids(raw) -> list:
+    """Comma-separated user ids, in order, without repeats."""
+    out = []
+    for part in str(raw or "").split(","):
+        part = part.strip()
+        if part.isdigit() and int(part) not in out:
+            out.append(int(part))
+    return out
+
+
 # A stage's متولی is a list, not a person. The city has eight مراکز آبرسانی,
 # each with its own user, and one stage — «اعلام علت خرابی» — belongs to all of
 # them. ``assignee_id`` stays as the first of the list so every older row and
@@ -179,6 +189,11 @@ class WorkflowStage(db.Model):
     # in the code: mark both stages, and ``applies_to`` says which operation
     # each one opens.
     can_start = db.Column(db.Boolean, nullable=False, default=False)
+    # Which operation this door opens. Separate from ``applies_to`` because
+    # the two answer different questions: کارگاه مکانیک is *visited* by both
+    # a کشیدن and a نصب, but only a نصب *starts* there. Empty falls back to
+    # ``applies_to``.
+    start_kind = db.Column(db.String(10))
     # With eight centres owning one stage, all eight would otherwise see every
     # job. Turn this on and the work goes only to the owner whose مرکز is the
     # well's.
@@ -193,6 +208,13 @@ class WorkflowStage(db.Model):
                                  index=True)
     # A note the submitter sees next to the referral box — «به کدام کارتابل».
     referral_hint = db.Column(db.String(200))
+    # Several fixed recipients, comma-separated user ids — «ارجاع به دفتر فنی و
+    # بهره‌بردار» names two people at once. ``referral_user_id`` stays as the
+    # first of them so a single-recipient screen still reads right.
+    referral_user_ids = db.Column(db.String(200))
+    # When the work goes to more than one person: must every one of them
+    # record before it moves on, or is one of them enough?
+    refer_all = db.Column(db.Boolean, nullable=False, default=False)
 
     # ── the approval: whether somebody has to sign this stage off ───────────
     needs_approval = db.Column(db.Boolean, nullable=False, default=False)
@@ -243,6 +265,14 @@ class WorkflowStage(db.Model):
     def owner_ids(self):
         return [u.id for u in self.all_owners]
 
+    @property
+    def referral_ids(self):
+        """The fixed recipients, the first one first."""
+        ids = _ids(self.referral_user_ids)
+        if self.referral_user_id and self.referral_user_id not in ids:
+            ids.insert(0, self.referral_user_id)
+        return ids
+
     def to_dict(self):
         return {
             "id": self.id, "stage_number": self.stage_number,
@@ -254,6 +284,7 @@ class WorkflowStage(db.Model):
             "applies_to_label": APPLIES_TO.get(self.applies_to, self.applies_to),
             "is_active": self.is_active,
             "can_start": self.can_start,
+            "start_kind": self.start_kind or self.applies_to,
             "route_by_center": self.route_by_center,
             "owner_ids": self.owner_ids,
             "owner_names": [u.full_name for u in self.all_owners],
@@ -264,6 +295,8 @@ class WorkflowStage(db.Model):
             "referral_user_name": (self.referral_user.full_name
                                    if self.referral_user else None),
             "referral_hint": self.referral_hint,
+            "referral_user_ids": self.referral_ids,
+            "refer_all": self.refer_all,
             "needs_approval": self.needs_approval,
             "approval_blocks": self.approval_blocks,
             "approval_sees": self.approval_sees,
@@ -340,6 +373,11 @@ class WorkflowInstance(db.Model):
     well_name_raw = db.Column(db.String(200))
 
     current_stage = db.Column(db.Integer, nullable=False, default=0, index=True)
+    # The stage this run was opened at. Two doors can admit the same
+    # operation — مرکز آبرسانی's and کارگاه نصب's — and the run starts at the
+    # one its starter owns, so that choice is remembered here instead of being
+    # recomputed as "the earliest door" every time the path is drawn.
+    entry_stage = db.Column(db.Integer)
     status = db.Column(db.String(16), nullable=False, default=INSTANCE_OPEN,
                        index=True)
     # Everything every stage has submitted so far, merged. The record is built
@@ -396,6 +434,7 @@ class WorkflowInstance(db.Model):
             "well": self.well.name if self.well else self.well_name_raw,
             "well_pm_code": self.well.pm_code if self.well else None,
             "current_stage": self.current_stage,
+            "entry_stage": self.entry_stage,
             "status": self.status,
             "status_label": INSTANCE_STATUS.get(self.status, self.status),
             "record_id": self.record_id,
@@ -443,6 +482,12 @@ class WorkflowStageEntry(db.Model):
     referred_by_id = db.Column(db.Integer, db.ForeignKey("app_users.id"))
     referred_at = db.Column(db.DateTime)
     referral_note = db.Column(db.Text)
+    # Everyone this one hand-off went to, comma-separated; ``referred_to_id``
+    # is the first of them. With ``refer_all`` each of them has to record, and
+    # ``done_by_ids`` is who already has.
+    referred_to_ids = db.Column(db.String(200))
+    refer_all = db.Column(db.Boolean, nullable=False, default=False)
+    done_by_ids = db.Column(db.String(200))
 
     # ── the approval, on this run ───────────────────────────────────────────
     approver_id = db.Column(db.Integer, db.ForeignKey("app_users.id"),
@@ -472,6 +517,35 @@ class WorkflowStageEntry(db.Model):
             return None
         return [int(p) for p in (x.strip() for x in raw.split(","))
                 if p.lstrip("-").isdigit()]
+
+    @property
+    def recipient_ids(self):
+        ids = _ids(self.referred_to_ids)
+        if self.referred_to_id and self.referred_to_id not in ids:
+            ids.insert(0, self.referred_to_id)
+        return ids
+
+    @property
+    def done_ids(self):
+        return _ids(self.done_by_ids)
+
+    @property
+    def pinned_owner_ids(self):
+        """Everyone this run put the stage with, or None.
+
+        An approval pins it to the approver. A referral pins it to its
+        recipients — all of them when one is enough, or only those who have
+        not recorded yet when every one of them must.
+        """
+        if self.status == ENTRY_AWAITING:
+            return [self.approver_id] if self.approver_id else None
+        people = self.recipient_ids
+        if not people:
+            return None
+        if self.refer_all:
+            left = [p for p in people if p not in self.done_ids]
+            return left or people
+        return people
 
     @property
     def pinned_owner_id(self):

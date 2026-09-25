@@ -659,6 +659,66 @@ def seed_entry_stages() -> dict:
     return {"entry_stages_marked": marked} if marked else {}
 
 
+# ── which operation each start door opens ────────────────────────────────────
+#
+# A door used to open whatever its «شامل» admitted, so a stage that is passed
+# through by both operations opened both — and the earliest such door swallowed
+# the other one. The workshop's rule is کشیدن from مرکز آبرسانی (stage 1) and
+# نصب from کارگاه (stage 3), so the two doors the engine used to know about are
+# told so once. Any other door keeps following its «شامل», and the admin owns
+# all of it from here on.
+_START_KIND_KEY = "workflow_start_kinds_v1"
+
+
+def seed_start_kinds() -> dict:
+    from ..models.meta import AppMeta
+    from ..models.workflow import (APPLIES_INSTALL, APPLIES_PULL,
+                                   WorkflowStage)
+    from .workflow import STAGE_FIRST_INSTALL, STAGE_FIRST_PULL
+
+    if AppMeta.get(_START_KIND_KEY):
+        return {}
+    told = 0
+    for stage in WorkflowStage.query.filter(
+            WorkflowStage.can_start.is_(True),
+            WorkflowStage.start_kind.is_(None)).all():
+        if stage.stage_number == STAGE_FIRST_PULL \
+                and stage.applies_to != APPLIES_INSTALL:
+            stage.start_kind = APPLIES_PULL
+            told += 1
+        elif stage.stage_number == STAGE_FIRST_INSTALL \
+                and stage.applies_to != APPLIES_PULL:
+            stage.start_kind = APPLIES_INSTALL
+            told += 1
+    AppMeta.set(_START_KIND_KEY, "done")
+    db.session.commit()
+    return {"start_kinds_set": told} if told else {}
+
+
+# Runs opened before ``entry_stage`` existed have no door recorded. Their path
+# was computed as "the earliest door for the operation", so that is written
+# down once, before anyone moves a door and the path of a live job shifts
+# under it.
+_ENTRY_BACKFILL_KEY = "workflow_entry_backfill_v1"
+
+
+def backfill_entry_stages() -> dict:
+    from ..models import WorkflowInstance
+    from ..models.meta import AppMeta
+    from .workflow import first_stage_number
+
+    if AppMeta.get(_ENTRY_BACKFILL_KEY):
+        return {}
+    filled = 0
+    for inst in WorkflowInstance.query.filter(
+            WorkflowInstance.entry_stage.is_(None)).all():
+        inst.entry_stage = first_stage_number(inst.operation_kind, inst.workflow)
+        filled += 1
+    AppMeta.set(_ENTRY_BACKFILL_KEY, "done")
+    db.session.commit()
+    return {"entry_stages_backfilled": filled} if filled else {}
+
+
 from .seed_failure import seed_failure_forms
 
 
@@ -675,6 +735,8 @@ def seed_all(force: bool = False) -> dict:
     result.update(seed_workflow())
     result.update(seed_entry_stages())
     result.update(seed_failure_forms())
+    result.update(seed_start_kinds())
+    result.update(backfill_entry_stages())
     result["changed"] = any(v for k, v in result.items() if isinstance(v, int))
     if result["changed"]:
         log.info("Seed applied: %s", result)

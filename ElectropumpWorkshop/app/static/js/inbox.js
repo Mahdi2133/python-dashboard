@@ -197,8 +197,11 @@
   function renderGuide(detail) {
     var stage = detail.form && detail.form.stage;
     if (!stage) { fill('#wf-guide', ''); return; }
-    var required = [];
+    var required = [], conditional = 0;
     (detail.form.sections || []).forEach(function (s) {
+      /* A cause form is owed only once its cause is ticked; listing all ten
+         forms' readings up front buries the three fields that really are. */
+      if (s.conditional) { conditional += 1; return; }
       (s.fields || []).forEach(function (f) {
         if (f.is_required && !f.read_only) required.push(f.label);
       });
@@ -213,6 +216,10 @@
       + '<b>«ثبت و ارسال مرحله»</b> را بزنید تا فرایند به مرحله‌ی بعد برود.'
       + (required.length
           ? ' فیلدهای الزامی: <b>' + required.map(A.esc).join('، ') + '</b>.'
+          : '')
+      + (conditional
+          ? ' با انتخاب هر علت خرابی، فرم پارامترهای همان علت باز می‌شود و '
+            + 'پر کردن آن هم الزامی است.'
           : '')
       + '</div></div>');
   }
@@ -350,6 +357,7 @@
           ? 'در انتظار تأیید مرحله ' + hold.stage_number
           : (detail.may_act ? '' : 'این مرحله در اختیار شما نیست.');
       }
+      fill('#wf-progress', progressHtml(detail.referral_progress));
       fill('#wf-blocked', hold
         ? '<div class="wf-blocked">⛔ مرحله ' + J.toFaDigits(hold.stage_number)
           + ' — ' + A.esc(hold.title) + ' در انتظار تأیید '
@@ -377,6 +385,20 @@
      shape of this in the process builder: a fixed person, the next stage's own
      متولی, or — the case this box exists for — whoever the person finishing
      the stage names. */
+  /* A stage referred to several people who must all record: say who has and
+     who has not, so nobody wonders why pressing ثبت did not move it on. */
+  function progressHtml(progress) {
+    if (!progress || !progress.all_must || progress.people.length < 2) return '';
+    var done = progress.people.filter(function (p) { return p.done; }).length;
+    return '<div class="refer-progress">👥 این مرحله به '
+      + J.toFaDigits(progress.people.length) + ' نفر ارجاع شده و همه باید ثبت '
+      + 'کنند — ' + J.toFaDigits(done) + ' نفر ثبت کرده‌اند: '
+      + progress.people.map(function (p) {
+          return '<span class="rp ' + (p.done ? 'done' : 'left') + '">'
+            + (p.done ? '✓ ' : '… ') + A.esc(p.full_name) + '</span>';
+        }).join(' ') + '</div>';
+  }
+
   function renderReferral(detail) {
     var box = A.qs('#wf-refer-box');
     var refer = detail.referral || {};
@@ -393,9 +415,14 @@
         + A.esc(refer.approver_name || 'تأییدکننده تعیین‌نشده')
         + '</b> ارسال می‌شود.';
     } else if (refer.mode === 'user') {
+      var names = (refer.default_user_names || []);
       where = 'پس از ثبت، کار به <b>'
-        + A.esc(refer.default_user_name || 'کاربر تعیین‌نشده')
-        + '</b> ارجاع می‌شود.';
+        + A.esc(names.length ? names.join('، ')
+                             : (refer.default_user_name || 'کاربر تعیین‌نشده'))
+        + '</b> ارجاع می‌شود'
+        + (names.length > 1
+            ? (refer.refer_all ? ' و همه باید ثبت کنند.' : ' و ثبت یکی کافی است.')
+            : '.');
     } else if (choosing) {
       where = A.esc(refer.hint || 'کار را به کارتابل چه کسی ارجاع می‌دهید؟');
     } else {
@@ -406,14 +433,23 @@
     }
     fill('#wf-refer-info', where);
 
-    var select = A.qs('#wf-refer-to');
-    if (select && choosing) {
-      select.innerHTML = '<option value="">— انتخاب کنید —</option>'
-        + (refer.users || []).map(function (u) {
-            return '<option value="' + u.id + '"'
-              + (u.id === refer.default_user_id ? ' selected' : '') + '>'
-              + A.esc(u.full_name) + ' (' + A.esc(u.role_label) + ')</option>';
-          }).join('');
+    /* One recipient or several: «ارجاع به دفتر فنی و بهره‌بردار» sends the
+       same work to two کارتابل at once. Whether one of them is enough or all
+       of them must record is the admin's setting, said here in words. */
+    var list = A.qs('#wf-refer-list');
+    if (list && choosing) {
+      var defaults = refer.default_user_ids || [];
+      list.innerHTML = (refer.users || []).map(function (u) {
+        return '<label class="refer-pick-row" data-name="'
+          + A.esc((u.full_name + ' ' + u.username).toLowerCase()) + '">'
+          + '<input type="checkbox" class="refer-pick" value="' + u.id + '"'
+          + (defaults.indexOf(u.id) !== -1 ? ' checked' : '') + '>'
+          + '<span>' + A.esc(u.full_name) + '</span>'
+          + '<i>' + A.esc(u.role_label) + '</i></label>';
+      }).join('');
+      fill('#wf-refer-all-note', refer.refer_all
+        ? 'اگر چند نفر را انتخاب کنید، <b>همه</b> باید ثبت کنند تا کار جلو برود.'
+        : 'اگر چند نفر را انتخاب کنید، ثبت <b>یکی</b> از آن‌ها کافی است.');
     }
     renderShare(detail);
   }
@@ -606,16 +642,16 @@
     form.clearErrors();
     try {
       var refer = (current.detail && current.detail.referral) || {};
-      var pick = A.qs('#wf-refer-to');
-      if (refer.mode === 'choose' && !(pick && pick.value)) {
-        A.toast('ارجاع به کدام کاربر؟ یکی را انتخاب کنید.', 'error');
-        if (pick) pick.focus();
+      var recipients = A.qsa('.refer-pick:checked')
+        .map(function (b) { return Number(b.value); });
+      if (refer.mode === 'choose' && !recipients.length) {
+        A.toast('ارجاع به کدام کاربر؟ دست‌کم یک نفر را انتخاب کنید.', 'error');
         button.disabled = false;
         return;
       }
       var res = await A.api.post('/api/workflow/instances/' + current.id + '/submit',
         { stage_number: current.stage_number, data: form.collect(),
-          refer_to: pick ? (pick.value || null) : null,
+          refer_to: recipients.length ? recipients : null,
           referral_note: (A.qs('#wf-refer-note') || {}).value || null,
           share_stages: A.qsa('.share-pick:checked')
             .map(function (b) { return Number(b.value); }) });
@@ -712,6 +748,13 @@
       if (button) openStage(items[Number(button.dataset.i)]);
     });
     A.qs('#btn-refresh').addEventListener('click', loadInbox);
+    var referSearch = A.qs('#wf-refer-search');
+    if (referSearch) referSearch.addEventListener('input', function () {
+      var q = this.value.trim().toLowerCase();
+      A.qsa('.refer-pick-row').forEach(function (row) {
+        row.hidden = !!q && row.dataset.name.indexOf(q) === -1;
+      });
+    });
     A.qs('#wf-close').addEventListener('click', function () {
       A.qs('#wf-detail').classList.add('hidden');
       current = null;

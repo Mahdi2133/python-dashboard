@@ -28,7 +28,7 @@ from ..services.workflow import (WorkflowError, active_workflow,
                                  decide_stage, may_act, owner_of,
                                  owners_of, startable_kinds,
                                  entry_stage, blocked_by,
-                                 shareable_stages,
+                                 shareable_stages, referral_progress,
                                  pending_stages, previous_values_for,
                                  may_start, referral_choices, stage_by_number,
                                  stage_form, stages_of_user,
@@ -414,6 +414,8 @@ def reorder_stages():
             workflow_id=workflow.id).all():
         if instance.current_stage in remap:
             instance.current_stage = remap[instance.current_stage]
+        if instance.entry_stage in remap:
+            instance.entry_stage = remap[instance.entry_stage]
 
     record_audit("update", "workflow_definition", workflow.id,
                  summary=f"تغییر ترتیب مرحله‌های «{workflow.name}»")
@@ -456,6 +458,10 @@ def update_stage(stage_id):
         stage.is_active = payload["is_active"] in (True, "true", "1", 1)
     if "can_start" in payload:
         stage.can_start = payload["can_start"] in (True, "true", "1", 1)
+    if "start_kind" in payload:
+        if payload["start_kind"] not in APPLIES_TO:
+            return fail("مقدار «شروع برای عملیات» نامعتبر است.", 422)
+        stage.start_kind = payload["start_kind"]
     if "route_by_center" in payload:
         stage.route_by_center = payload["route_by_center"] in (True, "true", "1", 1)
     # The متولی list. One stage can belong to all eight مراکز آبرسانی, so this
@@ -478,6 +484,15 @@ def update_stage(stage_id):
         if error:
             return fail(error, 422)
         stage.referral_user_id = person.id if person else None
+    # Several fixed recipients — «ارجاع به دفتر فنی و بهره‌بردار».
+    if "referral_user_ids" in payload:
+        people, error = _people(payload["referral_user_ids"])
+        if error:
+            return fail(error, 422)
+        stage.referral_user_ids = ",".join(str(p.id) for p in people) or None
+        stage.referral_user_id = people[0].id if people else None
+    if "refer_all" in payload:
+        stage.refer_all = payload["refer_all"] in (True, "true", "1", 1)
     if "referral_hint" in payload:
         stage.referral_hint = (payload["referral_hint"] or "").strip() or None
     if stage.referral_mode == REFER_USER and stage.referral_user_id is None:
@@ -826,8 +841,11 @@ def inbox():
                 "entry_status": entry.status if entry else ENTRY_PENDING,
                 "is_mine": user.id in owners_of(instance, stage),
                 "unassigned": not owners_of(instance, stage),
-                "referred_to_name": (entry.referred_to.full_name
-                                     if entry and entry.referred_to else None),
+                "referred_to_name": (
+                    "، ".join(p["full_name"] for p in
+                              referral_progress(entry)["people"])
+                    if referral_progress(entry) else None),
+                "referral_progress": referral_progress(entry),
                 "referred_by_name": (entry.referred_by.full_name
                                      if entry and entry.referred_by else None),
                 "referral_note": entry.referral_note if entry else None,
@@ -910,8 +928,11 @@ def get_instance(instance_id):
     data["awaiting_my_decision"] = bool(
         stage and stage.stage_number in
         {s.stage_number for s in awaiting_approval(instance, user)})
-    data["referred_to_name"] = (entry.referred_to.full_name
-                                if entry and entry.referred_to else None)
+    progress = referral_progress(entry)
+    data["referred_to_name"] = ("، ".join(p["full_name"]
+                                          for p in progress["people"])
+                                if progress else None)
+    data["referral_progress"] = progress
     data["referred_by_name"] = (entry.referred_by.full_name
                                 if entry and entry.referred_by else None)
     data["referral_note"] = entry.referral_note if entry else None
@@ -997,7 +1018,7 @@ def submit(instance_id):
                      referral_note=payload.get("referral_note"),
                      share_stages=payload.get("share_stages"))
     except WorkflowError as exc:
-        return fail(str(exc), 422)
+        return fail(str(exc), 422, fields=exc.fields)
     data = instance.to_dict()
     if instance.record_id:
         message = "فرایند تکمیل شد و رکورد ثبت گردید."

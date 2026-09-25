@@ -293,7 +293,7 @@ def _stored_value_of(record, field_name):
     return holder.value if holder is not None else None
 
 
-def _hidden_by_condition(payload, record=None) -> set:
+def _hidden_by_condition(payload, record=None, unanswered_hides=False) -> set:
     """Field names whose "visible_when" condition is not met.
 
     Enforced on the server as well as in the browser: a contractor sent along
@@ -320,7 +320,11 @@ def _hidden_by_condition(payload, record=None) -> set:
         sent = payload.get(on, _MISSING)
         if sent is _MISSING:
             if record is None:
-                return None     # nothing to judge by; leave the field alone
+                # Nothing to judge by. Editing a record, that means "leave the
+                # field alone"; asking whether a stage is complete, a question
+                # nobody has answered yet opened nothing — «علت خرابی» not yet
+                # ticked means none of the cause forms is owed.
+                return True if unanswered_hides else None
             sent = _stored_value_of(record, on)
         values = sent if isinstance(sent, list) else [sent]
         if not isinstance(sent, list) and isinstance(sent, str) and "،" in sent:
