@@ -1,0 +1,465 @@
+/* ==========================================================================
+   blog.css — بخش مقالات
+   --------------------------------------------------------------------------
+   آرشیو مقالات · یک مقاله · فهرست مطالب · مسیر راهنما ·
+   سؤالات متداول · باکس نویسنده · باکس کتاب
+
+   عرض ستون متن عمداً ۷۳۶ پیکسل (۴۶rem) است — داخل بازه‌ی ۷۰۰ تا ۸۰۰
+   پیکسلی که در چک‌لیست خواسته شده بود. در این عرض چشم بدون چرخاندن
+   سر، خط را دنبال می‌کند.
+   ========================================================================== */
+
+.sm-page--post,
+.sm-page--blog { background: var(--sm-surface); }
+
+/* ستون اصلی مقاله.
+   انتخابگر عمداً دو کلاسه است: در pages.css قاعده‌ی
+   `.sm-page .sm-wrap` وجود دارد که عرض ۱۲۰۰ پیکسل می‌دهد و چون
+   دو کلاسه است بر یک انتخابگر تک‌کلاسه پیروز می‌شود. */
+.sm-page .sm-post__col { width: min(100% - 2.5rem, 46rem); margin-inline: auto; }
+
+
+/* ==========================================================================
+   مسیر راهنما (Breadcrumbs)
+   ========================================================================== */
+
+.sm-crumbs { margin: 0 0 1.2rem; }
+
+.sm-crumbs__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .3rem .55rem;
+  font-size: .82rem;
+  line-height: 1.9;
+  color: var(--sm-text-muted);
+}
+
+.sm-crumbs__item + .sm-crumbs__item::before {
+  content: "›";
+  margin-inline-end: .5rem;
+  color: var(--sm-navy-200);
+}
+
+.sm-crumbs__item a { color: var(--sm-navy-700); text-decoration: none; }
+.sm-crumbs__item a:hover { color: var(--sm-gold-700); text-decoration: underline; }
+.sm-crumbs__item [aria-current] { color: var(--sm-text-muted); }
+
+/* روی سربرگ تیره‌ی آرشیو */
+.sm-blog__crumbs { margin-bottom: 1.5rem; }
+
+
+/* ==========================================================================
+   سربرگ مقاله
+   ========================================================================== */
+
+.sm-post__head { padding-block: clamp(1.75rem, 1.3rem + 2vw, 3rem) 0; }
+
+.sm-post__cat { margin: 0 0 .6rem; }
+
+.sm-post__cat a {
+  display: inline-block;
+  padding: .22rem .7rem;
+  border-radius: 999px;
+  background: var(--sm-gold-50);
+  color: var(--sm-gold-700);
+  font-size: .8rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.sm-post__cat a:hover { background: var(--sm-gold-100); }
+
+.sm-post__title {
+  margin: 0;
+  font-size: clamp(1.6rem, 1.15rem + 2.1vw, 2.6rem);
+  font-weight: 900;
+  line-height: 1.5;
+  color: var(--sm-navy-800);
+  text-wrap: balance;
+}
+
+.sm-post__meta {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem 1.5rem;
+  font-size: .85rem;
+  color: var(--sm-text-muted);
+}
+
+.sm-post__meta li { position: relative; }
+.sm-post__meta li + li::before {
+  content: "";
+  position: absolute;
+  inset-inline-end: -.85rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px; height: 3px;
+  border-radius: 50%;
+  background: var(--sm-gold-500);
+}
+
+.sm-post__hero { margin: clamp(1.5rem, 1.2rem + 1.5vw, 2.5rem) 0 0; }
+
+.sm-post__hero img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--sm-radius-lg);
+}
+
+
+/* ==========================================================================
+   فهرست مطالب
+   ========================================================================== */
+
+.sm-toc {
+  margin: clamp(1.75rem, 1.4rem + 1.5vw, 2.5rem) 0 0;
+  padding: 1.2rem 1.4rem;
+  border: 1px solid var(--sm-navy-100);
+  border-inline-start: 3px solid var(--sm-gold-500);
+  border-radius: var(--sm-radius);
+  background: var(--sm-navy-50);
+}
+
+.sm-toc__title {
+  margin: 0 0 .7rem;
+  font-size: .95rem;
+  font-weight: 700;
+  color: var(--sm-navy-800);
+}
+
+.sm-toc__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: .42rem;
+  counter-reset: toc;
+}
+
+.sm-toc__item { font-size: .92rem; line-height: 1.85; }
+.sm-toc__item--h3 { padding-inline-start: 1.2rem; font-size: .87rem; }
+
+.sm-toc__item a {
+  color: var(--sm-navy-700);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+.sm-toc__item a:hover {
+  color: var(--sm-gold-700);
+  border-bottom-color: var(--sm-gold-400);
+}
+
+
+/* ==========================================================================
+   متن مقاله
+   ========================================================================== */
+
+.sm-post__body {
+  margin-top: clamp(1.75rem, 1.4rem + 1.5vw, 2.5rem);
+  font-size: 1.02rem;
+  line-height: 2.15;
+  color: var(--sm-text-soft);
+}
+
+.sm-post__body > * + * { margin-top: 1.15rem; }
+
+.sm-post__body p { margin: 0; }
+
+/* تیترها عمداً از هم متمایزند — H2 با خط طلایی، H3 بدون آن و کوچک‌تر */
+.sm-post__body h2 {
+  margin-top: 2.6rem;
+  margin-bottom: .2rem;
+  padding-top: .9rem;
+  border-top: 2px solid var(--sm-gold-100);
+  font-size: clamp(1.25rem, 1.1rem + .8vw, 1.6rem);
+  font-weight: 800;
+  line-height: 1.65;
+  color: var(--sm-navy-800);
+  scroll-margin-top: 5rem;
+}
+
+.sm-post__body h3 {
+  margin-top: 1.9rem;
+  margin-bottom: .1rem;
+  font-size: clamp(1.08rem, 1rem + .45vw, 1.25rem);
+  font-weight: 700;
+  line-height: 1.7;
+  color: var(--sm-gold-700);
+  scroll-margin-top: 5rem;
+}
+
+.sm-post__body h4 {
+  margin-top: 1.5rem;
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--sm-navy-700);
+}
+
+.sm-post__body a {
+  color: var(--sm-navy-700);
+  text-decoration: underline;
+  text-decoration-color: var(--sm-gold-400);
+  text-underline-offset: 3px;
+}
+.sm-post__body a:hover { color: var(--sm-gold-700); }
+
+.sm-post__body ul,
+.sm-post__body ol { margin: 0; padding-inline-start: 1.4rem; }
+.sm-post__body li + li { margin-top: .5rem; }
+
+.sm-post__body img,
+.sm-post__body figure img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--sm-radius);
+}
+
+.sm-post__body figure { margin: 0; }
+
+.sm-post__body figcaption {
+  margin-top: .5rem;
+  font-size: .85rem;
+  color: var(--sm-text-muted);
+  text-align: center;
+}
+
+.sm-post__body blockquote {
+  margin: 0;
+  padding: 1rem 1.3rem;
+  border-inline-start: 3px solid var(--sm-gold-500);
+  border-radius: var(--sm-radius);
+  background: var(--sm-gold-50);
+  font-size: 1.02rem;
+  line-height: 2.05;
+  color: var(--sm-navy-800);
+}
+
+.sm-post__body blockquote p { margin: 0; }
+.sm-post__body blockquote p + p { margin-top: .8rem; }
+
+.sm-post__body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .93rem;
+}
+.sm-post__body th,
+.sm-post__body td {
+  padding: .7rem .8rem;
+  border: 1px solid var(--sm-navy-100);
+  text-align: start;
+}
+.sm-post__body th { background: var(--sm-navy-50); font-weight: 700; color: var(--sm-navy-800); }
+
+/* جدول‌های پهن روی موبایل افقی اسکرول می‌شوند، نه اینکه صفحه را بشکنند */
+.sm-post__body .wp-block-table { overflow-x: auto; }
+
+.sm-post__disclaimer {
+  margin: 2.5rem 0 clamp(3rem, 2rem + 4vw, 5rem);
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--sm-navy-100);
+  font-size: .84rem;
+  line-height: 2;
+  color: var(--sm-text-muted);
+}
+
+
+/* ==========================================================================
+   سؤالات متداول مقاله
+   ========================================================================== */
+
+.sm-afaq { margin-top: clamp(2.2rem, 1.8rem + 2vw, 3.2rem); }
+
+.sm-afaq__title {
+  margin: 0 0 1rem;
+  font-size: clamp(1.2rem, 1.08rem + .7vw, 1.5rem);
+  font-weight: 800;
+  color: var(--sm-navy-800);
+}
+
+.sm-afaq__list { display: grid; gap: .6rem; }
+
+.sm-afaq__item {
+  border: 1px solid var(--sm-navy-100);
+  border-radius: var(--sm-radius);
+  background: var(--sm-surface);
+  overflow: hidden;
+}
+
+.sm-afaq__q {
+  padding: .95rem 1.1rem;
+  font-size: .98rem;
+  font-weight: 600;
+  line-height: 1.85;
+  color: var(--sm-navy-800);
+  cursor: pointer;
+  list-style: none;
+  position: relative;
+  padding-inline-end: 2.6rem;
+}
+
+.sm-afaq__q::-webkit-details-marker { display: none; }
+
+.sm-afaq__q::after {
+  content: "+";
+  position: absolute;
+  inset-inline-end: 1.1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.2rem;
+  font-weight: 400;
+  color: var(--sm-gold-600);
+}
+
+.sm-afaq__item[open] .sm-afaq__q::after { content: "−"; }
+.sm-afaq__item[open] .sm-afaq__q { background: var(--sm-navy-50); }
+
+.sm-afaq__a {
+  margin: 0;
+  overflow: hidden;
+  padding: .2rem 1.1rem 1.1rem;
+  font-size: .95rem;
+  line-height: 2.1;
+  color: var(--sm-text-soft);
+}
+
+
+/* ==========================================================================
+   باکس کتاب  (پای مقاله و با کد کوتاه [کتاب] وسط مقاله)
+   ========================================================================== */
+
+.sm-bookbox {
+  margin: clamp(2rem, 1.6rem + 2vw, 3rem) 0 0;
+  padding: clamp(1.4rem, 1.2rem + 1vw, 2rem);
+  border-radius: var(--sm-radius-lg);
+  background: linear-gradient(150deg, var(--sm-navy-900) 0%, var(--sm-navy-800) 70%);
+  color: #fff;
+  text-align: center;
+}
+
+/* وقتی داخل خودِ متن با کد کوتاه گذاشته شده */
+.sm-post__body .sm-bookbox { margin-block: 2rem; text-align: start; }
+
+.sm-bookbox__eyebrow {
+  display: inline-block;
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--sm-gold-300);
+}
+
+.sm-bookbox__title {
+  margin: .4rem 0 0;
+  font-size: clamp(1.15rem, 1.05rem + .6vw, 1.45rem);
+  font-weight: 800;
+  line-height: 1.6;
+  color: #fff;
+}
+
+.sm-bookbox__text {
+  margin: .6rem 0 1.1rem;
+  font-size: .93rem;
+  font-weight: 300;
+  line-height: 2;
+  color: var(--sm-navy-200);
+}
+
+.sm-bookbox .sm-btn { margin: 0; }
+
+
+/* ==========================================================================
+   باکس نویسنده
+   ========================================================================== */
+
+.sm-authorbox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.1rem;
+  margin: clamp(1.5rem, 1.2rem + 1.5vw, 2.2rem) 0 0;
+  padding: clamp(1.4rem, 1.2rem + 1vw, 1.9rem);
+  border: 1px solid var(--sm-navy-100);
+  border-radius: var(--sm-radius-lg);
+  background: var(--sm-navy-50);
+  text-align: center;
+}
+
+@media (min-width: 40rem) {
+  .sm-authorbox { flex-direction: row; align-items: flex-start; text-align: start; gap: 1.4rem; }
+}
+
+.sm-authorbox__media { flex: 0 0 auto; }
+.sm-authorbox__media .sm-avatar { width: 5.5rem; height: 5.5rem; }
+
+.sm-authorbox__body > * { margin: 0; }
+
+.sm-authorbox__eyebrow {
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--sm-gold-700);
+}
+
+.sm-authorbox__name {
+  margin-top: .3rem !important;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--sm-navy-800);
+}
+
+.sm-authorbox__role {
+  margin-top: .25rem !important;
+  font-size: .88rem;
+  font-weight: 600;
+  line-height: 1.9;
+  color: var(--sm-navy-700);
+}
+
+.sm-authorbox__text {
+  margin-top: .6rem !important;
+  font-size: .93rem;
+  line-height: 2.05;
+  color: var(--sm-text-soft);
+}
+
+
+/* ==========================================================================
+   صفحه‌بندی آرشیو
+   ========================================================================== */
+
+.sm-pagination { margin-top: clamp(2rem, 1.6rem + 2vw, 3rem); }
+
+.sm-pagination .nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: .45rem;
+}
+
+.sm-pagination .page-numbers {
+  display: grid;
+  place-items: center;
+  min-width: 2.4rem;
+  height: 2.4rem;
+  padding-inline: .6rem;
+  border: 1px solid var(--sm-navy-100);
+  border-radius: var(--sm-radius);
+  font-size: .92rem;
+  color: var(--sm-navy-700);
+  text-decoration: none;
+}
+
+.sm-pagination .page-numbers:hover { border-color: var(--sm-gold-400); color: var(--sm-gold-700); }
+
+.sm-pagination .page-numbers.current {
+  background: var(--sm-navy-800);
+  border-color: var(--sm-navy-800);
+  color: #fff;
+  font-weight: 700;
+}
+
+.sm-pagination .page-numbers.dots { border-color: transparent; }

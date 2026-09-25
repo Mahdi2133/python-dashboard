@@ -1,0 +1,1355 @@
+/* ==========================================================================
+   home.css — استایل صفحه‌ی اصلی
+   --------------------------------------------------------------------------
+   فقط روی صفحه‌ای که قالب «صفحه اصلی آکادمی سعادت‌مهر» دارد بارگذاری می‌شود.
+   همه‌ی رنگ‌ها از توکن‌های style.css می‌آیند.
+   ========================================================================== */
+
+.sm-home {
+  --sm-gap: clamp(1rem, .6rem + 1.6vw, 2rem);
+  --sm-pad-y: clamp(3.5rem, 2rem + 5vw, 7rem);
+  overflow-x: clip;
+}
+
+.sm-wrap {
+  width: min(100% - 2.5rem, 1200px);
+  margin-inline: auto;
+}
+
+.sm-section { padding-block: var(--sm-pad-y); }
+
+.sm-section__head { margin-bottom: clamp(2rem, 1.4rem + 2vw, 3.25rem); }
+
+.sm-section__head--row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.sm-section__title {
+  margin: 0;
+  font-size: clamp(1.55rem, 1.15rem + 1.9vw, 2.6rem);
+  font-weight: 900;
+  line-height: 1.4;
+  color: var(--sm-navy-800);
+  text-wrap: balance;
+}
+
+.sm-eyebrow {
+  margin: 0 0 .6rem;
+  font-size: clamp(.85rem, .82rem + .15vw, .95rem);
+  font-weight: 500;
+  color: var(--sm-gold-700);
+}
+
+.sm-lead {
+  font-size: clamp(1rem, .96rem + .25vw, 1.13rem);
+  font-weight: 300;
+  color: var(--sm-text-muted);
+  line-height: 2.05;
+  max-width: 62ch;
+}
+
+.sm-lead--center { margin-inline: auto; text-align: center; }
+
+.sm-empty {
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--sm-text-muted);
+  background: var(--sm-surface);
+  border: 1px dashed var(--sm-rule);
+  border-radius: var(--sm-radius-lg);
+}
+
+/* ---------- دکمه‌ها ---------- */
+
+.sm-btn {
+  display: inline-block;
+  font-weight: 700;
+  font-size: clamp(.95rem, .92rem + .2vw, 1.05rem);
+  padding: .9em 2.3em;
+  border-radius: var(--sm-radius);
+  text-decoration: none;
+  border: 2px solid transparent;
+  transition: background-color .2s ease, color .2s ease,
+              transform .2s ease, box-shadow .2s ease;
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+}
+
+.sm-btn--gold { background: var(--sm-gold-500); color: #fff; }
+.sm-btn--gold:hover,
+.sm-btn--gold:focus { background: var(--sm-gold-600); color: #fff; transform: translateY(-2px); box-shadow: var(--sm-shadow); }
+
+.sm-btn--navy { background: var(--sm-navy-800); color: #fff; }
+.sm-btn--navy:hover,
+.sm-btn--navy:focus { background: var(--sm-navy-600); color: #fff; transform: translateY(-2px); box-shadow: var(--sm-shadow); }
+
+.sm-link-more {
+  font-weight: 500;
+  color: var(--sm-gold-700);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.sm-link-more:hover { color: var(--sm-gold-600); text-decoration: underline; }
+
+/* ==========================================================================
+   سکشن ۱ — هیرو
+   ========================================================================== */
+
+.sm-hero {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(150deg, var(--sm-navy-900) 0%, var(--sm-navy-800) 52%, var(--sm-navy-700) 100%);
+  color: #fff;
+  padding-block: clamp(4.5rem, 3rem + 7vw, 9rem);
+  overflow: hidden;
+  text-align: center;
+}
+
+/* مُهر برند به‌عنوان واترمارک بسیار کم‌رنگ */
+.sm-hero__bg {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.sm-hero__seal {
+  width: min(78vw, 620px);
+  height: auto;
+  opacity: .05;
+  filter: grayscale(1) brightness(3);
+}
+
+.sm-hero__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.35rem;
+}
+
+.sm-hero__title {
+  margin: 0;
+  font-size: clamp(1.9rem, 1.2rem + 3.4vw, 4rem);
+  font-weight: 900;
+  line-height: 1.3;
+  color: #fff;
+  text-wrap: balance;
+  letter-spacing: -.01em;
+}
+
+.sm-hero__subtitle {
+  margin: 0;
+  max-width: 46ch;
+  font-size: clamp(1.02rem, .95rem + .5vw, 1.4rem);
+  font-weight: 300;
+  line-height: 1.85;
+  color: var(--sm-gold-300);
+  text-wrap: balance;
+}
+
+.sm-hero__cta { margin-top: .85rem; }
+
+/* ==========================================================================
+   سکشن ۳ — چرا SMP
+   ========================================================================== */
+
+.sm-why { background: var(--sm-surface); }
+
+.sm-why__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: clamp(2rem, 1.4rem + 3vw, 4rem);
+  align-items: center;
+}
+
+@media (min-width: 62rem) {
+  .sm-why__grid { grid-template-columns: 1.05fr .95fr; }
+}
+
+.sm-why__blocks {
+  display: grid;
+  gap: 1.25rem;
+  margin: 2rem 0;
+}
+
+.sm-why__block {
+  border-inline-start: 3px solid var(--sm-gold-500);
+  padding-inline-start: 1.1rem;
+}
+
+.sm-why__block-title {
+  margin: 0 0 .3rem;
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: var(--sm-navy-800);
+}
+
+.sm-why__block-text {
+  margin: 0;
+  font-size: .95rem;
+  color: var(--sm-text-muted);
+  line-height: 2;
+}
+
+.sm-why__img {
+  width: 100%;
+  height: auto;
+  border-radius: var(--sm-radius-lg);
+  box-shadow: var(--sm-shadow-lg);
+}
+
+/* ---------- پنل بیومتریک (جایگزین موقت تصویر) ---------- */
+
+.sm-biopanel {
+  background: var(--sm-surface);
+  border: 1px solid var(--sm-rule);
+  border-radius: var(--sm-radius-lg);
+  box-shadow: var(--sm-shadow-lg);
+  padding: clamp(1.25rem, 1rem + .8vw, 1.85rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+}
+
+.sm-biopanel__head {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--sm-rule);
+}
+
+.sm-biopanel__dot {
+  width: .55rem;
+  height: .55rem;
+  border-radius: 50%;
+  background: var(--sm-leaf-500);
+  flex: none;
+}
+
+.sm-biopanel__label {
+  font-weight: 700;
+  color: var(--sm-navy-800);
+  font-size: .98rem;
+}
+
+.sm-biopanel__tag {
+  margin-inline-start: auto;
+  font-size: .74rem;
+  font-weight: 500;
+  color: var(--sm-gold-700);
+  background: var(--sm-gold-50);
+  border: 1px solid var(--sm-gold-100);
+  border-radius: 100px;
+  padding: .1rem .6rem;
+  flex: none;
+}
+
+.sm-biopanel__rows { display: grid; gap: 1rem; }
+
+.sm-biopanel__row { display: grid; gap: .45rem; }
+
+.sm-biopanel__name {
+  font-size: .88rem;
+  color: var(--sm-text-muted);
+  font-weight: 500;
+}
+
+.sm-biopanel__track {
+  display: block;
+  height: .5rem;
+  border-radius: 100px;
+  background: var(--sm-navy-50);
+  overflow: hidden;
+}
+
+.sm-biopanel__fill {
+  display: block;
+  height: 100%;
+  border-radius: 100px;
+  background: linear-gradient(90deg, var(--sm-navy-600), var(--sm-gold-500));
+}
+
+.sm-biopanel__foot {
+  border-top: 1px solid var(--sm-rule);
+  padding-top: 1.1rem;
+  display: grid;
+  gap: .5rem;
+  color: var(--sm-navy-400);
+}
+
+.sm-biopanel__spark { width: 100%; height: 3rem; color: var(--sm-gold-500); }
+
+.sm-biopanel__caption {
+  font-size: .8rem;
+  color: var(--sm-text-muted);
+  text-align: center;
+}
+
+/* ==========================================================================
+   سکشن ۴ — شورای علمی
+   ========================================================================== */
+
+.sm-council { background: var(--sm-paper); }
+
+.sm-council__grid {
+  list-style: none; margin: 0; padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--sm-gap);
+}
+
+.sm-council__card {
+  background: var(--sm-surface);
+  border: 1px solid var(--sm-rule);
+  border-radius: var(--sm-radius-lg);
+  padding: 1.6rem 1.25rem;
+  text-align: center;
+}
+
+.sm-council__photo {
+  width: 6.5rem; height: 6.5rem;
+  border-radius: 50%;
+  object-fit: cover;
+  margin: 0 auto 1rem;
+  display: block;
+  border: 3px solid var(--sm-gold-100);
+}
+
+.sm-council__name { margin: 0 0 .25rem; font-size: 1.05rem; color: var(--sm-navy-800); }
+.sm-council__role { margin: 0; font-size: .88rem; color: var(--sm-text-muted); }
+
+/* ==========================================================================
+   سکشن ۵ — کتاب
+   ========================================================================== */
+
+.sm-book { background: var(--sm-paper-alt); }
+
+.sm-book__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: clamp(2.5rem, 1.6rem + 3.5vw, 4.5rem);
+  align-items: center;
+}
+
+@media (min-width: 62rem) {
+  .sm-book__grid { grid-template-columns: .8fr 1.2fr; }
+}
+
+.sm-book__visual { display: flex; justify-content: center; }
+
+.sm-book__cover-img {
+  width: min(100%, 20rem);
+  height: auto;
+  border-radius: 4px 10px 10px 4px;
+  box-shadow: var(--sm-shadow-lg);
+}
+
+.sm-book__p {
+  margin: 0 0 1.1rem;
+  color: var(--sm-text-soft);
+  line-height: 2.05;
+  max-width: 60ch;
+}
+
+.sm-book__text .sm-btn { margin-top: .8rem; }
+
+/* ---------- ماکت سه‌بعدی کتاب ---------- */
+/* عطف سمت راست است، چون کتاب فارسی از راست باز می‌شود. */
+
+.sm-book3d {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.1rem;
+  perspective: 1600px;
+}
+
+.sm-book3d__body {
+  position: relative;
+  width: min(72vw, 17rem);
+  aspect-ratio: 2 / 3;
+  transform: rotateY(-14deg) rotateX(2deg);
+  transform-style: preserve-3d;
+  transition: transform .5s ease;
+}
+
+.sm-book3d:hover .sm-book3d__body { transform: rotateY(-6deg) rotateX(1deg); }
+
+.sm-book3d__front {
+  position: absolute;
+  inset: 0;
+  border-radius: 3px 9px 9px 3px;
+  background:
+    radial-gradient(120% 90% at 78% 8%, rgba(168,132,60,.28), transparent 58%),
+    linear-gradient(155deg, var(--sm-navy-700), var(--sm-navy-900));
+  box-shadow: var(--sm-shadow-lg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .85rem;
+  padding: 1.75rem 1.35rem;
+  text-align: center;
+  overflow: hidden;
+}
+
+/* عطف — سمت راست */
+.sm-book3d__spine {
+  position: absolute;
+  top: 0; bottom: 0; right: 0;
+  width: 1.35rem;
+  border-radius: 9px 3px 3px 9px;
+  background: linear-gradient(90deg, rgba(0,0,0,.42), rgba(255,255,255,.06));
+}
+
+/* لبه‌ی برگه‌ها — سمت چپ */
+.sm-book3d__pages {
+  position: absolute;
+  top: 1.5%; bottom: 1.5%; left: -.5rem;
+  width: .6rem;
+  border-radius: 2px;
+  background: repeating-linear-gradient(90deg, #efeade 0 2px, #d9d2c2 2px 3px);
+  box-shadow: -2px 0 6px rgba(12,36,60,.18);
+}
+
+.sm-book3d__seal { width: 4.6rem; height: auto; opacity: .95; }
+
+.sm-book3d__title {
+  font-size: clamp(1.15rem, 1rem + .9vw, 1.55rem);
+  font-weight: 900;
+  color: #fff;
+  line-height: 1.5;
+}
+
+.sm-book3d__rule { width: 2.6rem; height: 2px; background: var(--sm-gold-500); }
+
+.sm-book3d__sub {
+  font-size: .88rem;
+  color: var(--sm-gold-300);
+  font-weight: 500;
+}
+
+.sm-book3d__note {
+  margin: 0;
+  font-size: .78rem;
+  color: var(--sm-text-muted);
+}
+
+/* ==========================================================================
+   سکشن ۶ — مقالات
+   ========================================================================== */
+
+.sm-articles { background: var(--sm-surface); }
+
+.sm-articles__grid {
+  list-style: none; margin: 0; padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: var(--sm-gap);
+}
+
+.sm-article {
+  background: var(--sm-surface);
+  border: 1px solid var(--sm-rule);
+  border-radius: var(--sm-radius-lg);
+  overflow: hidden;
+  transition: transform .25s ease, box-shadow .25s ease;
+}
+
+.sm-article:hover { transform: translateY(-4px); box-shadow: var(--sm-shadow); }
+
+.sm-article__link {
+  display: grid;
+  gap: .5rem;
+  text-decoration: none;
+  color: inherit;
+  height: 100%;
+  grid-template-rows: auto auto auto 1fr;
+}
+
+.sm-article__thumb {
+  display: block;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: var(--sm-navy-50);
+}
+
+.sm-article__thumb img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform .4s ease;
+}
+.sm-article:hover .sm-article__thumb img { transform: scale(1.04); }
+
+.sm-article__thumb-fallback {
+  display: block; width: 100%; height: 100%;
+  background:
+    radial-gradient(90% 80% at 70% 15%, rgba(168,132,60,.22), transparent 60%),
+    linear-gradient(150deg, var(--sm-navy-700), var(--sm-navy-900));
+}
+
+.sm-article__date {
+  padding-inline: 1.15rem;
+  font-size: .78rem;
+  color: var(--sm-gold-700);
+  font-weight: 500;
+  margin-top: .9rem;
+}
+
+.sm-article__title {
+  margin: 0;
+  padding-inline: 1.15rem;
+  font-size: 1.06rem;
+  font-weight: 700;
+  color: var(--sm-navy-800);
+  line-height: 1.65;
+}
+
+.sm-article__excerpt {
+  padding: 0 1.15rem 1.35rem;
+  font-size: .9rem;
+  color: var(--sm-text-muted);
+  line-height: 1.95;
+}
+
+/* ==========================================================================
+   سکشن ۷ — رسانه‌ها
+   ========================================================================== */
+
+.sm-media { background: var(--sm-paper); }
+.sm-media .sm-section__head { text-align: center; }
+
+/* فلکس به‌جای گرید: تعداد آیتم‌ها فرد است (پنج رسانه)، و با گرید
+   کارت آخر تنها در یک ردیف می‌افتد. با فلکسِ وسط‌چین، ردیف ناقص
+   وسط می‌نشیند و عمدی به نظر می‌رسد. */
+.sm-media__grid {
+  list-style: none; margin: 0; padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sm-gap);
+}
+
+/* پایه ۱۹rem انتخاب شده تا روی دسکتاپ سه کارت در هر ردیف بنشیند و
+   پنج رسانه به شکل ۳+۲ وسط‌چین در بیاید — متوازن‌تر از ۴+۱. */
+.sm-media__grid > .sm-media__item {
+  flex: 1 1 19rem;
+  max-width: 23rem;
+  display: flex;
+}
+
+/* کل کارت یک لینک است: کاربر می‌تواند روی لوگو هم کلیک کند. */
+.sm-media__card {
+  background: var(--sm-surface);
+  border: 1px solid var(--sm-rule);
+  border-radius: var(--sm-radius-lg);
+  padding: 1.5rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+  text-align: center;
+  text-decoration: none;
+  color: inherit;
+  width: 100%;
+  transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+}
+
+.sm-media__card:hover,
+.sm-media__card:focus-visible {
+  transform: translateY(-4px);
+  box-shadow: var(--sm-shadow);
+  border-color: var(--sm-gold-300);
+}
+
+.sm-media__logo {
+  height: 3.6rem;
+  display: grid;
+  place-items: center;
+  margin-bottom: .35rem;
+}
+
+.sm-media__logo img {
+  max-height: 3.6rem;
+  max-width: 100%;
+  width: auto;
+  object-fit: contain;
+  transition: transform .25s ease;
+}
+
+.sm-media__card:hover .sm-media__logo img { transform: scale(1.05); }
+
+.sm-media__wordmark {
+  font-size: 1.3rem;
+  font-weight: 900;
+  color: var(--sm-navy-800);
+  letter-spacing: -.01em;
+}
+
+.sm-media__title {
+  display: block;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--sm-navy-800);
+  line-height: 1.6;
+}
+
+.sm-media__outlet {
+  display: block;
+  margin: 0;
+  font-size: .8rem;
+  color: var(--sm-text-muted);
+  line-height: 1.8;
+}
+
+.sm-media__cta {
+  display: block;
+  margin-top: auto;
+  padding-top: .9rem;
+  font-size: .9rem;
+  font-weight: 500;
+  color: var(--sm-gold-700);
+}
+.sm-media__card:hover .sm-media__cta { color: var(--sm-gold-600); text-decoration: underline; }
+
+/* ==========================================================================
+   نوار پایانی
+   ========================================================================== */
+
+.sm-closing {
+  background: linear-gradient(150deg, var(--sm-navy-800), var(--sm-navy-900));
+  color: #fff;
+  padding-block: clamp(3.5rem, 2.2rem + 4.5vw, 6rem);
+}
+
+.sm-closing__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.2rem;
+  text-align: center;
+}
+
+.sm-closing__title {
+  margin: 0;
+  max-width: 34ch;
+  font-size: clamp(1.25rem, 1rem + 1.4vw, 1.95rem);
+  font-weight: 700;
+  line-height: 1.65;
+  color: #fff;
+  text-wrap: balance;
+}
+
+.sm-closing__text {
+  margin: 0;
+  max-width: 54ch;
+  color: var(--sm-navy-200);
+  line-height: 2;
+  font-weight: 300;
+}
+
+/* ==========================================================================
+   ظاهر شدن هنگام اسکرول
+   ========================================================================== */
+
+/*
+ * منطق عمداً وارونه است: پیش‌فرضِ هر عنصر «دیده‌شده» است و فقط وقتی
+ * جاوااسکریپت واقعاً اجرا شد (کلاس sm-js را روی <html> می‌گذارد)
+ * محو و ظاهر شدن فعال می‌شود.
+ *
+ * دلیل: اگر عکسِ این کار را می‌کردیم — یعنی پیش‌فرض «پنهان» و
+ * نمایش با جاوااسکریپت — کافی بود اسکریپت به هر دلیلی اجرا نشود
+ * (خطای افزونه، بلاک‌شدن فایل، مرورگر قدیمی) تا نیمی از محتوای
+ * سایت برای همیشه نامرئی بماند.
+ */
+.sm-js .sm-reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity .55s ease, transform .55s ease;
+}
+
+.sm-js .sm-reveal.is-visible { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sm-js .sm-reveal { opacity: 1; transform: none; transition: none; }
+  .sm-book3d__body { transition: none; }
+}
+
+/* ==========================================================================
+   افزوده‌های ساختار ۹ سکشنی
+   ========================================================================== */
+
+.sm-center { text-align: center; margin: 2rem 0 0; }
+
+.sm-section__head--center { text-align: center; }
+.sm-section__head--center .sm-lead { margin-inline: auto; }
+
+.sm-measure { max-width: 44rem; }
+.sm-measure--center { margin-inline: auto; text-align: center; }
+
+.sm-note {
+  margin: 2rem auto 0;
+  max-width: 52rem;
+  padding: 1.1rem 1.3rem;
+  background: var(--sm-surface);
+  border: 1px solid var(--sm-rule);
+  border-inline-start: 3px solid var(--sm-gold-500);
+  border-radius: 0 var(--sm-radius) var(--sm-radius) 0;
+  font-size: .93rem;
+  color: var(--sm-text-muted);
+  line-height: 2;
+}
+
+/* ---------- دکمه‌های افزوده ---------- */
+
+/*
+ * دکمه‌ی خطی.
+ *
+ * پیش‌فرضش سفید است چون بیشتر جاهایی که استفاده می‌شود زمینه‌ی
+ * سرمه‌ای دارد (هیرو، نوار پایانی، سربرگ صفحات). ولی همین دکمه در
+ * فرم‌ها و پاپ‌آپ‌ها روی زمینه‌ی سفید هم می‌نشیند و آنجا سفیدِ روی
+ * سفید یعنی دکمه‌ی نامرئی — که دقیقاً یک‌بار اتفاق افتاد.
+ *
+ * برای همین رنگ‌ها از دو متغیر خوانده می‌شوند و هر ظرفِ روشنی
+ * می‌تواند با دو خط، نسخه‌ی تیره را روشن کند.
+ */
+.sm-btn--ghost {
+  background: transparent;
+  color: var(--sm-ghost-ink, #fff);
+  border-color: var(--sm-ghost-line, rgba(255, 255, 255, .45));
+}
+.sm-btn--ghost:hover,
+.sm-btn--ghost:focus {
+  background: var(--sm-ghost-bg-hover, rgba(255, 255, 255, .1));
+  border-color: var(--sm-ghost-line-hover, #fff);
+  color: var(--sm-ghost-ink-hover, #fff);
+  transform: translateY(-2px);
+}
+
+/* دکمه‌ی خطی — عمداً از دکمه‌ی طلایی ضعیف‌تر است، چون
+   «درخواست ارزیابی» باید همیشه اقدام اصلی باقی بماند. */
+.sm-btn--outline {
+  background: transparent;
+  color: var(--sm-navy-800);
+  border-color: var(--sm-navy-800);
+}
+.sm-btn--outline:hover,
+.sm-btn--outline:focus {
+  background: var(--sm-navy-800);
+  color: #fff;
+  transform: translateY(-2px);
+}
+
+/* ---------- هیرو: دکمه‌ها و خط اعتماد ---------- */
+
+.sm-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .8rem;
+  justify-content: center;
+  margin-top: .6rem;
+}
+
+.sm-hero__trust {
+  list-style: none;
+  margin: 1.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: .5rem 1.6rem;
+  font-size: .88rem;
+  color: var(--sm-navy-200);
+}
+
+.sm-hero__trust li { position: relative; }
+.sm-hero__trust li + li::before {
+  content: "";
+  position: absolute;
+  inset-inline-end: -.85rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px; height: 3px;
+  border-radius: 50%;
+  background: var(--sm-gold-500);
+}
+
+/* ==========================================================================
+   هیرو با عکس واقعی  (.sm-hero--photo)
+   --------------------------------------------------------------------------
+   وقتی در inc/content-home.php کلید 'image' پر باشد، این حالت فعال می‌شود.
+
+   دو چیدمان دارد و با کلید 'layout' انتخاب می‌شود:
+
+     'split'    (پیش‌فرض)  عکس یک طرف، متن روی یک پانل سرمه‌ای طرف دیگر.
+                            عکس هیچ سایه و پرده‌ای نمی‌گیرد و کامل دیده
+                            می‌شود — هم افراد، هم تابلوی پشت سرشان.
+                            متن هم صددرصد خواناست، چون روی رنگ برند
+                            نشسته نه روی عکس.
+
+     'overlay'             متن روی خود عکس. چون هیچ عکسی تضمین نمی‌کند
+                            متن سفید رویش خوانا باشد، در این حالت یک
+                            پرده‌ی رنگی فقط روی نیمه‌ی متن کشیده می‌شود
+                            (نه روی چهره‌ها).
+
+   روی موبایل هر دو حالت یکی می‌شوند: عکس بالا، متن پایین. در عرض کم
+   هر متنی روی عکس یا ناخواناست یا چهره‌ها را می‌پوشاند.
+   ========================================================================== */
+
+.sm-hero--photo {
+  /* کدام نقطه‌ی عکس هنگام برش حتماً در قاب بماند */
+  --sm-hero-focus: center;
+
+  padding-block: 0;
+  text-align: start;
+}
+
+.sm-hero--photo .sm-hero__bg {
+  position: relative;
+  inset: auto;
+  z-index: 0;
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+}
+
+.sm-hero--photo .sm-hero__photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: var(--sm-hero-focus);
+  opacity: 1;      /* بدون کم‌رنگ‌سازی — کیفیت کامل عکس */
+  filter: none;    /* بدون هیچ فیلتری */
+}
+
+.sm-hero--photo .sm-hero__inner {
+  align-items: stretch;
+  padding-block: clamp(2.2rem, 1.7rem + 2.4vw, 3.6rem);
+}
+
+.sm-hero--photo .sm-hero__title {
+  font-size: clamp(1.6rem, 1.05rem + 2.1vw, 2.85rem);
+}
+
+.sm-hero--photo .sm-hero__subtitle {
+  max-width: 38ch;
+  color: var(--sm-gold-200);
+}
+
+.sm-hero--photo .sm-hero__actions,
+.sm-hero--photo .sm-hero__trust { justify-content: flex-start; }
+
+.sm-hero--photo .sm-hero__trust { color: var(--sm-navy-100); }
+
+
+@media (min-width: 62rem) {
+
+  /* ==================== چیدمان «کنار هم» ==================== */
+
+  /*
+   * direction: ltr روی خودِ گرید تا ستون اول همیشه «سمت چپ فیزیکی»
+   * باشد. خواسته‌ی کاربر فیزیکی است («افراد سمت راست، متن سمت چپ»)،
+   * نه وابسته به جهت متن. جهت راست‌به‌چپ بلافاصله روی فرزندان
+   * برمی‌گردد تا متن فارسی درست بچیند.
+   */
+  .sm-hero--split {
+    display: grid;
+    direction: ltr;
+    min-height: clamp(28rem, 62vh, 41rem);
+    align-items: stretch;
+  }
+
+  .sm-hero--split > * { direction: rtl; }
+
+  .sm-hero--split.sm-hero--text-left  { grid-template-columns: minmax(0, 43fr) minmax(0, 57fr); }
+  .sm-hero--split.sm-hero--text-right { grid-template-columns: minmax(0, 57fr) minmax(0, 43fr); }
+
+  .sm-hero--split.sm-hero--text-left  .sm-hero__inner { grid-column: 1; grid-row: 1; }
+  .sm-hero--split.sm-hero--text-left  .sm-hero__bg    { grid-column: 2; grid-row: 1; }
+  .sm-hero--split.sm-hero--text-right .sm-hero__inner { grid-column: 2; grid-row: 1; }
+  .sm-hero--split.sm-hero--text-right .sm-hero__bg    { grid-column: 1; grid-row: 1; }
+
+  .sm-hero--split .sm-hero__bg {
+    aspect-ratio: auto;
+    height: 100%;
+  }
+
+  .sm-hero--split .sm-hero__inner {
+    width: min(100% - 3rem, 36rem);
+    margin-inline: auto;
+    justify-content: center;
+    padding-block: clamp(2.5rem, 2rem + 2vw, 4rem);
+  }
+
+  /*
+   * درز میان پانل و عکس را محو می‌کند تا برش، خط‌کشی‌شده و خشک
+   * به نظر نرسد. فقط ۱۴٪ لبه‌ی عکس را می‌گیرد — سمتی که خالی است،
+   * نه سمتی که افراد ایستاده‌اند.
+   */
+  .sm-hero--split .sm-hero__bg::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .sm-hero--split.sm-hero--text-left .sm-hero__bg::after {
+    background: linear-gradient(to right,
+      var(--sm-navy-900) 0%,
+      rgba(7, 26, 43, .55) 5%,
+      rgba(7, 26, 43, 0) 15%);
+  }
+
+  .sm-hero--split.sm-hero--text-right .sm-hero__bg::after {
+    background: linear-gradient(to left,
+      var(--sm-navy-900) 0%,
+      rgba(7, 26, 43, .55) 5%,
+      rgba(7, 26, 43, 0) 15%);
+  }
+
+
+  /* ==================== چیدمان «روی عکس» ==================== */
+
+  .sm-hero--overlay {
+    display: grid;
+    min-height: clamp(30rem, 66vh, 46rem);
+  }
+
+  .sm-hero--overlay .sm-hero__bg,
+  .sm-hero--overlay .sm-hero__inner { grid-area: 1 / 1; }
+
+  .sm-hero--overlay .sm-hero__bg { aspect-ratio: auto; height: 100%; }
+
+  .sm-hero--overlay .sm-hero__inner {
+    z-index: 1;
+    align-self: center;
+    justify-content: center;
+    padding-block: clamp(2rem, 1rem + 3vw, 4rem);
+  }
+
+  /* متن در نیمه‌ی خالی می‌نشیند، نه روی چهره‌ها */
+  .sm-hero--overlay.sm-hero--text-left  .sm-hero__inner { padding-right: 52%; }
+  .sm-hero--overlay.sm-hero--text-right .sm-hero__inner { padding-left:  52%; }
+}
+
+/*
+ * پرده‌ی حالت overlay — در هر عرضی فعال است، چون بدون آن متن سفید
+ * روی عکس روشن اصلاً خوانده نمی‌شود. فقط نیمه‌ی متن را می‌پوشاند و
+ * تا ۶۲٪ کاملاً شفاف می‌شود، پس چهره‌ها دست‌نخورده می‌مانند.
+ */
+.sm-hero--overlay .sm-hero__bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.sm-hero--overlay.sm-hero--text-left .sm-hero__bg::after {
+  background: linear-gradient(to right,
+    rgba(7, 26, 43, .93) 0%,
+    rgba(7, 26, 43, .86) 28%,
+    rgba(7, 26, 43, .45) 46%,
+    rgba(7, 26, 43, 0) 62%);
+}
+
+.sm-hero--overlay.sm-hero--text-right .sm-hero__bg::after {
+  background: linear-gradient(to left,
+    rgba(7, 26, 43, .93) 0%,
+    rgba(7, 26, 43, .86) 28%,
+    rgba(7, 26, 43, .45) 46%,
+    rgba(7, 26, 43, 0) 62%);
+}
+
+/* روی موبایل متن زیر عکس است، پس پرده لازم نیست */
+@media (max-width: 61.99rem) {
+  .sm-hero--overlay .sm-hero__bg::after { display: none; }
+}
+
+
+/* ---------- ۲ نوار اعتماد ---------- */
+
+.sm-trustbar {
+  background: var(--sm-navy-900);
+  border-block: 1px solid rgba(255, 255, 255, .08);
+  padding-block: 1.5rem;
+}
+
+.sm-trustbar__list {
+  list-style: none; margin: 0; padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem 2.2rem;
+}
+
+.sm-trustbar__item {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  font-size: .9rem;
+  color: var(--sm-navy-200);
+  line-height: 1.7;
+}
+
+.sm-trustbar__icon {
+  flex: none;
+  width: 2rem; height: 2rem;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .07);
+  color: var(--sm-gold-300);
+}
+.sm-trustbar__icon svg { width: 1.05rem; height: 1.05rem; }
+
+.sm-trustbar__text { min-width: 0; }
+
+/* ---------- ۳ مسئله‌ی مخاطب ---------- */
+
+.sm-problem { background: var(--sm-paper); }
+
+.sm-problem__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: clamp(2rem, 1.4rem + 3vw, 3.5rem);
+  align-items: start;
+}
+@media (min-width: 62rem) {
+  .sm-problem__grid { grid-template-columns: 1.1fr .9fr; }
+}
+
+.sm-problem__list {
+  list-style: none; margin: 0; padding: 0;
+  background: var(--sm-surface);
+  border: 1px solid var(--sm-rule);
+  border-radius: var(--sm-radius-lg);
+  box-shadow: var(--sm-shadow-sm);
+  overflow: hidden;
+}
+
+.sm-problem__list li {
+  display: flex;
+  align-items: flex-start;
+  gap: .7rem;
+  padding: .95rem 1.25rem;
+  font-size: .95rem;
+  color: var(--sm-text-soft);
+  line-height: 1.85;
+  border-bottom: 1px solid var(--sm-rule);
+}
+.sm-problem__list li:last-child { border-bottom: none; }
+
+.sm-problem__list li::before {
+  content: "";
+  flex: none;
+  margin-top: .62em;
+  width: .42rem; height: .42rem;
+  border-radius: 50%;
+  background: var(--sm-gold-500);
+}
+
+/* ---------- ۴ سه فاز ---------- */
+
+.sm-protocol { background: var(--sm-surface); }
+
+.sm-phases {
+  list-style: none; margin: 0; padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--sm-gap);
+  counter-reset: phase;
+}
+
+.sm-phase {
+  position: relative;
+  background: var(--sm-paper);
+  border: 1px solid var(--sm-rule);
+  border-radius: var(--sm-radius-lg);
+  padding: 2.1rem 1.4rem 1.5rem;
+  text-align: center;
+  transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+}
+.sm-phase:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--sm-shadow);
+  border-color: var(--sm-gold-300);
+}
+
+.sm-phase__num {
+  position: absolute;
+  top: -1.05rem;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  width: 2.1rem; height: 2.1rem;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--sm-navy-800);
+  color: #fff;
+  font-size: .9rem;
+  font-weight: 700;
+}
+
+.sm-phase__en {
+  display: block;
+  font-size: .78rem;
+  font-weight: 500;
+  color: var(--sm-gold-700);
+  direction: ltr;
+  margin-bottom: .2rem;
+}
+
+.sm-phase__fa {
+  margin: 0 0 .5rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--sm-navy-800);
+}
+
+.sm-phase__text {
+  margin: 0;
+  font-size: .92rem;
+  color: var(--sm-text-muted);
+  line-height: 2;
+}
+
+/* ---------- ۵ برنامه ۱۲ هفته ---------- */
+
+.sm-weeks { background: var(--sm-paper-alt); }
+
+.sm-weeks__track {
+  list-style: none; margin: 0; padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--sm-gap);
+}
+
+.sm-week {
+  background: var(--sm-surface);
+  border: 1px solid var(--sm-rule);
+  border-radius: var(--sm-radius-lg);
+  padding: 1.5rem 1.35rem;
+  border-top: 3px solid var(--sm-gold-500);
+}
+
+.sm-week__range {
+  display: inline-block;
+  font-size: .8rem;
+  font-weight: 500;
+  color: var(--sm-gold-700);
+  background: var(--sm-gold-50);
+  border-radius: 100px;
+  padding: .15rem .7rem;
+  margin-bottom: .7rem;
+}
+
+.sm-week__title {
+  margin: 0 0 .4rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--sm-navy-800);
+}
+
+.sm-week__text {
+  margin: 0;
+  font-size: .93rem;
+  color: var(--sm-text-muted);
+  line-height: 2;
+}
+
+/* ---------- ۶ نقل‌قول‌ها ---------- */
+
+.sm-proof { background: var(--sm-surface); }
+
+.sm-quotes {
+  list-style: none; margin: 0 0 2.5rem; padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: var(--sm-gap);
+}
+
+.sm-quote {
+  background: var(--sm-paper);
+  border: 1px solid var(--sm-rule);
+  border-radius: var(--sm-radius-lg);
+  padding: 1.5rem 1.35rem;
+}
+
+.sm-quote blockquote { margin: 0 0 .9rem; padding: 0; border: none; background: none; }
+.sm-quote blockquote p { margin: 0; font-size: .97rem; line-height: 2; color: var(--sm-text-soft); }
+
+.sm-quote__meta { margin: 0; display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; }
+.sm-quote__name { font-weight: 700; color: var(--sm-navy-800); font-size: .92rem; }
+.sm-quote__extra { font-size: .82rem; color: var(--sm-text-muted); }
+
+/* ---------- ۷ تیم ---------- */
+
+.sm-team { background: var(--sm-paper); }
+
+.sm-team__grid {
+  list-style: none; margin: 0; padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: var(--sm-gap);
+  max-width: 56rem;
+  margin-inline: auto;
+}
+
+.sm-team__card {
+  background: var(--sm-surface);
+  border: 1px solid var(--sm-rule);
+  border-radius: var(--sm-radius-lg);
+  padding: 2rem 1.5rem;
+  text-align: center;
+}
+
+.sm-team__name { margin: 1rem 0 .25rem; font-size: 1.15rem; font-weight: 700; color: var(--sm-navy-800); }
+.sm-team__role { margin: 0 0 .9rem; font-size: .85rem; color: var(--sm-gold-700); font-weight: 500; }
+.sm-team__text { margin: 0; font-size: .92rem; color: var(--sm-text-muted); line-height: 2; }
+
+/* نشان جایگزین عکس — تا رسیدن عکس واقعی */
+.sm-avatar {
+  display: block;
+  width: 7.5rem; height: 7.5rem;
+  margin-inline: auto;
+  border-radius: 50%;
+}
+
+.sm-avatar--photo { object-fit: cover; border: 3px solid var(--sm-gold-100); }
+
+.sm-avatar--mono {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(150deg, var(--sm-navy-700), var(--sm-navy-900));
+  border: 3px solid var(--sm-gold-400);
+  color: var(--sm-gold-300);
+  font-size: 2.6rem;
+  font-weight: 900;
+  line-height: 1;
+}
+.sm-avatar--mono span { transform: translateY(-.05em); }
+
+/* ---------- ۹ فراخوان نهایی ---------- */
+
+.sm-closing__notes {
+  list-style: none;
+  margin: 1.3rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: .5rem 1.6rem;
+  font-size: .87rem;
+  color: var(--sm-navy-200);
+}
+
+.sm-closing__notes li { display: flex; align-items: center; gap: .45rem; }
+.sm-closing__notes li::before {
+  content: "";
+  width: .38rem; height: .38rem;
+  border-radius: 50%;
+  background: var(--sm-gold-400);
+  flex: none;
+}
+
+/* ==========================================================================
+   سکشن ۶٫۵ — پشتوانه‌ی علمی (خلاصه‌ی صفحه‌ی اصلی)
+   --------------------------------------------------------------------------
+   فقط چند نفر از هر گروه اینجا می‌آیند. فهرست کامل در /book/council/ است.
+   ========================================================================== */
+
+.sm-hcouncil {
+  background: linear-gradient(150deg, var(--sm-navy-900) 0%, var(--sm-navy-800) 100%);
+  color: #fff;
+}
+
+.sm-hcouncil .sm-section__title { color: #fff; }
+.sm-hcouncil .sm-eyebrow { color: var(--sm-gold-300); }
+
+.sm-hcouncil__lead {
+  margin: .85rem auto 0;
+  max-width: 58ch;
+  font-size: .98rem;
+  font-weight: 300;
+  line-height: 2;
+  color: var(--sm-navy-200);
+}
+
+.sm-hcouncil__group { margin-top: clamp(2rem, 1.5rem + 2vw, 3rem); }
+
+.sm-hcouncil__gtitle {
+  margin: 0 0 1.1rem;
+  padding-bottom: .6rem;
+  border-bottom: 1px solid rgba(255, 255, 255, .12);
+  font-size: .95rem;
+  font-weight: 700;
+  color: var(--sm-gold-300);
+}
+
+.sm-hcouncil__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 40rem) { .sm-hcouncil__list { grid-template-columns: repeat(3, 1fr); } }
+
+.sm-hcard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .4rem;
+  padding: 1.25rem 1rem;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: var(--sm-radius-lg);
+  background: rgba(255, 255, 255, .04);
+  text-align: center;
+  transition: border-color .25s ease, background .25s ease;
+}
+
+.sm-hcard:hover { border-color: var(--sm-gold-400); background: rgba(255, 255, 255, .07); }
+
+.sm-hcard__photo {
+  width: 4.5rem;
+  height: 4.5rem;
+  margin-bottom: .45rem;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(220, 193, 137, .45);
+}
+
+.sm-hcard__name {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.7;
+  color: #fff;
+}
+
+.sm-hcard__role {
+  font-size: .87rem;
+  font-weight: 600;
+  line-height: 1.8;
+  color: var(--sm-gold-300);
+}
+
+.sm-hcard__org {
+  font-size: .82rem;
+  line-height: 1.85;
+  color: var(--sm-navy-200);
+}
+
+.sm-hcouncil__more { margin: clamp(2rem, 1.6rem + 2vw, 3rem) 0 0; text-align: center; }
+
+.sm-media__more { margin: 1.75rem 0 0; text-align: center; }

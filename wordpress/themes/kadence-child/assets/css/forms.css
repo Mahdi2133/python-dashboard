@@ -1,0 +1,922 @@
+/* ==========================================================================
+   forms.css — فرم درخواست ارزیابی، خودارزیابی و ثبت سفارش
+   ========================================================================== */
+
+.sm-page--form,
+.sm-page--check,
+.sm-page--order { background: var(--sm-surface); }
+
+.sm-page .sm-form__col { width: min(100% - 2.5rem, 46rem); margin-inline: auto; }
+
+.sm-formsection { padding-block: clamp(2.5rem, 2rem + 3vw, 4.5rem); }
+
+
+/* ---------- نوارهای اطلاع‌رسانی ---------- */
+
+.sm-capacity {
+  margin: 0 0 1.5rem;
+  padding: .75rem 1.1rem;
+  border: 1px solid var(--sm-gold-300);
+  border-radius: var(--sm-radius);
+  background: var(--sm-gold-50);
+  font-size: .92rem;
+  color: var(--sm-gold-800);
+  text-align: center;
+}
+.sm-capacity strong { color: var(--sm-navy-800); }
+
+.sm-formerror,
+.sm-warnbox {
+  margin: 0 0 1.75rem;
+  padding: .9rem 1.1rem;
+  border-radius: var(--sm-radius);
+  font-size: .93rem;
+  line-height: 1.95;
+}
+
+.sm-formerror {
+  border: 1px solid #E3B8B2;
+  background: #FBF0EE;
+  color: #8C2A1F;
+}
+
+.sm-warnbox {
+  border: 1px solid var(--sm-navy-100);
+  border-inline-start: 3px solid var(--sm-gold-500);
+  background: var(--sm-navy-50);
+  color: var(--sm-text-soft);
+}
+
+
+/* ---------- نوار گام‌ها ---------- */
+
+.sm-steps {
+  list-style: none;
+  margin: 0 0 2rem;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 1.25rem;
+}
+
+.sm-steps__item {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .88rem;
+  color: var(--sm-text-muted);
+}
+
+.sm-steps__num {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  border: 1px solid var(--sm-navy-100);
+  font-size: .82rem;
+  font-weight: 700;
+  background: var(--sm-surface);
+}
+
+.sm-steps__item.is-current { color: var(--sm-navy-800); font-weight: 600; }
+.sm-steps__item.is-current .sm-steps__num {
+  background: var(--sm-navy-800);
+  border-color: var(--sm-navy-800);
+  color: var(--sm-gold-300);
+}
+.sm-steps__item.is-done { cursor: pointer; color: var(--sm-gold-700); }
+.sm-steps__item.is-done .sm-steps__num {
+  background: var(--sm-gold-500);
+  border-color: var(--sm-gold-500);
+  color: #fff;
+}
+
+
+/* ---------- ساختار فرم ---------- */
+
+.sm-fieldset {
+  margin: 0 0 1.75rem;
+  padding: 0;
+  border: 0;
+}
+
+.sm-fieldset__legend {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  margin-bottom: 1.25rem;
+  padding: 0;
+  font-size: clamp(1.1rem, 1rem + .55vw, 1.35rem);
+  font-weight: 800;
+  color: var(--sm-navy-800);
+}
+
+.sm-fieldset__num {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--sm-navy-800);
+  color: var(--sm-gold-300);
+  font-size: .92rem;
+  font-weight: 700;
+}
+
+.sm-field { margin-bottom: 1.4rem; }
+
+.sm-field__label {
+  display: block;
+  margin-bottom: .35rem;
+  font-size: .97rem;
+  font-weight: 600;
+  line-height: 1.85;
+  color: var(--sm-navy-800);
+}
+
+.sm-req { color: var(--sm-gold-600); margin-inline-start: .15rem; }
+
+.sm-field__help {
+  margin: 0 0 .5rem;
+  font-size: .85rem;
+  line-height: 1.9;
+  color: var(--sm-text-muted);
+}
+
+.sm-field input[type="text"],
+.sm-field input[type="tel"],
+.sm-field input[type="email"],
+.sm-field input[type="number"],
+.sm-field select,
+.sm-field textarea {
+  width: 100%;
+  padding: .7rem .9rem;
+  border: 1px solid var(--sm-navy-100);
+  border-radius: var(--sm-radius);
+  background: var(--sm-surface);
+  font-family: inherit;
+  font-size: 1rem;
+  line-height: 1.9;
+  color: var(--sm-text);
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+
+.sm-field textarea { resize: vertical; min-height: 6.5rem; }
+
+.sm-field input:focus,
+.sm-field select:focus,
+.sm-field textarea:focus {
+  outline: none;
+  border-color: var(--sm-gold-500);
+  box-shadow: 0 0 0 3px rgba(168, 132, 60, .18);
+}
+
+.sm-field input:user-invalid,
+.sm-field textarea:user-invalid,
+.sm-field select:user-invalid { border-color: #C0705F; }
+
+.sm-radiogroup { margin: 0; padding: 0; border: 0; }
+
+.sm-check {
+  display: flex;
+  align-items: flex-start;
+  gap: .6rem;
+  margin-bottom: .55rem;
+  font-size: .95rem;
+  line-height: 1.95;
+  color: var(--sm-text-soft);
+  cursor: pointer;
+}
+
+.sm-check input { margin-top: .55em; flex: 0 0 auto; accent-color: var(--sm-gold-600); }
+
+.sm-check--radio {
+  padding: .6rem .85rem;
+  border: 1px solid var(--sm-navy-100);
+  border-radius: var(--sm-radius);
+  transition: border-color .2s ease, background .2s ease;
+}
+.sm-check--radio:hover { border-color: var(--sm-gold-300); background: var(--sm-gold-50); }
+.sm-check--radio:has(input:checked) { border-color: var(--sm-gold-500); background: var(--sm-gold-50); }
+
+.sm-field--consent {
+  margin-top: 2rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--sm-navy-100);
+  border-radius: var(--sm-radius);
+  background: var(--sm-navy-50);
+}
+
+/* تله‌ی ربات — از دید کاربر و صفحه‌خوان پنهان، ولی برای ربات پر است */
+.sm-hp {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sm-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  margin-top: 1.75rem;
+}
+
+.sm-form__note {
+  margin: 1.5rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid var(--sm-navy-100);
+  font-size: .84rem;
+  line-height: 2;
+  color: var(--sm-text-muted);
+}
+
+
+/* ---------- پیام موفقیت ---------- */
+
+.sm-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: clamp(2rem, 1.6rem + 2vw, 3.25rem);
+  border: 1px solid var(--sm-leaf-200);
+  border-radius: var(--sm-radius-lg);
+  background: var(--sm-leaf-50);
+  text-align: center;
+}
+
+.sm-done__mark { width: 3.5rem; height: 3.5rem; color: var(--sm-leaf-600); }
+.sm-done__mark svg { width: 100%; height: 100%; }
+
+.sm-done__title {
+  margin: 0;
+  font-size: clamp(1.3rem, 1.1rem + .9vw, 1.75rem);
+  font-weight: 800;
+  color: var(--sm-leaf-800);
+}
+
+.sm-done__text {
+  margin: 0;
+  max-width: 48ch;
+  font-size: .98rem;
+  line-height: 2.05;
+  color: var(--sm-text-soft);
+}
+
+.sm-done .sm-btn { margin-top: .6rem; }
+
+
+/* ==========================================================================
+   خودارزیابی
+   ========================================================================== */
+
+.sm-quiz__group { margin: 0 0 2.5rem; padding: 0; border: 0; }
+
+.sm-quiz__glegend {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  padding: 0;
+  font-size: clamp(1.08rem, 1rem + .5vw, 1.3rem);
+  font-weight: 800;
+  color: var(--sm-navy-800);
+}
+
+.sm-quiz__gintro {
+  margin: .5rem 0 1.25rem;
+  font-size: .9rem;
+  line-height: 1.95;
+  color: var(--sm-text-muted);
+}
+
+.sm-quiz__q {
+  margin: 0 0 1rem;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--sm-navy-100);
+  border-radius: var(--sm-radius-lg);
+  background: var(--sm-surface);
+}
+
+.sm-quiz__qtext {
+  padding: 0;
+  margin-bottom: .85rem;
+  font-size: .98rem;
+  font-weight: 600;
+  line-height: 1.9;
+  color: var(--sm-navy-800);
+}
+
+.sm-quiz__opts { display: grid; gap: .45rem; }
+
+.sm-opt {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .5rem .75rem;
+  border: 1px solid transparent;
+  border-radius: var(--sm-radius);
+  font-size: .93rem;
+  line-height: 1.85;
+  color: var(--sm-text-soft);
+  cursor: pointer;
+  transition: background .18s ease, border-color .18s ease;
+}
+.sm-opt input { accent-color: var(--sm-gold-600); flex: 0 0 auto; }
+.sm-opt:hover { background: var(--sm-navy-50); }
+.sm-opt:has(input:checked) {
+  border-color: var(--sm-gold-400);
+  background: var(--sm-gold-50);
+  color: var(--sm-navy-800);
+  font-weight: 500;
+}
+
+.sm-quiz__count {
+  margin: 0;
+  font-size: .88rem;
+  color: var(--sm-text-muted);
+}
+
+.sm-quiz__warn {
+  margin: .85rem 0 0;
+  font-size: .9rem;
+  font-weight: 600;
+  color: #8C2A1F;
+}
+
+
+/* ---------- نتیجه ---------- */
+
+.sm-result {
+  margin-top: 2.5rem;
+  padding: clamp(1.5rem, 1.2rem + 1.5vw, 2.4rem);
+  border: 1px solid var(--sm-navy-100);
+  border-radius: var(--sm-radius-lg);
+  background: var(--sm-navy-50);
+  scroll-margin-top: 4rem;
+}
+
+.sm-result:focus { outline: 2px solid var(--sm-gold-500); outline-offset: 3px; }
+
+.sm-result__badge {
+  display: inline-block;
+  padding: .3rem .9rem;
+  border-radius: 999px;
+  font-size: .85rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--sm-navy-700);
+}
+
+.sm-result--green .sm-result__badge { background: var(--sm-leaf-600); }
+.sm-result--amber .sm-result__badge { background: var(--sm-gold-600); }
+.sm-result--red   .sm-result__badge { background: #9E3728; }
+
+.sm-result__title {
+  margin: .85rem 0 0;
+  font-size: clamp(1.18rem, 1.05rem + .8vw, 1.55rem);
+  font-weight: 800;
+  line-height: 1.65;
+  color: var(--sm-navy-800);
+}
+
+.sm-result__text {
+  margin: .6rem 0 0;
+  font-size: .97rem;
+  line-height: 2.05;
+  color: var(--sm-text-soft);
+}
+
+.sm-result__meter {
+  margin: 1.5rem 0;
+  height: .55rem;
+  border-radius: 999px;
+  background: var(--sm-navy-100);
+  overflow: hidden;
+}
+
+.sm-result__fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--sm-navy-700);
+  transition: width .7s cubic-bezier(.22,.61,.36,1);
+}
+
+.sm-result--green .sm-result__fill { background: var(--sm-leaf-500); }
+.sm-result--amber .sm-result__fill { background: var(--sm-gold-500); }
+.sm-result--red   .sm-result__fill { background: #B5473A; }
+
+.sm-result__leak {
+  padding: 1.1rem 1.2rem;
+  border-radius: var(--sm-radius);
+  background: var(--sm-surface);
+  border: 1px solid var(--sm-navy-100);
+}
+
+.sm-result__leaktitle {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--sm-navy-800);
+}
+
+.sm-result__leaktext {
+  margin: .5rem 0 0;
+  font-size: .93rem;
+  line-height: 2;
+  color: var(--sm-text-soft);
+}
+
+.sm-result__book {
+  margin: .7rem 0 0;
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--sm-gold-700);
+}
+
+.sm-result .sm-hero__actions { margin-top: 1.5rem; justify-content: flex-start; }
+
+.sm-result__note {
+  margin: 1.25rem 0 0;
+  padding-top: .9rem;
+  border-top: 1px solid var(--sm-navy-100);
+  font-size: .83rem;
+  line-height: 2;
+  color: var(--sm-text-muted);
+}
+
+
+/* ==========================================================================
+   صفحه‌ی قوانین و مقررات
+   ========================================================================== */
+
+.sm-page--terms { background: var(--sm-surface); }
+
+.sm-legal { margin-top: 2.5rem; }
+
+.sm-legal__sec {
+  padding-top: 2rem;
+  scroll-margin-top: 4.5rem;
+}
+
+.sm-legal__sec + .sm-legal__sec { border-top: 1px solid var(--sm-navy-100); }
+
+.sm-legal__title {
+  margin: 0 0 .85rem;
+  font-size: clamp(1.1rem, 1rem + .6vw, 1.4rem);
+  font-weight: 800;
+  line-height: 1.7;
+  color: var(--sm-navy-800);
+}
+
+.sm-legal__text {
+  margin: 0 0 .9rem;
+  font-size: .98rem;
+  line-height: 2.1;
+  color: var(--sm-text-soft);
+}
+
+.sm-legal__text--note {
+  padding: .75rem 1rem;
+  border-inline-start: 3px solid var(--sm-gold-500);
+  border-radius: var(--sm-radius);
+  background: var(--sm-gold-50);
+  font-size: .92rem;
+  color: var(--sm-gold-800);
+}
+
+.sm-legal .sm-ticklist { margin-top: .5rem; }
+
+/* ---------- زیربندهای هر ماده ----------
+   ماده ۳ و ماده ۵ زیربند دارند (۱، ۲، ۳ …). هر زیربند یک بلوکِ
+   تورفته با یک خطِ طلاییِ باریک کنارش است تا در یک صفحه‌ی بلندِ
+   حقوقی، چشم بفهمد کجا زیرمجموعه‌ی کجاست. */
+
+.sm-legal__subs {
+  margin-top: 1.1rem;
+  display: grid;
+  gap: 1.1rem;
+}
+
+.sm-legal__sub {
+  padding-inline-start: 1.1rem;
+  border-inline-start: 2px solid var(--sm-navy-100);
+}
+
+.sm-legal__sub:last-child > *:last-child { margin-bottom: 0; }
+
+.sm-legal__subtitle {
+  margin: 0 0 .55rem;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.9;
+  color: var(--sm-gold-700);
+}
+
+.sm-legal__sub .sm-ticklist { margin-top: .35rem; }
+
+/* مراحل خرید */
+.sm-flow {
+  list-style: none;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: .85rem;
+}
+
+.sm-flow__item {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: 1rem 1.15rem;
+  border: 1px solid var(--sm-navy-100);
+  border-radius: var(--sm-radius-lg);
+  background: var(--sm-navy-50);
+}
+
+.sm-flow__num {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  background: var(--sm-navy-800);
+  color: var(--sm-gold-300);
+  font-size: .92rem;
+  font-weight: 700;
+}
+
+.sm-flow__title {
+  margin: 0 0 .25rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--sm-navy-800);
+}
+
+.sm-flow__text {
+  margin: 0;
+  font-size: .93rem;
+  line-height: 1.95;
+  color: var(--sm-text-soft);
+}
+
+
+/* ==========================================================================
+   پیش‌فاکتور
+   ========================================================================== */
+
+.sm-invoice {
+  margin-top: 1.5rem;
+  border: 1px solid var(--sm-navy-100);
+  border-radius: var(--sm-radius-lg);
+  overflow: hidden;
+}
+
+.sm-invoice__head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: .5rem 1rem;
+  padding: 1rem 1.2rem;
+  background: var(--sm-navy-800);
+  color: #fff;
+}
+
+.sm-invoice__no { font-size: .95rem; font-weight: 700; }
+.sm-invoice__no strong { color: var(--sm-gold-300); }
+.sm-invoice__date { font-size: .88rem; color: var(--sm-navy-200); }
+
+.sm-invoice__body { padding: 1.2rem; }
+
+.sm-invoice table { width: 100%; border-collapse: collapse; font-size: .93rem; }
+.sm-invoice th,
+.sm-invoice td {
+  padding: .65rem .8rem;
+  border-bottom: 1px solid var(--sm-navy-100);
+  text-align: start;
+}
+.sm-invoice th { color: var(--sm-text-muted); font-weight: 600; width: 12rem; }
+.sm-invoice td { color: var(--sm-navy-800); }
+.sm-invoice tr:last-child th,
+.sm-invoice tr:last-child td { border-bottom: 0; }
+
+.sm-invoice__pay {
+  margin: 1.25rem 0 0;
+  padding: 1rem 1.15rem;
+  border-radius: var(--sm-radius);
+  background: var(--sm-gold-50);
+  border: 1px solid var(--sm-gold-300);
+  font-size: .93rem;
+  line-height: 2;
+  color: var(--sm-gold-800);
+}
+
+@media print {
+  .sm-foot, .sm-phead, .sm-councilbar, .sm-form__actions { display: none !important; }
+  .sm-invoice { border-color: #999; }
+}
+
+
+/* ==========================================================================
+   کارت انتخاب خدمت
+   ========================================================================== */
+
+.sm-plan { align-items: flex-start; padding: 1rem 1.15rem; }
+
+.sm-plan__body { display: grid; gap: .25rem; width: 100%; }
+
+.sm-plan__name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--sm-navy-800);
+  line-height: 1.7;
+}
+
+.sm-plan__note {
+  font-size: .88rem;
+  line-height: 1.85;
+  color: var(--sm-text-muted);
+}
+
+.sm-plan__price {
+  margin-top: .3rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--sm-gold-700);
+}
+
+.sm-check--radio:has(input:checked) .sm-plan__price { color: var(--sm-gold-800); }
+
+
+/* ==========================================================================
+   تأیید کد پیامکی
+   ========================================================================== */
+
+.sm-verify__text {
+  margin: 0 0 .5rem;
+  font-size: 1rem;
+  line-height: 2.05;
+  color: var(--sm-text-soft);
+}
+
+.sm-verify__phone {
+  margin: 0 0 1.1rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  /* letter-spacing روی نشانی ایمیل مشکلی ندارد چون لاتین است،
+     ولی کم نگه داشته شده تا کنارِ متنِ فارسی ناهماهنگ نشود. */
+  letter-spacing: .02em;
+  color: var(--sm-navy-800);
+  unicode-bidi: embed;
+  word-break: break-all;
+}
+
+/* یادآوریِ اینکه وارد کردن کد = امضای قوانین */
+.sm-verify__sign {
+  margin: 0 0 1.75rem;
+  padding: .8rem 1rem;
+  border-inline-start: 3px solid var(--sm-gold-500);
+  border-radius: var(--sm-radius);
+  background: var(--sm-gold-50);
+  font-size: .9rem;
+  line-height: 2;
+  color: var(--sm-gold-800);
+}
+
+.sm-verifyform { max-width: 26rem; }
+
+.sm-codeinput {
+  width: 100%;
+  max-width: 14rem;
+  padding: .8rem 1rem !important;
+  font-size: 1.6rem !important;
+  font-weight: 700;
+  letter-spacing: .5em;
+  text-align: center;
+  text-indent: .5em;   /* فاصله‌ی حرف آخر را جبران می‌کند */
+}
+
+
+/* ==========================================================================
+   پاپ‌آپ هماهنگی پرداخت
+   --------------------------------------------------------------------------
+   روی موبایل از پایین بالا می‌آید (bottom sheet)، روی دسکتاپ وسط صفحه.
+   ========================================================================== */
+
+.sm-paysheet {
+  width: min(100%, 30rem);
+  max-width: 100%;
+  padding: 1.6rem 1.4rem 1.8rem;
+  border: 0;
+  border-radius: 1.25rem 1.25rem 0 0;
+  background: var(--sm-surface);
+  color: var(--sm-text);
+  box-shadow: 0 -8px 40px rgba(7, 26, 43, .25);
+  text-align: center;
+
+  /* چسبیده به پایین صفحه */
+  margin: auto auto 0;
+  animation: sm-sheet-up .32s cubic-bezier(.22,.61,.36,1);
+}
+
+.sm-paysheet::backdrop {
+  background: rgba(7, 26, 43, .55);
+  backdrop-filter: blur(2px);
+}
+
+@keyframes sm-sheet-up {
+  from { transform: translateY(18px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+@media (min-width: 40rem) {
+  .sm-paysheet {
+    margin: auto;
+    border-radius: var(--sm-radius-lg);
+    padding: 2rem 1.9rem;
+  }
+}
+
+.sm-paysheet__grip {
+  width: 3rem;
+  height: 4px;
+  margin: -.6rem auto 1.1rem;
+  border-radius: 999px;
+  background: var(--sm-navy-100);
+}
+
+.sm-paysheet__dismiss { position: absolute; inset-inline-start: .9rem; top: .9rem; margin: 0; }
+
+.sm-paysheet__x {
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--sm-text-muted);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background .2s ease, color .2s ease;
+}
+.sm-paysheet__x:hover { background: var(--sm-navy-50); color: var(--sm-navy-800); }
+
+.sm-paysheet__title {
+  margin: 0 0 .85rem;
+  font-size: clamp(1.15rem, 1.05rem + .6vw, 1.4rem);
+  font-weight: 800;
+  color: var(--sm-navy-800);
+}
+
+.sm-paysheet__intro {
+  margin: 0 0 1.25rem;
+  font-size: .96rem;
+  line-height: 2.05;
+  color: var(--sm-text-soft);
+}
+
+/* شماره پیش‌فاکتور و مبلغ */
+.sm-paysheet__facts {
+  display: grid;
+  gap: .5rem;
+  margin: 0 0 1.4rem;
+  padding: .9rem 1rem;
+  border-radius: var(--sm-radius);
+  background: var(--sm-navy-50);
+  border: 1px solid var(--sm-navy-100);
+}
+
+.sm-paysheet__facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: .92rem;
+}
+
+.sm-paysheet__facts dt { margin: 0; color: var(--sm-text-muted); }
+.sm-paysheet__facts dd { margin: 0; font-weight: 700; color: var(--sm-navy-800); }
+
+.sm-paysheet__amount { color: var(--sm-gold-700) !important; font-size: 1.05rem; }
+
+.sm-paysheet__label {
+  margin: 0 0 .5rem;
+  font-size: .88rem;
+  font-weight: 600;
+  color: var(--sm-text-muted);
+}
+
+.sm-paysheet__number {
+  padding: .95rem 1rem;
+  margin-bottom: .75rem;
+  border: 1px dashed var(--sm-gold-400);
+  border-radius: var(--sm-radius);
+  background: var(--sm-gold-50);
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  color: var(--sm-navy-800);
+  unicode-bidi: embed;
+}
+
+.sm-paysheet__copy { width: 100%; justify-content: center; }
+.sm-paysheet__copy.is-copied { border-color: var(--sm-leaf-500); color: var(--sm-leaf-600); }
+
+.sm-paysheet__wa {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .55rem;
+  width: 100%;
+  margin-top: .7rem;
+  background: #1FA855;
+  border: 1px solid #1FA855;
+  color: #fff;
+}
+.sm-paysheet__wa:hover,
+.sm-paysheet__wa:focus-visible { background: #17924A; border-color: #17924A; color: #fff; }
+
+.sm-paysheet__hours {
+  margin: 1.1rem 0 0;
+  font-size: .84rem;
+  line-height: 1.9;
+  color: var(--sm-text-muted);
+}
+
+/* ردیف مبلغ در جدول پیش‌فاکتور */
+.sm-invoice__total th,
+.sm-invoice__total td {
+  border-top: 2px solid var(--sm-navy-100);
+  font-size: 1.02rem;
+  font-weight: 800;
+  color: var(--sm-navy-800);
+}
+.sm-invoice__total td { color: var(--sm-gold-700); }
+
+@media (prefers-reduced-motion: reduce) {
+  .sm-paysheet { animation: none; }
+}
+
+
+/* ==========================================================================
+   دکمه‌ی خطی روی زمینه‌ی روشن
+   --------------------------------------------------------------------------
+   پیش‌فرض .sm-btn--ghost سفید است (برای سکشن‌های سرمه‌ای). این چند ظرف
+   زمینه‌ی روشن دارند، پس نسخه‌ی تیره را روشن می‌کنند تا دکمه نامرئی نشود.
+   ========================================================================== */
+
+.sm-formsection,
+.sm-paysheet,
+.sm-done,
+.sm-result,
+.sm-page--terms .sm-prose-section {
+  --sm-ghost-ink: var(--sm-navy-800);
+  --sm-ghost-line: var(--sm-navy-100);
+  --sm-ghost-bg-hover: var(--sm-navy-50);
+  --sm-ghost-line-hover: var(--sm-gold-400);
+  --sm-ghost-ink-hover: var(--sm-navy-900);
+}
+
+/* ---------- راهِ فرار در مرحله‌ی تأیید ----------
+   عمداً شبیه دکمه‌ی اصلی نیست: نه طلایی است نه پررنگ. باید پیدا
+   باشد ولی جذاب‌تر از وارد کردنِ کد نباشد. */
+
+.sm-verify__escape {
+  margin-top: 1.6rem;
+  padding-top: 1.3rem;
+  border-top: 1px dashed var(--sm-rule);
+}
+
+.sm-verify__escape-help {
+  margin: 0 0 .8rem;
+  font-size: .86rem;
+  line-height: 2;
+  color: var(--sm-text-muted);
+}
+
+.sm-verify__escape-btn {
+  padding: 0;
+  font: inherit;
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--sm-gold-700);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  cursor: pointer;
+}
+
+.sm-verify__escape-btn:hover { color: var(--sm-gold-600); }
+
+.sm-verify__escape-btn:focus-visible {
+  outline: 2px solid var(--sm-gold-500);
+  outline-offset: 3px;
+  border-radius: var(--sm-radius-sm);
+}
