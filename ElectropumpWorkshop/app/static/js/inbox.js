@@ -274,12 +274,19 @@
 
   function renderSummary(detail) {
     var blocks = detail.summary || summaryFromEntries(detail);
+    /* An approver sees what the sender opened to them and nothing else, so
+       say so — an approver who does not know the view is narrowed may read a
+       missing stage as a stage nobody filled. */
+    var scoped = detail.summary_scoped
+      ? '<div class="hint">ثبت‌کنندهٔ این مرحله تعیین کرده است که شما کدام '
+        + 'مرحله‌ها را ببینید؛ بقیه‌ی مرحله‌ها اینجا نشان داده نمی‌شوند.</div>'
+      : '';
     if (!blocks.length) {
-      fill('#wf-summary',
-           '<div class="hint">هنوز مرحله‌ای پیش از این ثبت نشده است.</div>');
+      fill('#wf-summary', scoped
+           || '<div class="hint">هنوز مرحله‌ای پیش از این ثبت نشده است.</div>');
       return;
     }
-    fill('#wf-summary', blocks.map(function (b) {
+    fill('#wf-summary', scoped + blocks.map(function (b) {
       return '<div class="sum-block ' + A.esc(b.status) + '">'
         + '<div class="sum-head">'
         + '<span class="wf-step-no">' + J.toFaDigits(b.stage_number) + '</span>'
@@ -333,11 +340,22 @@
       buildForm(detail.form ? detail.form.sections : [],
                 detail.operation_label, detail.payload || {});
       if (detail.well) fillPrevious(detail.well);
+      /* A blocking approval in front of this stage stops it being filled —
+         the server refuses it either way, so the button says so first. */
+      var hold = detail.blocked_by;
       var submit = A.qs('#wf-submit');
       if (submit) {
-        submit.disabled = !detail.may_act;
-        submit.title = detail.may_act ? '' : 'این مرحله در اختیار شما نیست.';
+        submit.disabled = !detail.may_act || !!hold;
+        submit.title = hold
+          ? 'در انتظار تأیید مرحله ' + hold.stage_number
+          : (detail.may_act ? '' : 'این مرحله در اختیار شما نیست.');
       }
+      fill('#wf-blocked', hold
+        ? '<div class="wf-blocked">⛔ مرحله ' + J.toFaDigits(hold.stage_number)
+          + ' — ' + A.esc(hold.title) + ' در انتظار تأیید '
+          + '<b>' + A.esc(hold.approver || 'تأییدکننده') + '</b> است. '
+          + 'تا تأیید نشود، این مرحله ثبت نمی‌شود.</div>'
+        : '');
       renderReferral(detail);
       renderDecision(detail);
 
@@ -397,6 +415,53 @@
               + A.esc(u.full_name) + ' (' + A.esc(u.role_label) + ')</option>';
           }).join('');
     }
+    renderShare(detail);
+  }
+
+  /* What the approver will be allowed to read.
+
+     An approval is a judgement on something, so whoever asks for it says what
+     that something is. The admin decides per stage whether this is fixed
+     («همه‌ی اطلاعات» or «فقط همین مرحله») or handed to the sender — and only
+     then does this list appear, with the stage being approved always in it
+     because that is the thing being judged. */
+  function renderShare(detail) {
+    var box = A.qs('#wf-share-box');
+    if (!box) return;
+    var ap = detail.approval;
+    var picking = ap && ap.sees === 'pick' && detail.may_act
+      && !detail.awaiting_my_decision;
+    box.classList.toggle('hidden', !ap || detail.awaiting_my_decision
+                         || !detail.may_act);
+    if (!ap || !detail.may_act || detail.awaiting_my_decision) return;
+
+    var head = '<div class="share-head">🔒 تأییدکننده (<b>'
+      + A.esc(ap.approver || 'تعیین‌نشده') + '</b>) چه می‌بیند: '
+      + A.esc(ap.sees_label) + '</div>'
+      + (ap.blocks
+          ? '<div class="share-block">⛔ تا زمانی که این مرحله تأیید نشود، '
+            + 'مرحله‌های بعدی ثبت نمی‌شوند.</div>'
+          : '');
+    if (!picking) { box.innerHTML = head; return; }
+    var rows = (ap.choices || []);
+    box.innerHTML = head
+      + (rows.length
+          ? '<div class="hint">مرحله‌هایی را که می‌خواهید تأییدکننده ببیند '
+            + 'تیک بزنید. اطلاعات همین مرحله همیشه دیده می‌شود.</div>'
+            + '<ul class="share-list">'
+            + rows.map(function (r) {
+                return '<li><label><input type="checkbox" class="share-pick"'
+                  + ' value="' + r.stage_number + '" checked>'
+                  + '<span class="wf-stage-no">'
+                  + J.toFaDigits(r.stage_number) + '</span> '
+                  + A.esc(r.title)
+                  + '<span class="share-meta">' + J.toFaDigits(r.field_count)
+                  + ' مورد' + (r.owner ? ' · ' + A.esc(r.owner) : '')
+                  + '</span></label></li>';
+              }).join('')
+            + '</ul>'
+          : '<div class="hint">هنوز مرحله‌ی ثبت‌شده‌ی دیگری نیست؛ '
+            + 'تأییدکننده اطلاعات همین مرحله را می‌بیند.</div>');
   }
 
   /* The approver's view: the work is filled in and read-only, and the only
@@ -551,7 +616,9 @@
       var res = await A.api.post('/api/workflow/instances/' + current.id + '/submit',
         { stage_number: current.stage_number, data: form.collect(),
           refer_to: pick ? (pick.value || null) : null,
-          referral_note: (A.qs('#wf-refer-note') || {}).value || null });
+          referral_note: (A.qs('#wf-refer-note') || {}).value || null,
+          share_stages: A.qsa('.share-pick:checked')
+            .map(function (b) { return Number(b.value); }) });
       A.toast(res.message || 'ثبت شد.', 'success');
       A.qs('#wf-detail').classList.add('hidden');
       current = null;

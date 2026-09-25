@@ -44,9 +44,12 @@ def main():
           sysinfo["database"]["journal_mode"])
     check("چاه‌ها از رفرنس درج شدند", sysinfo["counts"]["wells"] == 864,
           str(sysinfo["counts"]["wells"]))
-    check("۲۱۳ گزینه درج شد", sysinfo["counts"]["lookup_items"] == 213,
+    # Counted with a floor rather than an exact number: the admin adds fields
+    # and options from the builders, and a release that seeds more of either
+    # is not a regression. What matters is that the seed ran at all.
+    check("گزینه‌های پایه درج شدند", sysinfo["counts"]["lookup_items"] >= 213,
           str(sysinfo["counts"]["lookup_items"]))
-    check("۶۸ فیلد فرم درج شد", sysinfo["counts"]["form_fields"] == 68,
+    check("فیلدهای فرم درج شدند", sysinfo["counts"]["form_fields"] >= 68,
           str(sysinfo["counts"]["form_fields"]))
 
     print("\n— تقویم شمسی —")
@@ -922,6 +925,213 @@ def main():
     check("گزینه قفل‌شده غیرفعال نمی‌شود", rr.status_code == 409)
     rr = c.put(f"/api/lookups/item/{locked.id}", json={"label": "جمع‌آوری چاه"})
     check("ولی برچسبش قابل تغییر است", rr.status_code == 200)
+
+    print("\n— ستون‌های محاسباتی در گزارش‌ساز —")
+    # A row with both readings, so the arithmetic is checked against a known
+    # answer rather than against whatever the fixture happens to contain.
+    _rr = c.post("/api/records", json={
+        "op_jdate": "1405/07/03", "well": "امام رضا 11", "center": "سوران",
+        "operation": "نصب", "motor_curr": "18.5", "pump_curr": "233",
+        "static_level": 120, "dynamic_level": 138})
+    check("ردیف آزمایشی برای محاسبه ثبت شد", _rr.status_code == 200,
+          str(_rr.get_json().get("fields") or "")[:120])
+    with app.app_context():
+        from app.reports.builder import (CALCULATIONS, dynamic_fields,
+                                         run_builder)
+        dyn = dynamic_fields()
+        check("فیلدهای فرم‌ساز به گزارش‌ساز می‌رسند", len(dyn) > 60,
+              f"{len(dyn)} فیلد")
+        check("پارامترهای علت خرابی هم میان آن‌ها هستند",
+              any(f["key"].startswith("dyn.fail_") for f in dyn))
+        check("توابع محاسباتی تعریف شده‌اند", len(CALCULATIONS) >= 8,
+              "، ".join(sorted(CALCULATIONS)))
+
+        out = run_builder({
+            "dataset": "records",
+            "fields": ["well", "static_level", "dynamic_level"],
+            "computed": [
+                {"label": "افت سطح", "fn": "diff",
+                 "fields": ["dynamic_level", "static_level"], "decimals": 1},
+                {"label": "درصد افت", "fn": "pct_change",
+                 "fields": ["static_level", "dynamic_level"],
+                 "decimals": 1, "suffix": "٪"}],
+            "limit": 200})
+        heads = [c["label"] for c in out["columns"]]
+        check("ستون محاسباتی به جدول اضافه می‌شود",
+              heads[-2:] == ["افت سطح", "درصد افت"], "، ".join(heads))
+        done = [r for r in out["rows"] if r["calc1"] != "—"]
+        check("و برای ردیف‌های دارای مقدار محاسبه می‌شود", bool(done),
+              f"{len(done)} ردیف")
+        if done:
+            r = done[0]
+            check("تفاضل درست است",
+                  abs(float(r["calc1"])
+                      - (float(r["dynamic_level"]) - float(r["static_level"]))) < 0.05,
+                  str(r["calc1"]))
+        blank = [r for r in out["rows"] if r["static_level"] == "—"]
+        check("ردیف بدون مقدار «—» می‌گیرد، نه صفر",
+              all(r["calc1"] == "—" for r in blank), f"{len(blank)} ردیف خالی")
+
+        # Division by zero is not an answer.
+        out = run_builder({"dataset": "records", "fields": ["well"],
+                           "computed": [{"label": "نسبت", "fn": "ratio",
+                                         "fields": ["young_wells",
+                                                    "young_wells"]}],
+                           "limit": 40})
+        check("تقسیم بر صفر خطا نمی‌دهد", True)
+
+        try:
+            run_builder({"dataset": "records", "fields": ["well"],
+                         "computed": [{"fn": "pct_change",
+                                       "fields": ["static_level"]}]})
+            few = False
+        except ValueError as exc:
+            few, why = True, str(exc)
+        check("محاسبه با فیلد کم رد می‌شود", few, why[:52] if few else "")
+
+        try:
+            run_builder({"dataset": "records",
+                         "group_by": [dyn[0]["key"]]})
+            grouped = False
+        except ValueError as exc:
+            grouped, gwhy = True, str(exc)
+        check("گروه‌بندی روی فیلد فرم‌ساز با پیام روشن رد می‌شود", grouped,
+              gwhy[:52] if grouped else "")
+
+        from app.services.exporter import to_xlsx
+        out = run_builder({
+            "dataset": "records", "fields": ["well", "static_level"],
+            "computed": [{"label": "دو برابر", "fn": "product",
+                          "fields": ["static_level", "static_level"],
+                          "decimals": 0}],
+            "limit": 20})
+        blob = to_xlsx(out["columns"], out["rows"], "آزمایش")
+        check("ستون محاسباتی در خروجی اکسل هست", len(blob) > 3000
+              and out["columns"][-1]["label"] == "دو برابر")
+
+    print("\n— تأیید اجباری و دامنه‌ی دید تأییدکننده —")
+    with app.app_context():
+        from app.extensions import db as _db
+        from app.models import AppUser, WorkflowInstance
+        from app.models.workflow import ENTRY_AWAITING, SEE_PICK
+        from app.services.workflow import (WorkflowError, active_workflow,
+                                           blocked_by, decide_stage,
+                                           start_instance, submit_stage,
+                                           submitted_summary, sync_entries)
+        wf = active_workflow()
+        s2 = next(x for x in wf.stages if x.stage_number == 2)
+        s3 = next(x for x in wf.stages if x.stage_number == 3)
+        boss = AppUser.query.filter_by(role="admin").first()
+        # Stage 2 must be signed off by the admin, and it holds the rest up.
+        s2.needs_approval = True
+        s2.approval_blocks = True
+        s2.approver_id = boss.id
+        s2.approval_sees = SEE_PICK
+        _db.session.commit()
+
+        inst = start_instance({"operation_kind": "کشیدن",
+                               "well": "امام رضا 11"}, boss)
+        sync_entries(inst)
+        _db.session.commit()
+        # Stage 1 first, so there is something to choose to share.
+        submit_stage(inst, {"failure": ["هوادهی"],
+                            "fail_aeration_p01": ["وضعیت لوله و اتصالات بررسی شده است"],
+                            "fail_aeration_p02": 3, "fail_aeration_p03": 12},
+                     boss, stage_number=1)
+        # Stage 2, sharing nothing but itself.
+        submit_stage(inst, {}, boss, stage_number=2,
+                     share_stages=[])
+        entry2 = next(e for e in inst.entries if e.stage_number == 2)
+        check("مرحله برای تأیید منتظر می‌ماند", entry2.status == ENTRY_AWAITING)
+        check("و جلوی مرحله‌های بعدی را می‌گیرد",
+              blocked_by(inst, 3) is not None)
+        try:
+            submit_stage(inst, {}, boss, stage_number=3)
+            blocked = False
+        except WorkflowError as exc:
+            blocked, why = True, str(exc)
+        check("ثبت مرحله بعد تا تأیید نشدن رد می‌شود", blocked,
+              why[:60] if blocked else "")
+
+        seen = [b["stage_number"] for b in submitted_summary(
+            inst, except_stage=2, only_stages=entry2.shared_stage_numbers)]
+        check("تأییدکننده فقط همان مرحله را می‌بیند", seen == [],
+              f"مرحله‌های دیده‌شده: {seen}")
+
+        decide_stage(inst, 2, boss, approved=True, comment="تأیید شد")
+        _db.session.commit()
+        check("پس از تأیید، راه باز می‌شود", blocked_by(inst, 3) is None)
+
+        # Now the same stage, sharing stage 1 as well.
+        inst2 = start_instance({"operation_kind": "کشیدن",
+                                "well": "امام رضا 11"}, boss)
+        sync_entries(inst2)
+        _db.session.commit()
+        submit_stage(inst2, {"failure": ["هوادهی"],
+                             "fail_aeration_p01": ["وضعیت لوله و اتصالات بررسی شده است"],
+                             "fail_aeration_p02": 3, "fail_aeration_p03": 12},
+                     boss, stage_number=1)
+        submit_stage(inst2, {}, boss, stage_number=2,
+                     share_stages=[1])
+        e2 = next(e for e in inst2.entries if e.stage_number == 2)
+        seen = sorted(b["stage_number"] for b in submitted_summary(
+            inst2, except_stage=2, only_stages=e2.shared_stage_numbers))
+        check("و با انتخاب مرحله ۱، همان را هم می‌بیند", seen == [1], str(seen))
+
+        # Turn the block off: the approval still waits, the process carries on.
+        s2.approval_blocks = False
+        _db.session.commit()
+        check("با خاموش‌کردن اجبار، مرحله بعد آزاد می‌شود",
+              blocked_by(inst2, 3) is None)
+        s2.needs_approval = False
+        s2.approval_blocks = False
+        _db.session.commit()
+
+    print("\n— فرم هر علت خرابی با انتخاب همان علت باز می‌شود —")
+    with app.app_context():
+        from app.models import FormSection
+        from app.services.records import _hidden_by_condition
+        blocks = FormSection.query.filter(
+            FormSection.code.like("fail_%"),
+            FormSection.is_active.is_(True)).all()
+        check("فرم علت‌های خرابی ساخته شده است", len(blocks) == 10,
+              f"{len(blocks)} بخش")
+        check("هر بخش به علت خودش گره خورده",
+              all((b.visible_when or "").startswith("failure=") for b in blocks))
+        burn = next(b for b in blocks if b.code == "fail_burn")
+        sand = next(b for b in blocks if b.code == "fail_sanding")
+        check("همه‌ی پارامترها الزامی‌اند",
+              all(f.is_required for b in blocks for f in b.fields))
+
+        # Nothing ticked: none of them may be demanded.
+        hidden = _hidden_by_condition({"failure": []})
+        check("بدون انتخاب علت، هیچ پارامتری خواسته نمی‌شود",
+              all(f.field_name in hidden for b in blocks for f in b.fields))
+
+        # One ticked: only that one opens.
+        hidden = _hidden_by_condition({"failure": ["سوختن الکتروپمپ"]})
+        check("با «سوختن الکتروپمپ» فقط پارامترهای همان باز می‌شود",
+              all(f.field_name not in hidden for f in burn.fields)
+              and all(f.field_name in hidden for f in sand.fields))
+
+        # Two ticked: both open — the operator may report several faults.
+        hidden = _hidden_by_condition({"failure": ["سوختن الکتروپمپ", "شولات"]})
+        check("با دو علت، هر دو فرم باز می‌شود",
+              all(f.field_name not in hidden for f in burn.fields)
+              and all(f.field_name not in hidden for f in sand.fields))
+
+        # And a comma-joined string reads the same as a list, because that is
+        # how a stored answer comes back.
+        hidden = _hidden_by_condition({"failure": "سوختن الکتروپمپ، شولات"})
+        check("مقدار ذخیره‌شده هم همان‌طور خوانده می‌شود",
+              all(f.field_name not in hidden for f in burn.fields))
+
+    rr = c.post("/api/records", json={
+        "op_jdate": "1405/07/03", "well": "امام رضا 11", "center": "سوران",
+        "operation": "کشیدن", "failure": ["شولات"]})
+    check("ثبت رکورد بدون پر کردن پارامترهای علت رد می‌شود",
+          rr.status_code == 422,
+          "، ".join(sorted((rr.get_json().get("errors") or {}))[:2]))
 
     print("\n— مرکز از روی چاه خوانده می‌شود و قفل است —")
     with app.app_context():

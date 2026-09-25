@@ -52,6 +52,19 @@ REFERRAL_MODES = {
     REFER_CHOOSE: "ثبت‌کننده هنگام ارسال انتخاب می‌کند",
 }
 
+# How much of the record the approver is shown. An approval is a judgement on
+# something, so the something has to be decided: everything the process has
+# recorded, only the stage being approved, or a choice the sender makes when
+# they send it.
+SEE_ALL = "all"
+SEE_STAGE = "stage"
+SEE_PICK = "pick"
+APPROVAL_SEES = {
+    SEE_ALL: "همه‌ی اطلاعات ثبت‌شده تا اینجا",
+    SEE_STAGE: "فقط اطلاعات همین مرحله",
+    SEE_PICK: "ثبت‌کننده هنگام ارسال انتخاب می‌کند",
+}
+
 # What happened to a stage in one particular run.
 ENTRY_PENDING = "pending"      # waiting for its owner
 ENTRY_SUBMITTED = "submitted"  # owner filled and sent it on
@@ -183,6 +196,16 @@ class WorkflowStage(db.Model):
 
     # ── the approval: whether somebody has to sign this stage off ───────────
     needs_approval = db.Column(db.Boolean, nullable=False, default=False)
+    # Whether that approval *holds the process up*. Off, the approver rules at
+    # their own pace while the stages after this one carry on; on, nothing
+    # after this stage may be filled until they have ruled. The admin decides
+    # per stage — «تا زمانی که ایکس تأیید نکند نمی‌توان ادامه داد» is a choice
+    # about this stage, not a rule of the engine.
+    approval_blocks = db.Column(db.Boolean, nullable=False, default=False)
+    # What the approver is shown by default: SEE_ALL everything recorded so
+    # far, SEE_STAGE only this stage's own answers, or SEE_PICK — the sender
+    # chooses, stage by stage, at the moment they send it.
+    approval_sees = db.Column(db.String(10), nullable=False, default=SEE_ALL)
     approver_id = db.Column(db.Integer, db.ForeignKey("app_users.id",
                                                       ondelete="SET NULL"),
                             index=True)
@@ -242,6 +265,8 @@ class WorkflowStage(db.Model):
                                    if self.referral_user else None),
             "referral_hint": self.referral_hint,
             "needs_approval": self.needs_approval,
+            "approval_blocks": self.approval_blocks,
+            "approval_sees": self.approval_sees,
             "approver_id": self.approver_id,
             "approver_name": (self.approver.full_name
                               if self.approver else None),
@@ -422,6 +447,11 @@ class WorkflowStageEntry(db.Model):
     # ── the approval, on this run ───────────────────────────────────────────
     approver_id = db.Column(db.Integer, db.ForeignKey("app_users.id"),
                             index=True)
+    # Which stages' answers this particular referral opened to the approver, as
+    # a comma-separated list of stage numbers. Empty means "everything recorded
+    # so far", which is the default; the sender narrows it when the stage is
+    # set to «ثبت‌کننده انتخاب می‌کند».
+    shared_stages = db.Column(db.String(120))
     decided_by_id = db.Column(db.Integer, db.ForeignKey("app_users.id"))
     decided_at = db.Column(db.DateTime)
     decision_note = db.Column(db.Text)
@@ -433,6 +463,15 @@ class WorkflowStageEntry(db.Model):
     referred_by = db.relationship("AppUser", foreign_keys=[referred_by_id])
     approver = db.relationship("AppUser", foreign_keys=[approver_id])
     decided_by = db.relationship("AppUser", foreign_keys=[decided_by_id])
+
+    @property
+    def shared_stage_numbers(self):
+        """The stages this referral opened, or None for "everything so far"."""
+        raw = (self.shared_stages or "").strip()
+        if not raw:
+            return None
+        return [int(p) for p in (x.strip() for x in raw.split(","))
+                if p.lstrip("-").isdigit()]
 
     @property
     def pinned_owner_id(self):

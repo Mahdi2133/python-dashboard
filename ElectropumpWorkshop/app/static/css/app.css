@@ -928,3 +928,55 @@ select.mini { font-size:11px; padding:2px 4px; width:auto; }
 .from-well .btn-group label:has(input:checked) .btn-opt { border-color:#8fc0d2;
   background:#e8f1f5; color:#0d4f63; }
 .centre-note { display:block; }
+
+/* «نمایش فقط وقتی…» on the section editor: field = value, as two lists. */
+.when-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.when-row select { flex:1; min-width:150px; }
+.when-eq { font-size:12px; color:var(--text-muted,#6c8592); flex:none; }
+
+/* «تا تأیید نشود ادامه ندهید» — the setting that stops a process. */
+.wf-blocks-row { display:flex; align-items:center; gap:7px; font-size:12.5px;
+  font-weight:700; border-radius:9px; padding:7px 10px; margin:7px 0;
+  background:#f4f7f9; border:1px solid #dfe6ea; cursor:pointer; }
+.wf-blocks-row.on { background:#fdecea; border-color:#f0b4ad; color:#8a2119; }
+
+/* What the approver will be allowed to read, chosen as the work is sent. */
+.wf-share-box { margin-top:10px; border-top:1px dashed var(--border,#dfe6ea);
+  padding-top:10px; }
+.share-head { font-size:12.5px; font-weight:700; color:var(--text,#12333f);
+  margin-bottom:6px; }
+.share-block { font-size:12px; font-weight:700; color:#8a2119;
+  background:#fdecea; border:1px solid #f0b4ad; border-radius:8px;
+  padding:6px 10px; margin-bottom:6px; }
+.share-list { list-style:none; display:flex; flex-direction:column; gap:5px;
+  margin-top:7px; }
+.share-list label { display:flex; align-items:center; gap:8px; font-size:12.5px;
+  background:var(--surface-2,#f4f7f9); border:1px solid var(--border,#dfe6ea);
+  border-radius:9px; padding:6px 10px; cursor:pointer; }
+.share-list .share-meta { margin-inline-start:auto; font-size:11.5px;
+  color:var(--text-muted,#6c8592); }
+
+/* The stage a blocking approval is holding up. */
+.wf-blocked { font-size:12.5px; font-weight:700; color:#8a2119;
+  background:#fdecea; border:1px solid #f0b4ad; border-radius:10px;
+  padding:9px 12px; margin-bottom:10px; }
+
+/* A calculated column in the report builder. */
+.card-soft { background:var(--surface-2,#f7f9fa);
+  border:1px solid var(--border,#dfe6ea); border-radius:11px; padding:12px; }
+.calc-row.short { border-color:#f0c98a; background:#fffaf2; }
+.calc-inline { display:flex; gap:6px; }
+.calc-inline .calc-dec { width:74px; }
+.calc-need { font-size:11.5px; font-weight:500;
+  color:var(--text-muted,#6c8592); }
+.calc-picks { display:flex; flex-wrap:wrap; gap:6px; max-height:186px;
+  overflow:auto; margin-top:6px; padding:2px; }
+.calc-pick-row { display:inline-flex; align-items:center; gap:6px;
+  font-size:12.5px; background:#fff; border:1px solid var(--border,#dfe6ea);
+  border-radius:999px; padding:4px 10px; cursor:pointer; }
+.calc-pick-row:has(input:checked) { background:#e8f1f5; border-color:#8fc0d2;
+  color:#0d4f63; font-weight:700; }
+.calc-pick-row i { font-style:normal; font-size:10.5px;
+  color:var(--text-muted,#6c8592); margin-inline-start:2px; }
+.calc-foot { display:flex; align-items:center; gap:10px; margin-top:8px; }
+.calc-order { flex:1; font-size:11.5px; color:var(--text-muted,#6c8592); }

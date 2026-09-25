@@ -10,7 +10,8 @@ from ..extensions import db
 from ..models import (AppUser, FormField, FormSection, WorkflowAttachment,
                       WorkflowDefinition, WorkflowInstance, WorkflowStage,
                       WorkflowStageEntry, WorkflowStageItem)
-from ..models.workflow import (APPLIES_TO, ENTRY_AWAITING, ENTRY_DONE,
+from ..models.workflow import (APPLIES_TO, APPROVAL_SEES, ENTRY_AWAITING,
+                               ENTRY_DONE, SEE_PICK,
                                ENTRY_PENDING, ENTRY_STATUS, INSTANCE_OPEN,
                                INSTANCE_STATUS, OPERATION_KINDS,
                                REFERRAL_MODES, REFER_CHOOSE, REFER_USER)
@@ -26,7 +27,8 @@ from ..services.workflow import (WorkflowError, active_workflow,
                                  cancel_instance, current_stage_of,
                                  decide_stage, may_act, owner_of,
                                  owners_of, startable_kinds,
-                                 entry_stage,
+                                 entry_stage, blocked_by,
+                                 shareable_stages,
                                  pending_stages, previous_values_for,
                                  may_start, referral_choices, stage_by_number,
                                  stage_form, stages_of_user,
@@ -138,6 +140,8 @@ def get_definition():
                "applies_to": [{"value": k, "label": v} for k, v in APPLIES_TO.items()],
                "referral_modes": [{"value": k, "label": v}
                                   for k, v in REFERRAL_MODES.items()],
+               "approval_sees": [{"value": k, "label": v}
+                                 for k, v in APPROVAL_SEES.items()],
                "operation_kinds": [{"value": k, "label": v}
                                    for k, v in OPERATION_KINDS.items()]})
 
@@ -483,6 +487,12 @@ def update_stage(stage_id):
     # ── the approval: who signs it off, and where a rejection lands ─────────
     if "needs_approval" in payload:
         stage.needs_approval = payload["needs_approval"] in (True, "true", "1", 1)
+    if "approval_blocks" in payload:
+        stage.approval_blocks = payload["approval_blocks"] in (True, "true", "1", 1)
+    if "approval_sees" in payload:
+        if payload["approval_sees"] not in APPROVAL_SEES:
+            return fail("مقدار «تأییدکننده چه می‌بیند» نامعتبر است.", 422)
+        stage.approval_sees = payload["approval_sees"]
     if "approver_id" in payload:
         person, error = _person(payload["approver_id"])
         if error:
@@ -913,9 +923,36 @@ def get_instance(instance_id):
     data["path"] = [s.to_dict() for s in applicable_stages(instance)]
     # What everyone before has recorded, read-only: the stage holding the
     # process has to see the work behind it before adding to it.
-    data["summary"] = submitted_summary(instance,
-                                        except_stage=stage.stage_number if stage
-                                        else None)
+    # An approver is ruling on what the sender chose to show them — narrowed
+    # to that, and to nothing else, even though the row exists in the record.
+    scope = None
+    if entry is not None and entry.status == ENTRY_AWAITING \
+            and data["awaiting_my_decision"]:
+        scope = entry.shared_stage_numbers
+    data["summary"] = submitted_summary(
+        instance, except_stage=stage.stage_number if stage else None,
+        only_stages=scope)
+    data["summary_scoped"] = scope is not None
+    # What this stage may open to its approver, when the admin left the choice
+    # to whoever sends it.
+    data["approval"] = None
+    if stage is not None and stage.needs_approval:
+        data["approval"] = {
+            "sees": stage.approval_sees,
+            "sees_label": APPROVAL_SEES.get(stage.approval_sees,
+                                            stage.approval_sees),
+            "blocks": stage.approval_blocks,
+            "approver": stage.approver.full_name if stage.approver else None,
+            "choices": (shareable_stages(instance, stage)
+                        if stage.approval_sees == SEE_PICK else []),
+        }
+    # A blocking approval anywhere in front of this stage stops it being filled.
+    hold = blocked_by(instance, stage.stage_number) if stage else None
+    data["blocked_by"] = ({"stage_number": hold.stage_number,
+                           "title": hold.title,
+                           "approver": (hold.approver.full_name
+                                        if hold.approver else None)}
+                          if hold is not None else None)
     return ok(data)
 
 
@@ -957,7 +994,8 @@ def submit(instance_id):
                      stage_number=(int(stage_number)
                                    if stage_number not in (None, "") else None),
                      refer_to=payload.get("refer_to") or None,
-                     referral_note=payload.get("referral_note"))
+                     referral_note=payload.get("referral_note"),
+                     share_stages=payload.get("share_stages"))
     except WorkflowError as exc:
         return fail(str(exc), 422)
     data = instance.to_dict()

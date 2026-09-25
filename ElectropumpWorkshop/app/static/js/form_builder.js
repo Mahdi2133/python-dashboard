@@ -276,6 +276,65 @@
     } catch (err) { A.toast(err.message, 'error'); }
   }
 
+  /* «نمایش فقط وقتی…» — two dropdowns rather than a typed rule.
+
+     The rule is stored as «field=value», but nobody should have to know that
+     to say «this block belongs to سوختن الکتروپمپ». The first list offers the
+     choice fields that have options; the second offers that field's options. */
+  function whenSources() {
+    var out = [];
+    (schema.sections || []).forEach(function (sec) {
+      (sec.fields || []).forEach(function (f) {
+        if (optionsOf(f).length) out.push(f);
+      });
+    });
+    return out;
+  }
+
+  function optionsOf(field) {
+    if (field.own_options && field.own_options.length) return field.own_options;
+    if (field.lookup_category) {
+      return (schema.lookups || {})[field.lookup_category] || [];
+    }
+    return [];
+  }
+
+  function fillWhen(rule) {
+    var parts = String(rule || '').split('=');
+    var onName = parts[0] || '', value = parts.slice(1).join('=') || '';
+    var fieldBox = A.qs('#sb-when-field');
+    var valueBox = A.qs('#sb-when-value');
+    if (!fieldBox || !valueBox) return;
+    fieldBox.innerHTML = '<option value="">— همیشه نشان داده شود —</option>'
+      + whenSources().map(function (f) {
+          return '<option value="' + A.esc(f.field_name) + '"'
+            + (f.field_name === onName ? ' selected' : '') + '>'
+            + A.esc(f.label) + '</option>';
+        }).join('');
+    fillWhenValues(onName, value);
+  }
+
+  function fillWhenValues(onName, selected) {
+    var valueBox = A.qs('#sb-when-value');
+    if (!valueBox) return;
+    var field = whenSources().find(function (f) { return f.field_name === onName; });
+    var opts = field ? optionsOf(field) : [];
+    valueBox.innerHTML = '<option value="">—</option>'
+      + opts.map(function (o) {
+          var v = o.value === undefined ? o : o.value;
+          return '<option value="' + A.esc(v) + '"'
+            + (String(v) === String(selected) ? ' selected' : '') + '>'
+            + A.esc(o.label || v) + '</option>';
+        }).join('');
+    valueBox.disabled = !opts.length;
+  }
+
+  function readWhen() {
+    var onName = (A.qs('#sb-when-field') || {}).value || '';
+    var value = (A.qs('#sb-when-value') || {}).value || '';
+    return onName && value ? onName + '=' + value : '';
+  }
+
   function openSectionEditor(section) {
     editingSection = section;
     A.qs('#section-modal-title').textContent = section ? 'ویرایش بخش' : 'بخش جدید';
@@ -286,6 +345,7 @@
     A.qs('#sb-columns').value = section ? section.columns : 3;
     A.qs('#sb-full').value = section && section.full_width ? '1' : '0';
     A.qs('#sb-active').value = section && !section.is_active ? '0' : '1';
+    fillWhen(section && section.visible_when);
     A.qs('#sb-delete').classList.toggle('hidden', !section);
     A.openModal('section-modal');
   }
@@ -295,7 +355,8 @@
       code: A.qs('#sb-code').value.trim(), title: A.qs('#sb-title').value.trim(),
       icon: A.qs('#sb-icon').value.trim(), columns: A.qs('#sb-columns').value,
       full_width: A.qs('#sb-full').value === '1',
-      is_active: A.qs('#sb-active').value === '1'
+      is_active: A.qs('#sb-active').value === '1',
+      visible_when: readWhen()
     };
     if (!payload.code || !payload.title) {
       A.toast('کد و عنوان بخش الزامی است.', 'error'); return;
@@ -331,6 +392,9 @@
 
     A.qs('#btn-new-field').addEventListener('click', function () { openFieldEditor(null); });
     A.qs('#btn-new-section').addEventListener('click', function () { openSectionEditor(null); });
+    A.qs('#sb-when-field').addEventListener('change', function () {
+      fillWhenValues(this.value, '');
+    });
     A.qs('#fb-save').addEventListener('click', saveField);
     A.qs('#sb-save').addEventListener('click', saveSection);
 

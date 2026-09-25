@@ -24,6 +24,7 @@ from ..models import (AppUser, FormField, FormSection, Record,
                       WorkflowDefinition, WorkflowInstance, WorkflowStage,
                       WorkflowStageEntry, WorkflowStageItem)
 from ..models.workflow import (APPLIES_BOTH, ENTRY_ARCHIVED, ENTRY_AWAITING,
+                               SEE_PICK, SEE_STAGE,
                                ENTRY_DEFERRED, ENTRY_DONE, ENTRY_PENDING,
                                ENTRY_REJECTED, ENTRY_SKIPPED, ENTRY_STATUS,
                                ENTRY_SUBMITTED, INSTANCE_CANCELLED,
@@ -339,18 +340,26 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
     }
 
 
-def submitted_summary(instance: WorkflowInstance, except_stage: int = None) -> list:
+def submitted_summary(instance: WorkflowInstance, except_stage: int = None,
+                      only_stages: list | None = None) -> list:
     """What the other stages have already recorded, ready to show read-only.
 
     Whoever is holding the process needs to see the work behind it — the
     engineer at stage 5 signs off on what four people before him wrote — but
     none of it is his to change, so it is handed over as labelled text rather
     than as fields.
+
+    ``only_stages`` narrows it to what one referral opened. An approver is
+    being asked to rule on something, and the person asking says what that
+    something is; without it they see everything recorded so far, which is the
+    default and the usual answer.
     """
     labels = {f.field_name: f.label for f in FormField.query.all()}
     out = []
     for entry in sorted(instance.entries, key=lambda e: e.stage_number):
         if entry.stage_number == except_stage or entry.stage_number == STAGE_INTAKE:
+            continue
+        if only_stages is not None and entry.stage_number not in only_stages:
             continue
         if entry.status not in ENTRY_DONE:
             continue
@@ -512,6 +521,32 @@ def sync_entries(instance: WorkflowInstance):
                           "طی نمی‌شود.")
 
 
+def blocking_approvals(instance: WorkflowInstance) -> list:
+    """Stages whose approval is still owed and which hold the process up.
+
+    «تا زمانی که ایکس تأیید نکند نمی‌توان ادامه داد» is a per-stage setting,
+    so this is a list rather than a rule: a stage marked ``approval_blocks``
+    and still waiting on its approver stops every later stage. Stages *before*
+    it carry on — their work is already behind the thing being approved.
+    """
+    out = []
+    for stage in applicable_stages(instance):
+        if not (stage.needs_approval and stage.approval_blocks):
+            continue
+        entry = _entry_for(instance, stage.stage_number)
+        if entry is not None and entry.status == ENTRY_AWAITING:
+            out.append(stage)
+    return out
+
+
+def blocked_by(instance: WorkflowInstance, stage_number: int):
+    """The blocking approval standing in front of ``stage_number``, if any."""
+    for stage in blocking_approvals(instance):
+        if stage.stage_number < stage_number:
+            return stage
+    return None
+
+
 def pending_stages(instance: WorkflowInstance) -> list:
     """Applicable stages nobody has submitted yet."""
     done = {e.stage_number for e in instance.entries
@@ -634,7 +669,8 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
                  note: str | None = None,
                  stage_number: int | None = None,
                  refer_to: int | None = None,
-                 referral_note: str | None = None) -> WorkflowInstance:
+                 referral_note: str | None = None,
+                 share_stages: list | None = None) -> WorkflowInstance:
     """Record one stage's answers, then hand the work on.
 
     Stages are independent: the owner of stage 3 does not wait for stage 2.
@@ -668,6 +704,14 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
                    if db.session.get(AppUser, i) is not None]
         owner = "، ".join(holders) if holders else "تعیین‌نشده"
         raise WorkflowError(f"مرحله «{stage.title}» در اختیار «{owner}» است.")
+    # An approval the admin marked as blocking is exactly that: nothing after
+    # that stage may be recorded until its approver has ruled.
+    hold = blocked_by(instance, stage.stage_number)
+    if hold is not None:
+        who = hold.approver.full_name if hold.approver else "تأییدکننده"
+        raise WorkflowError(
+            f"مرحله «{hold.title}» در انتظار تأیید «{who}» است و تا زمانی که "
+            f"تأیید نشود، مرحله‌های بعدی ثبت نمی‌شوند.")
 
     merged = dict(instance.payload)
     merged.update(payload or {})
@@ -708,6 +752,7 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
                 f"تأییدکننده را مشخص کند.")
         entry.status = ENTRY_AWAITING
         entry.approver_id = approver
+        entry.shared_stages = _shared_for(stage, share_stages)
         entry.decided_by_id = entry.decided_at = entry.decision_note = None
         record_audit("update", "workflow", instance.id,
                      summary=f"ارسال مرحله {stage.stage_number} "
@@ -728,6 +773,43 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
         finalize(instance, user)
     db.session.commit()
     return instance
+
+
+def _shared_for(stage: WorkflowStage, chosen: list | None) -> str | None:
+    """What this referral opens to the approver, as the entry stores it.
+
+    The admin sets the rule on the stage; «ثبت‌کننده انتخاب می‌کند» hands the
+    choice to the person sending it. An empty choice there is an answer, not a
+    missing one: it means «only the stage I am sending», which is exactly what
+    unticking everything says. ``None`` means no choice was offered at all, and
+    then the default — everything recorded so far — stands.
+    """
+    if stage.approval_sees == SEE_STAGE:
+        return str(stage.stage_number)
+    if stage.approval_sees == SEE_PICK and chosen is not None:
+        numbers = {int(n) for n in chosen if str(n).lstrip("-").isdigit()}
+        # The stage being approved is always in it — that is the thing being
+        # judged, and leaving it out makes the decision meaningless.
+        numbers.add(stage.stage_number)
+        return ",".join(str(n) for n in sorted(numbers))
+    return None                     # everything recorded so far
+
+
+def shareable_stages(instance: WorkflowInstance, stage: WorkflowStage) -> list:
+    """The stages a sender may open to the approver, with what each holds."""
+    out = []
+    for other in applicable_stages(instance):
+        if other.stage_number == stage.stage_number:
+            continue
+        entry = _entry_for(instance, other.stage_number)
+        if entry is None or entry.status not in ENTRY_DONE:
+            continue
+        filled = len([v for v in (entry.payload or {}).values()
+                      if v not in (None, "", [], {}, False)])
+        out.append({"stage_number": other.stage_number, "title": other.title,
+                    "field_count": filled,
+                    "owner": (entry.user.full_name if entry.user else None)})
+    return out
 
 
 # ── referrals ────────────────────────────────────────────────────────────────

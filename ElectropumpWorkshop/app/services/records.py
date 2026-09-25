@@ -8,7 +8,8 @@ import re
 from sqlalchemy import or_
 
 from ..extensions import db
-from ..models import (FormField, LookupItem, Record, RecordDynamicValue,
+from ..models import (FormField, FormSection, LookupItem, Record,
+                      RecordDynamicValue,
                       RecordTag, Well, WellAlias)
 from .audit import diff_fields, record_audit
 from .jalali import (MONTHS_FA, jalali_parts_to_date, local_now,
@@ -304,22 +305,39 @@ def _hidden_by_condition(payload, record=None) -> set:
     silently clear every conditional field on the record, because a partial
     update carries no مجری and the rule would read it as "not پیمانی".
     """
-    hidden = set()
-    for field in FormField.query.filter(FormField.visible_when.isnot(None),
-                                        FormField.is_active.is_(True)).all():
-        rule = (field.visible_when or "").strip()
+    def unmet(rule) -> bool | None:
+        """True when the rule is not satisfied, None when it cannot be judged.
+
+        A multi-valued source — «علت خرابی» is a multi-select — satisfies the
+        rule when it *contains* the value: ticking سوختن الکتروپمپ and هوادهی
+        together must open both of their forms, not neither.
+        """
+        rule = (rule or "").strip()
         if "=" not in rule:
-            continue
+            return None
         on, _, expected = rule.partition("=")
         on, expected = on.strip(), expected.strip()
         sent = payload.get(on, _MISSING)
         if sent is _MISSING:
             if record is None:
-                continue        # nothing to judge by; leave the field alone
+                return None     # nothing to judge by; leave the field alone
             sent = _stored_value_of(record, on)
-        if isinstance(sent, list):
-            sent = sent[0] if sent else ""
-        if normalize_text(sent) != normalize_text(expected):
+        values = sent if isinstance(sent, list) else [sent]
+        if not isinstance(sent, list) and isinstance(sent, str) and "،" in sent:
+            values = sent.split("،")
+        wanted = normalize_text(expected)
+        return all(normalize_text(v) != wanted for v in values)
+
+    hidden = set()
+    # A section can carry the rule for all of its fields at once, which is how
+    # one علت خرابی brings its whole block of readings with it.
+    for section in FormSection.query.filter(FormSection.visible_when.isnot(None),
+                                            FormSection.is_active.is_(True)).all():
+        if unmet(section.visible_when):
+            hidden.update(f.field_name for f in section.fields if f.is_active)
+    for field in FormField.query.filter(FormField.visible_when.isnot(None),
+                                        FormField.is_active.is_(True)).all():
+        if unmet(field.visible_when):
             hidden.add(field.field_name)
     return hidden
 

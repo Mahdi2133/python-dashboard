@@ -2,7 +2,9 @@
 from flask import Blueprint, Response, request
 
 from ..reports import DATASETS, REPORTS, run_builder, run_report
-from ..reports.builder import AGGREGATIONS, OPERATORS
+from ..reports.builder import (AGGREGATIONS, CALCULATIONS,
+                               CALC_MIN_FIELDS, OPERATORS,
+                               dynamic_fields)
 from ..services.auth import permission_required
 from ..services.audit import record_audit
 from ..services.exporter import render
@@ -18,12 +20,24 @@ def list_reports():
     return ok({
         "reports": [{"key": k, "title": v["title"], "description": v["desc"]}
                     for k, v in REPORTS.items()],
+        # The fixed columns, plus whatever the form builder holds right now —
+        # the parameters of each علت خرابی among them.
         "datasets": {k: {"label": v["label"],
-                         "fields": [{"key": f["key"], "label": f["label"],
-                                     "kind": f["kind"]} for f in v["fields"]]}
+                         "fields": ([{"key": f["key"], "label": f["label"],
+                                      "kind": f["kind"]} for f in v["fields"]]
+                                    + [{"key": f["key"], "label": f["label"],
+                                        "kind": f["kind"],
+                                        "numeric": f["numeric"],
+                                        "section": f["section"]}
+                                       for f in dynamic_fields()])}
                      for k, v in DATASETS.items()},
         "aggregations": [{"key": k, "label": v[0]} for k, v in AGGREGATIONS.items()],
         "operators": [{"key": k, "label": v} for k, v in OPERATORS.items()],
+        # The arithmetic a calculated column can do, and how many fields each
+        # one needs, so the builder can refuse an impossible one on the spot.
+        "calculations": [{"key": k, "label": v[0],
+                          "min_fields": CALC_MIN_FIELDS[k]}
+                         for k, v in CALCULATIONS.items()],
     })
 
 

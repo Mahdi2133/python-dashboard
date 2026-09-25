@@ -76,6 +76,12 @@ def get_schema():
     # so the form can evaluate them without re-walking the section tree.
     conditional = []
     for section in sections:
+        rule = (section.get("visible_when") or "").strip()
+        if "=" in rule:
+            on, _, value = rule.partition("=")
+            conditional.append({"section": section["code"],
+                                "fields": [f["field_name"] for f in section["fields"]],
+                                "on": on.strip(), "value": value.strip()})
         for field in section["fields"]:
             rule = (field.get("visible_when") or "").strip()
             if "=" in rule:
@@ -105,6 +111,7 @@ def create_section():
                        or (db.session.query(db.func.max(FormSection.sort_order))
                            .scalar() or 0) + 1),
         description=payload.get("description"),
+        visible_when=normalize_text(payload.get("visible_when")) or None,
     )
     db.session.add(section)
     db.session.flush()
@@ -120,7 +127,7 @@ def update_section(section_id):
     if section is None:
         return fail("بخش یافت نشد.", 404)
     payload = body()
-    for attr in ("title", "icon", "description"):
+    for attr in ("title", "icon", "description", "visible_when"):
         if attr in payload:
             setattr(section, attr, normalize_text(payload[attr]) or None)
     for attr in ("columns", "sort_order"):

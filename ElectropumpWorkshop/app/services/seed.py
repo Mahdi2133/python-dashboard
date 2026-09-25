@@ -659,6 +659,9 @@ def seed_entry_stages() -> dict:
     return {"entry_stages_marked": marked} if marked else {}
 
 
+from .seed_failure import seed_failure_forms
+
+
 def seed_all(force: bool = False) -> dict:
     result = {}
     result.update(seed_admin())
@@ -671,6 +674,7 @@ def seed_all(force: bool = False) -> dict:
     result.update(rollback_graph_release())
     result.update(seed_workflow())
     result.update(seed_entry_stages())
+    result.update(seed_failure_forms())
     result["changed"] = any(v for k, v in result.items() if isinstance(v, int))
     if result["changed"]:
         log.info("Seed applied: %s", result)

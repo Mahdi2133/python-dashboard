@@ -408,7 +408,26 @@
             + 'مرحله ' + J.toFaDigits(x.stage_number) + ' — ' + A.esc(x.title)
             + '</option>';
         }).join('')
-      + '</select></div></div>'
+      + '</select></div>'
+      /* Two decisions the admin owns, and the whole point of the section:
+         whether this approval stops the process, and how much of the record
+         the approver is handed to judge it by. */
+      + '<label class="mini-check wf-blocks-row' + (s.approval_blocks ? ' on' : '')
+      + '"><input type="checkbox" class="wf-approval-blocks"'
+      + (s.approval_blocks ? ' checked' : '') + '>'
+      + '⛔ تا تأیید نشود، مرحله‌های بعدی ثبت نمی‌شوند</label>'
+      + '<div class="wf-stage-row"><label>تأییدکننده چه می‌بیند</label>'
+      + '<select class="wf-approval-sees">'
+      + (definition.approval_sees || []).map(function (x) {
+          return '<option value="' + x.value + '"'
+            + (x.value === s.approval_sees ? ' selected' : '') + '>'
+            + A.esc(x.label) + '</option>';
+        }).join('')
+      + '</select></div>'
+      + '<span class="hint">اگر «ثبت‌کننده انتخاب می‌کند» باشد، هنگام ارسال '
+      + 'برای تأیید، فهرست مرحله‌های ثبت‌شده به ثبت‌کننده نشان داده می‌شود تا '
+      + 'تعیین کند تأییدکننده کدام‌ها را ببیند.</span>'
+      + '</div>'
       + '</details>';
   }
 
@@ -681,6 +700,10 @@
         body.needs_approval = card.querySelector('.wf-needs-approval').checked;
         body.approver_id = card.querySelector('.wf-approver').value || null;
         body.reject_to_stage = card.querySelector('.wf-reject-to').value || null;
+        var blocks = card.querySelector('.wf-approval-blocks');
+        if (blocks) body.approval_blocks = blocks.checked;
+        var sees = card.querySelector('.wf-approval-sees');
+        if (sees) body.approval_sees = sees.value;
       }
       await A.api.put('/api/workflow/stages/' + id, body);
       /* Read each control if it is there, fall back to what the row was
@@ -874,6 +897,10 @@
       }
       if (ev.target.classList.contains('wf-needs-approval')) {
         card.querySelector('.wf-approve-box').hidden = !ev.target.checked;
+      }
+      if (ev.target.classList.contains('wf-approval-blocks')) {
+        var row = ev.target.closest('.wf-blocks-row');
+        if (row) row.classList.toggle('on', ev.target.checked);
       }
       if (ev.target.classList.contains('owner-add') && ev.target.value) {
         addOwner(card, Number(ev.target.value));

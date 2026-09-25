@@ -24,9 +24,105 @@
                  op: row.querySelector('.flt-op').value,
                  value: row.querySelector('.flt-value').value.trim() };
       }).filter(function (f) { return f.field; }),
+      computed: A.qsa('#b-calcs .calc-row').map(function (row) {
+        return {
+          label: row.querySelector('.calc-label').value.trim(),
+          fn: row.querySelector('.calc-fn').value,
+          fields: (row.picked || []).slice(),
+          decimals: +row.querySelector('.calc-dec').value,
+          suffix: row.querySelector('.calc-suffix').value.trim()
+        };
+      }).filter(function (c) { return c.fields.length; }),
       sort_by: A.qs('#b-sort').value,
       sort_dir: A.qs('#b-dir').value
     };
+  }
+
+  /* A calculated column: a name, an operation, and the numeric fields it runs
+     over. The field list is every numeric field the form currently has — the
+     parameters of each علت خرابی included — so a reading added this morning
+     can be put in a calculation this afternoon. The order matters for the
+     operations that say so («اولی منهای بقیه»), so the picks are listed in the
+     order they were ticked. */
+  function numericFields() {
+    return fields.filter(function (f) {
+      return f.numeric || ['number', 'int'].indexOf(f.kind) !== -1;
+    });
+  }
+
+  function addCalc() {
+    var row = A.el('div', { class: 'calc-row card-soft mb-1' });
+    var nums = numericFields();
+    row.innerHTML = '<div class="field-group cols-3">'
+      + '<div class="field"><label>نام ستون</label>'
+      + '<input type="text" class="calc-label" placeholder="مثلاً: درصد تغییرات جریان"></div>'
+      + '<div class="field"><label>محاسبه</label>'
+      + '<select class="calc-fn">' + (meta.calculations || []).map(function (cc) {
+          return '<option value="' + A.esc(cc.key) + '" data-min="' + cc.min_fields
+            + '">' + A.esc(cc.label) + '</option>';
+        }).join('') + '</select></div>'
+      + '<div class="field"><label>رقم اعشار / پسوند</label>'
+      + '<div class="calc-inline">'
+      + '<input type="number" class="calc-dec" value="2" min="0" max="6">'
+      + '<input type="text" class="calc-suffix" placeholder="٪" maxlength="6">'
+      + '</div></div>'
+      + '</div>'
+      + '<div class="field"><label>روی کدام فیلدهای عددی '
+      + '<span class="calc-need"></span></label>'
+      + '<input type="search" class="calc-search" placeholder="جستجوی فیلد…">'
+      + '<div class="calc-picks">' + (nums.length
+          ? nums.map(function (f) {
+              return '<label class="calc-pick-row" data-name="'
+                + A.esc((f.label + ' ' + (f.section || '')).toLowerCase()) + '">'
+                + '<input type="checkbox" class="calc-pick" value="'
+                + A.esc(f.key) + '"><span>' + A.esc(f.label) + '</span>'
+                + (f.section ? '<i>· ' + A.esc(f.section) + '</i>' : '')
+                + '</label>';
+            }).join('')
+          : '<span class="hint">فیلد عددی‌ای تعریف نشده است.</span>')
+      + '</div></div>'
+      + '<div class="calc-foot"><span class="calc-order"></span>'
+      + '<button class="btn-ghost calc-del" type="button">حذف ستون</button></div>';
+
+    /* The order fields were ticked in, not the order they happen to sit in.
+
+       «تفاضل (اولی منهای بقیه)» and «درصد تغییر (از اولی به دومی)» both turn
+       on which field is first, so reading the boxes top-to-bottom would give
+       the right number with the wrong sign. */
+    row.picked = [];
+    function labelOf(key) {
+      var box = row.querySelector('.calc-pick[value="' + CSS.escape(key) + '"]');
+      return box ? box.parentNode.querySelector('span').textContent : key;
+    }
+    function refresh() {
+      var fn = row.querySelector('.calc-fn');
+      var need = +fn.options[fn.selectedIndex].dataset.min;
+      row.querySelector('.calc-need').textContent =
+        '(دست‌کم ' + J.toFaDigits(need) + ' فیلد)';
+      row.querySelector('.calc-order').textContent = row.picked.length
+        ? 'ترتیب: ' + row.picked.map(labelOf).join(' ← ')
+        : 'هنوز فیلدی انتخاب نشده است.';
+      row.classList.toggle('short', row.picked.length < need);
+    }
+    row.addEventListener('change', function (ev) {
+      if (ev.target.classList.contains('calc-pick')) {
+        var at = row.picked.indexOf(ev.target.value);
+        if (ev.target.checked && at === -1) row.picked.push(ev.target.value);
+        if (!ev.target.checked && at !== -1) row.picked.splice(at, 1);
+      }
+      refresh();
+    });
+    row.querySelector('.calc-search').addEventListener('input', function () {
+      var q = this.value.trim().toLowerCase();
+      A.qsa('.calc-pick-row', row).forEach(function (el) {
+        el.hidden = !!q && el.dataset.name.indexOf(q) === -1;
+      });
+    });
+    row.querySelector('.calc-del').addEventListener('click', function () {
+      row.remove();
+    });
+    A.qs('#b-calcs').appendChild(row);
+    refresh();
   }
 
   function fieldOptions(includeBlank) {
@@ -145,6 +241,7 @@
     } catch (err) { A.toast(err.message, 'error'); return; }
 
     A.qs('#b-add-agg').addEventListener('click', addAgg);
+    A.qs('#b-add-calc').addEventListener('click', addCalc);
     A.qs('#b-add-filter').addEventListener('click', addFilter);
     A.qs('#b-run').addEventListener('click', run);
     A.qs('#b-reset').addEventListener('click', function () {

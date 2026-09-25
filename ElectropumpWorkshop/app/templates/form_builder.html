@@ -89,6 +89,16 @@
         <select id="sb-full"><option value="0">خیر</option><option value="1">بله</option></select></div>
       <div class="field"><label>وضعیت</label>
         <select id="sb-active"><option value="1">فعال</option><option value="0">غیرفعال</option></select></div>
+      <div class="field span-2"><label>نمایش فقط وقتی…</label>
+        <div class="when-row">
+          <select id="sb-when-field"><option value="">— همیشه نشان داده شود —</option></select>
+          <span class="when-eq">برابر باشد با</span>
+          <select id="sb-when-value"><option value="">—</option></select>
+        </div>
+        <span class="hint">مثلاً «علت خرابی» برابر «سوختن الکتروپمپ»: این بخش
+          تا وقتی آن علت انتخاب نشده پنهان می‌ماند و فیلدهایش الزامی نیستند.
+          اگر فیلد مبنا چندانتخابی باشد، کافی است همین گزینه تیک بخورد.</span>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn-primary" id="sb-save" type="button">ذخیره</button>

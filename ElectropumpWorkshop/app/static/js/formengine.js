@@ -264,8 +264,26 @@
     }
     self.currentValueOf = currentValueOf;
 
+    /* Every value the source field is holding right now.
+
+       «علت خرابی» is a multi-select: the operator can tick سوختن الکتروپمپ and
+       هوادهی together, and both of their forms have to open. So a rule is met
+       when the source *contains* the value, not only when it equals it — with
+       a single-choice field the two readings are the same thing. */
+    function valuesOf(name) {
+      var ticked = checkedValues(name);
+      if (ticked.length) return ticked;
+      var one = currentValueOf(name);
+      return one ? [one] : [];
+    }
+
+    function ruleIsMet(rule) {
+      return valuesOf(rule.on).indexOf(rule.value) !== -1;
+    }
+
     self.applyConditional = function () {
       (schema.conditional || []).forEach(function (rule) {
+        if (rule.section) { applySectionRule(rule); return; }
         var wrap = qs('[data-wrap="' + rule.field + '"]');
         if (!wrap) return;
         /* A rule can only be judged where its source field is. On a workflow
@@ -276,7 +294,7 @@
            own heading. */
         var source = qs('[data-wrap="' + rule.on + '"]');
         if (!source) return;
-        var show = String(currentValueOf(rule.on) || '') === rule.value;
+        var show = ruleIsMet(rule);
         wrap.classList.toggle('hidden', !show);
         if (!show) {
           qsa('input[name="' + rule.field + '"]').forEach(function (i) {
@@ -290,6 +308,28 @@
       });
       if (options.onConditional) options.onConditional(self);
     };
+
+    /* A whole section appears or goes away together — the parameters of one
+       علت خرابی are one block, and clearing them one field at a time would
+       leave half-answered readings behind when the cause is unticked. */
+    function applySectionRule(rule) {
+      var block = qs('[data-section="' + rule.section + '"]');
+      if (!block) return;
+      var source = qs('[data-wrap="' + rule.on + '"]');
+      if (!source) return;
+      var show = ruleIsMet(rule);
+      block.classList.toggle('hidden', !show);
+      if (show) return;
+      (rule.fields || []).forEach(function (name) {
+        qsa('input[name="' + name + '"]').forEach(function (i) {
+          i.checked = false;
+        });
+        var free = qs('#fld-' + name);
+        if (free) free.value = '';
+        var other = qs('[data-other="' + name + '"]');
+        if (other) other.value = '';
+      });
+    }
 
     function onFieldChanged(ev) {
       var name = ev.target.name || (ev.target.id || '').replace(/^fld-/, '');
@@ -470,6 +510,13 @@
     function hiddenFields() {
       var hidden = {};
       (schema.conditional || []).forEach(function (rule) {
+        if (rule.section) {
+          var block = qs('[data-section="' + rule.section + '"]');
+          if (block && block.classList.contains('hidden')) {
+            (rule.fields || []).forEach(function (n) { hidden[n] = true; });
+          }
+          return;
+        }
         var wrap = qs('[data-wrap="' + rule.field + '"]');
         if (wrap && wrap.classList.contains('hidden')) hidden[rule.field] = true;
       });

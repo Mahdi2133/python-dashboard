@@ -95,6 +95,33 @@ TAG_FIELDS = [
     {"key": "desc_tags", "label": "برچسب توضیحات", "kind": "tag", "category": "desc_tag"},
 ]
 
+# ── fields the admin added ───────────────────────────────────────────────────
+#
+# Everything above is a column on ``records``. The form builder's own fields —
+# the parameters of each علت خرابی among them — live in ``record_dynamic_values``
+# instead, one row per answer, and the admin adds and removes them at will. So
+# they are read from the form definition each time rather than listed here, and
+# they are offered for listing and for calculation; grouping and aggregation
+# still work on the fixed columns only.
+_DYNAMIC_NUMERIC = ("number",)
+
+
+def dynamic_fields() -> list:
+    """The form-builder fields, as report fields."""
+    from ..models import FormField
+    out = []
+    for f in (FormField.query.filter(FormField.is_active.is_(True),
+                                     FormField.model_attr.is_(None))
+              .order_by(FormField.sort_order).all()):
+        out.append({
+            "key": f"dyn.{f.field_name}", "label": f.label, "kind": "dynamic",
+            "attr": f.field_name,
+            "numeric": f.field_type in _DYNAMIC_NUMERIC,
+            "section": f.section.title if f.section else None,
+        })
+    return out
+
+
 DATASETS = {
     "records": {
         "label": "رکوردهای عملیات کارگاه",
@@ -102,7 +129,35 @@ DATASETS = {
     },
 }
 
-_FIELD_INDEX = {f["key"]: f for f in RECORD_FIELDS + TAG_FIELDS}
+_STATIC_INDEX = {f["key"]: f for f in RECORD_FIELDS + TAG_FIELDS}
+
+
+class _FieldIndex:
+    """The fixed columns plus whatever the form builder currently holds.
+
+    A mapping rather than a dict so a field the admin added five minutes ago
+    resolves without restarting anything; the fixed columns are still answered
+    straight from the dict.
+    """
+
+    def __contains__(self, key):
+        return self.get(key) is not None
+
+    def get(self, key, default=None):
+        if key in _STATIC_INDEX:
+            return _STATIC_INDEX[key]
+        if isinstance(key, str) and key.startswith("dyn."):
+            return next((f for f in dynamic_fields() if f["key"] == key), default)
+        return default
+
+    def __getitem__(self, key):
+        found = self.get(key)
+        if found is None:
+            raise KeyError(key)
+        return found
+
+
+_FIELD_INDEX = _FieldIndex()
 
 
 def _column_for(field, alias_cache):
@@ -123,6 +178,23 @@ def _column_for(field, alias_cache):
 
 
 def _apply_filter(query, field, operator, value):
+    if field["kind"] == "dynamic":
+        # A form-builder answer is a row in another table, matched by name.
+        from ..models import FormField, RecordDynamicValue
+        clause = RecordDynamicValue.value == str(value)
+        if operator == "contains":
+            clause = RecordDynamicValue.value.ilike(f"%{value}%")
+        elif operator == "is_null":
+            return query.filter(~Record.dynamic_values.any(
+                RecordDynamicValue.field.has(
+                    FormField.field_name == field["attr"])))
+        elif operator == "not_null":
+            return query.filter(Record.dynamic_values.any(
+                RecordDynamicValue.field.has(
+                    FormField.field_name == field["attr"])))
+        return query.filter(Record.dynamic_values.any(db.and_(
+            RecordDynamicValue.field.has(FormField.field_name == field["attr"]),
+            clause)))
     if field["kind"] == "tag":
         clause = RecordTag.value == value
         if operator == "contains":
@@ -153,6 +225,114 @@ def _apply_filter(query, field, operator, value):
     return query.filter(fn(value))
 
 
+# ── calculated columns ───────────────────────────────────────────────────────
+#
+# «یک ستون تازه که نشان بدهد این عدد با آن عدد چه نسبتی دارد» — the admin names
+# the column and picks the operation and the fields; nothing here knows what
+# آمپر or فشار mean, so a calculation the workshop invents tomorrow needs no
+# code. Each one is computed per row, after the row is read, so it works the
+# same on a fixed column and on a form-builder field.
+def _num(value):
+    """A number, or None when the cell holds something that is not one."""
+    if value is None or value == "" or value == "—":
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace("٬", "").replace(",", "")
+    for fa, en in zip("۰۱۲۳۴۵۶۷۸۹", "0123456789"):
+        text = text.replace(fa, en)
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _pct_change(values):
+    """(new − base) ÷ base × 100, with the base first — «درصد تغییرات»."""
+    if len(values) < 2 or values[0] == 0:
+        return None
+    return (values[1] - values[0]) / values[0] * 100.0
+
+
+CALCULATIONS = {
+    "sum":        ("جمع", lambda v: sum(v)),
+    "diff":       ("تفاضل (اولی منهای بقیه)",
+                   lambda v: v[0] - sum(v[1:]) if len(v) > 1 else None),
+    "product":    ("حاصل‌ضرب", lambda v: _product(v)),
+    "avg":        ("میانگین", lambda v: sum(v) / len(v)),
+    "min":        ("کمینه", min),
+    "max":        ("بیشینه", max),
+    "range":      ("دامنه (بیشینه منهای کمینه)", lambda v: max(v) - min(v)),
+    "ratio":      ("نسبت (اولی تقسیم بر دومی)",
+                   lambda v: v[0] / v[1] if len(v) > 1 and v[1] else None),
+    "pct_of":     ("درصد اولی از دومی",
+                   lambda v: v[0] / v[1] * 100.0 if len(v) > 1 and v[1] else None),
+    "pct_change": ("درصد تغییر (از اولی به دومی)", _pct_change),
+}
+
+# How many fields each one needs at least, so the builder can say so rather
+# than quietly returning an empty column.
+CALC_MIN_FIELDS = {"sum": 1, "avg": 1, "min": 1, "max": 1, "range": 2,
+                   "diff": 2, "product": 2, "ratio": 2, "pct_of": 2,
+                   "pct_change": 2}
+
+
+def _product(values):
+    out = 1.0
+    for v in values:
+        out *= v
+    return out
+
+
+def _read_calcs(spec: dict) -> list:
+    """Validate the calculated columns a report asked for."""
+    out = []
+    for n, calc in enumerate(spec.get("computed") or [], start=1):
+        fn = calc.get("fn")
+        if fn not in CALCULATIONS:
+            raise ValueError(f"تابع محاسباتی نامعتبر: {fn}")
+        keys = [k for k in (calc.get("fields") or []) if k in _FIELD_INDEX]
+        if len(keys) < CALC_MIN_FIELDS[fn]:
+            raise ValueError(
+                f"«{CALCULATIONS[fn][0]}» دست‌کم به "
+                f"{CALC_MIN_FIELDS[fn]} فیلد عددی نیاز دارد.")
+        out.append({
+            "key": calc.get("key") or f"calc{n}",
+            "label": (calc.get("label") or "").strip() or CALCULATIONS[fn][0],
+            "fn": fn, "fields": keys,
+            "decimals": max(0, min(int(calc.get("decimals") or 2), 6)),
+            "suffix": (calc.get("suffix") or "").strip(),
+        })
+    return out
+
+
+def _apply_calcs(row: dict, calcs: list):
+    """Fill this row's calculated cells from the ones already read.
+
+    A row missing one of the inputs gets «—» rather than a wrong number: a
+    percentage of a blank reading is not zero, it is unknown.
+    """
+    for calc in calcs:
+        values = [_num(row.get(k)) for k in calc["fields"]]
+        if any(v is None for v in values):
+            row[calc["key"]] = "—"
+            continue
+        try:
+            answer = CALCULATIONS[calc["fn"]][1](values)
+        except (ZeroDivisionError, ValueError, TypeError):
+            answer = None
+        if answer is None:
+            row[calc["key"]] = "—"
+        else:
+            answer = round(answer, calc["decimals"])
+            if calc["decimals"] == 0:
+                answer = int(answer)
+            row[calc["key"]] = (f"{answer}{calc['suffix']}" if calc["suffix"]
+                                else answer)
+
+
 def run_builder(spec: dict) -> dict:
     """Execute a report definition and return the standard report envelope."""
     dataset = spec.get("dataset") or "records"
@@ -160,6 +340,17 @@ def run_builder(spec: dict) -> dict:
         raise ValueError("مجموعه‌داده انتخاب‌شده معتبر نیست.")
 
     group_keys = [k for k in (spec.get("group_by") or []) if k in _FIELD_INDEX]
+    # Grouping and aggregation run in SQL over the fixed columns. A
+    # form-builder field lives one table away, so it is offered for listing and
+    # for calculation but not for grouping — said plainly rather than returning
+    # an empty report.
+    bad = [k for k in group_keys if _FIELD_INDEX[k]["kind"] == "dynamic"]
+    if bad:
+        raise ValueError(
+            "فیلدهای فرم‌ساز («" + "»، «".join(_FIELD_INDEX[k]["label"]
+                                              for k in bad)
+            + "») برای گروه‌بندی در دسترس نیستند؛ آن‌ها را در فهرست ستون‌ها "
+              "یا در ستون‌های محاسباتی به کار ببرید.")
     aggs = []
     for agg in (spec.get("aggregations") or []):
         fn = agg.get("fn") or "count"
@@ -291,21 +482,32 @@ def _run_flat(query, spec, aggs):
     sort_key = spec.get("sort_by")
     direction = (spec.get("sort_dir") or "desc").lower()
     if sort_key in _FIELD_INDEX and _FIELD_INDEX[sort_key]["kind"] not in (
-            "lookup", "well", "tag"):
+            "lookup", "well", "tag", "dynamic"):
         col = getattr(Record, _FIELD_INDEX[sort_key]["attr"])
         query = query.order_by(col.desc().nullslast() if direction == "desc"
                                else col.asc().nullsfirst())
     else:
         query = query.order_by(Record.op_date.desc().nullslast())
 
+    calcs = _read_calcs(spec)
     columns = [{"key": k, "label": _FIELD_INDEX[k]["label"], "type": "text"}
                for k in field_keys]
+    # The calculated columns come last, where a reader expects a total.
+    columns += [{"key": c["key"], "label": c["label"], "type": "number",
+                 "computed": True} for c in calcs]
     rows = []
     for rec in query.limit(limit).all():
         row = {}
+        dyn = None
         for key in field_keys:
             field = _FIELD_INDEX[key]
-            if field["kind"] == "lookup":
+            if field["kind"] == "dynamic":
+                if dyn is None:
+                    dyn = {v.field.field_name: v.value
+                           for v in rec.dynamic_values if v.field}
+                value = dyn.get(field["attr"])
+                row[key] = value if value not in (None, "") else "—"
+            elif field["kind"] == "lookup":
                 item = db.session.get(LookupItem, getattr(rec, field["attr"]))
                 row[key] = item.value if item else "—"
             elif field["kind"] == "well":
@@ -319,6 +521,7 @@ def _run_flat(query, spec, aggs):
             else:
                 value = getattr(rec, field["attr"])
                 row[key] = value if value is not None else "—"
+        _apply_calcs(row, calcs)
         rows.append(row)
     return {"columns": columns, "rows": rows, "summary": {"count": len(rows)},
             "chart": None}

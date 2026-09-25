@@ -38,6 +38,11 @@ class FormSection(db.Model):
     columns = db.Column(db.Integer, nullable=False, default=3)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     description = db.Column(db.Text)
+    # «این بخش را فقط وقتی نشان بده که …», in the same «field=value» shape a
+    # field's own rule uses. A whole section is the unit here because the
+    # parameters of one علت خرابی belong together: tick «سوختن الکتروپمپ» and
+    # its dozen readings appear as one block, not one field at a time.
+    visible_when = db.Column(db.String(120))
 
     fields = db.relationship("FormField", back_populates="section",
                              cascade="all, delete-orphan", order_by="FormField.sort_order")
@@ -48,6 +53,7 @@ class FormSection(db.Model):
             "sort_order": self.sort_order, "full_width": self.full_width,
             "columns": self.columns, "is_active": self.is_active,
             "description": self.description,
+            "visible_when": self.visible_when,
         }
         if include_fields:
             fields = [f for f in self.fields if f.is_active or not active_only]
