@@ -123,6 +123,20 @@ def create_app(config_overrides: dict | None = None) -> Flask:
                 "ALLOWED_PAGES": user.allowed_pages if user else set(),
                 "AUTH_ENABLED": app.config["AUTH_ENABLED"]}
 
+    # Stamp every static URL with the file's modification time. An update is
+    # installed by copying files over the old ones, and without this a browser
+    # keeps running yesterday's script against today's page — the new controls
+    # simply never appear until someone clears the cache by hand.
+    @app.url_defaults
+    def _static_version(endpoint, values):
+        if endpoint != "static" or "v" in values or not values.get("filename"):
+            return
+        try:
+            path = os.path.join(app.static_folder, values["filename"])
+            values["v"] = int(os.stat(path).st_mtime)
+        except OSError:
+            pass
+
     # The migration tooling needs an app whose database has NOT been created
     # yet, so `flask db migrate` can diff the models against an empty schema.
     if os.environ.get("ELECTROPUMP_SKIP_BOOTSTRAP") != "1":

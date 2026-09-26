@@ -1236,6 +1236,119 @@ def main():
         s2.owners = [bz]
         _db.session.commit()
 
+    print("\n— ارجاع به عقب: برگشت به مرحله‌ی خود او، نه فرم مرحله‌ی بعد —")
+    with app.app_context():
+        from app.extensions import db as _db
+        from app.models import AppUser
+        from app.models.meta import AppMeta
+        from app.models.workflow import ENTRY_REJECTED, REFER_CHOOSE
+        from app.services.seed import seed_default_return
+        from app.services.workflow import (WorkflowError, active_workflow,
+                                           actions_for, forward_candidates,
+                                           owners_of, referral_choices,
+                                           stage_by_number, start_instance,
+                                           submit_stage, sync_entries,
+                                           take_action)
+        wf = active_workflow()
+        s2 = next(x for x in wf.stages if x.stage_number == 2)
+        mk = AppUser.query.filter_by(username="markaz").one()
+        bz = AppUser.query.filter_by(username="bozorg").one()
+        AppMeta.set("workflow_default_return_v1", "")
+        _db.session.commit()
+        seed_default_return()
+        check("هر مرحله (جز اولی) یک «برگشت به مرحله‌ی قبل» پیش‌فرض دارد",
+              any(a["kind"] == "return" and a["target_stage"] is None
+                  for a in s2.actions), str(s2.actions)[:120])
+        old_mode = s2.referral_mode
+        s2.referral_mode = REFER_CHOOSE
+        _db.session.commit()
+
+        inst = start_instance({"operation_kind": "کشیدن",
+                               "well": "امام رضا 11"}, mk)
+        sync_entries(inst)
+        _db.session.commit()
+        submit_stage(inst, {"op_jdate": "1405/07/05", "failure": ["هوادهی"],
+                            "fail_aeration_p01": ["وضعیت لوله و اتصالات بررسی شده است"],
+                            "fail_aeration_p02": 3, "fail_aeration_p03": 12},
+                     mk, stage_number=1)
+        st2 = stage_by_number(inst, 2)
+        people = [u.id for u in forward_candidates(inst, st2)]
+        check("مرکز آبرسانی در فهرست «ارجاع» مرحله ۲ نیست", mk.id not in people,
+              str(people))
+        check("و فهرست کارتابل هم همین را نشان می‌دهد",
+              mk.id not in [u["id"] for u in referral_choices(inst, st2)["users"]])
+        try:
+            submit_stage(inst, {"review_result": "نیاز به کشیدن ندارد"}, bz,
+                         stage_number=2, refer_to=[mk.id])
+            refused = False
+        except WorkflowError as exc:
+            refused, why = True, str(exc)
+        check("ارجاع مرحله‌ی بعد به مرکز آبرسانی رد می‌شود", refused,
+              why[:70] if refused else "")
+        st3 = stage_by_number(inst, 3)
+        check("و فرم کارگاه مکانیک به کارتابل مرکز نمی‌رود",
+              mk.id not in owners_of(inst, st3))
+        back = next(a for a in actions_for(inst, st2, bz) if a["id"] == "back")
+        check("«برگشت» مرحله‌های ثبت‌شده‌ی قبل را پیشنهاد می‌کند",
+              [c["stage_number"] for c in back["choices"]] == [1],
+              str(back["choices"]))
+        try:
+            take_action(inst, 2, bz, "back", note="علت خرابی ناقص است")
+            picked = False
+        except WorkflowError:
+            picked = True
+        check("بدون انتخاب مرحله، برگشت رد می‌شود", picked)
+        take_action(inst, 2, bz, "back", note="علت خرابی ناقص است", target_stage=1)
+        e1 = next(e for e in inst.entries if e.stage_number == 1)
+        check("برگشت، مرحله ۱ خود مرکز را دوباره باز می‌کند",
+              e1.status == ENTRY_REJECTED
+              and owners_of(inst, stage_by_number(inst, 1)) == [mk.id], e1.status)
+        check("و فرایند جلو نمی‌رود (مرحله ۳ هنوز به مرکز نرسیده)",
+              mk.id not in owners_of(inst, st3) and inst.current_stage == 1,
+              str(inst.current_stage))
+        s2.referral_mode = old_mode
+        _db.session.commit()
+
+    # One person's powers, from the user editor.
+    with app.app_context():
+        from app.models import AppUser
+        kh = AppUser.query.filter_by(username="kahani").one()
+        bz = AppUser.query.filter_by(username="bozorg").one()
+        s2 = next(x for x in active_workflow().stages if x.stage_number == 2)
+        s2.owners = [bz, kh]
+        _db.session.commit()
+        kh_id, s2_id, bz_id = kh.id, s2.id, bz.id
+    r = c.get(f"/api/workflow/powers/{kh_id}")
+    rows = (r.get_json() or {}).get("data", {}).get("rows", [])
+    mine = next((x for x in rows if x["key"] == f"{s2_id}:back"), None)
+    check("اختیارات هر کاربر در صفحه‌ی کاربران خوانده می‌شود",
+          r.status_code == 200 and mine is not None and mine["allowed"],
+          str(mine)[:120])
+    r = c.put(f"/api/workflow/powers/{kh_id}",
+              json={"grants": {f"{s2_id}:back": False}})
+    with app.app_context():
+        s2 = next(x for x in active_workflow().stages if x.stage_number == 2)
+        users = next(a for a in s2.actions if a["id"] == "back")["user_ids"]
+    check("گرفتن یک اختیار از کاهانی آن را برای بقیه نگه می‌دارد",
+          r.status_code == 200 and users == [bz_id], str(users))
+    r = c.put(f"/api/workflow/powers/{bz_id}",
+              json={"grants": {f"{s2_id}:back": False}})
+    check("گرفتن آخرین دارنده‌ی اختیار رد می‌شود (خالی یعنی همه)",
+          r.status_code == 422)
+    r = c.put(f"/api/workflow/powers/{kh_id}",
+              json={"grants": {f"{s2_id}:back": True}})
+    with app.app_context():
+        s2 = next(x for x in active_workflow().stages if x.stage_number == 2)
+        users = next(a for a in s2.actions if a["id"] == "back")["user_ids"]
+        s2.actions_json = None
+        s2.owners = [AppUser.query.get(bz_id)]
+        _db.session.commit()
+    check("و دوباره دادنش هم کار می‌کند", sorted(users) == sorted([bz_id, kh_id]),
+          str(users))
+    html = c.get("/inbox").get_data(as_text=True)
+    check("نشانی فایل‌های ثابت نسخه دارد (کش مرورگر نسخه‌ی قدیم را نگه ندارد)",
+          "inbox.js?v=" in html)
+
     print("\n— ستون‌های محاسباتی در گزارش‌ساز —")
     # A row with both readings, so the arithmetic is checked against a known
     # answer rather than against whatever the fixture happens to contain.

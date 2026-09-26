@@ -382,13 +382,11 @@
     var stages = definition.workflow.stages.filter(function (x) {
       return x.stage_number > 0;
     });
-    var nActs = (s.actions || []).length;
     return '<details class="wf-refer"' + (s.needs_approval
-        || s.referral_mode !== 'next' || nActs ? ' open' : '') + '>'
-      + '<summary>🔀 ارجاع، تأیید و تصمیم'
+        || s.referral_mode !== 'next' ? ' open' : '') + '>'
+      + '<summary>🔀 ارجاع و تأیید'
       + '<span class="wf-refer-tag">' + A.esc(s.referral_mode_label || '')
-      + (s.needs_approval ? ' · تأیید لازم' : '')
-      + (nActs ? ' · ' + J.toFaDigits(nActs) + ' اقدام' : '') + '</span></summary>'
+      + (s.needs_approval ? ' · تأیید لازم' : '') + '</span></summary>'
       + '<div class="wf-stage-row">'
       + '<label>ارجاع به</label>'
       + '<select class="wf-refer-mode">' + referralModeOptions(s.referral_mode)
@@ -448,7 +446,6 @@
       + 'برای تأیید، فهرست مرحله‌های ثبت‌شده به ثبت‌کننده نشان داده می‌شود تا '
       + 'تعیین کند تأییدکننده کدام‌ها را ببیند.</span>'
       + '</div>'
-      + actionsEditor(s)
       + '</details>';
   }
 
@@ -457,16 +454,24 @@
      process («نیاز به کشیدن ندارد، قابل اصلاح است») or send it back for a
      photo or a video — and the admin says, per action, who may. */
   function actionsEditor(s) {
-    return '<div class="wf-actions" data-stage-number="' + s.stage_number + '">'
-      + '<div class="wf-actions-head">⚖ اقدام‌های تصمیم‌گیری در این مرحله'
-      + '<span class="hint">«ارسال به مرحله بعد» همیشه هست؛ اینجا اقدام‌های '
-      + 'دیگر را اضافه کنید و برای هر کدام تعیین کنید چه کسی اجازه دارد.</span>'
+    var n = (s.actions || []).length;
+    return '<details class="wf-refer wf-actions" open data-stage-number="'
+      + s.stage_number + '">'
+      + '<summary>⚖ اقدام‌ها و اختیارات کاربران'
+      + '<span class="wf-refer-tag">' + (n ? J.toFaDigits(n) + ' اقدام'
+                                            : 'فقط «ارسال به مرحله بعد»')
+      + '</span></summary>'
+      + '<div class="wf-actions-head">'
+      + '<span class="hint">«ارسال به مرحله بعد» همیشه هست. با «افزودن اقدام» '
+      + 'تعیین کنید در این مرحله چه تصمیم‌های دیگری ممکن است — <b>توقف فرایند</b> '
+      + 'یا <b>برگشت به مرحله‌ی قبل</b> (برای اصلاح یا مستندسازی) — و هر کدام را '
+      + 'چه کاربرانی می‌توانند بگیرند.</span>'
       + '</div>'
       + '<div class="wf-action-list">' + (s.actions || []).map(function (a) {
           return actionRow(a, s);
         }).join('') + '</div>'
       + '<button type="button" class="btn-ghost btn-sm wf-action-add">'
-      + '➕ افزودن اقدام</button></div>';
+      + '➕ افزودن اقدام</button></details>';
   }
 
   function actionRow(a, s) {
@@ -489,7 +494,7 @@
       + '<button type="button" class="act-del" title="حذف اقدام">🗑</button></div>'
       + '<div class="wf-action-return"' + (isReturn ? '' : ' hidden') + '>'
       + '<label>برگشت به</label><select class="act-target">'
-      + '<option value="">— مرحله —</option>'
+      + '<option value="">هر مرحله‌ی قبلی — تصمیم‌گیرنده انتخاب می‌کند</option>'
       + stages.map(function (x) {
           return '<option value="' + x.stage_number + '"'
             + (x.stage_number === a.target_stage ? ' selected' : '') + '>'
@@ -607,7 +612,7 @@
         + (s.description ? '<div class="hint wf-stage-desc">'
             + A.esc(s.description) + '</div>' : '')
         + (zero ? '<div class="hint">این مرحله فقط نوع عملیات را می‌پرسد.</div>'
-                : referralPanel(s))
+                : referralPanel(s) + actionsEditor(s))
         + '<ul class="wf-drop" data-stage="' + s.id + '">'
         + (s.items.map(itemHtml).join('')
            || '<li class="wf-drop-empty">موردی اینجا نیست — از پالت بکشید</li>')
@@ -835,7 +840,6 @@
         body.referral_user_id = recipients.length ? recipients[0] : null;
         var all = card.querySelector('.wf-refer-all');
         if (all) body.refer_all = all.checked;
-        if (card.querySelector('.wf-actions')) body.actions = readActions(card);
         body.referral_hint = card.querySelector('.wf-refer-hint').value.trim();
         body.needs_approval = card.querySelector('.wf-needs-approval').checked;
         body.approver_id = card.querySelector('.wf-approver').value || null;
@@ -845,6 +849,7 @@
         var sees = card.querySelector('.wf-approval-sees');
         if (sees) body.approval_sees = sees.value;
       }
+      if (card.querySelector('.wf-actions')) body.actions = readActions(card);
       await A.api.put('/api/workflow/stages/' + id, body);
       /* Read each control if it is there, fall back to what the row was
          drawn with if it is not. A desktop install is updated by copying
@@ -1020,7 +1025,7 @@
         var stageData = definition.workflow.stages.find(function (x) {
           return String(x.id) === acard.dataset.stage; });
         var holder = document.createElement('div');
-        holder.innerHTML = actionRow({ kind: 'stop', user_ids: [] }, stageData);
+        holder.innerHTML = actionRow({ kind: 'return', user_ids: [] }, stageData);
         acard.querySelector('.wf-action-list').appendChild(holder.firstChild);
         markDirty(acard);
         return;

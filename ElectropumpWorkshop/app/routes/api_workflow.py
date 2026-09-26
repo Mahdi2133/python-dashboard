@@ -511,13 +511,16 @@ def update_stage(stage_id):
                 return fail("نوع اقدام نامعتبر است.", 422)
             target = a.get("target_stage")
             if kind == ACTION_RETURN:
-                if str(target or "").lstrip("-").isdigit() \
+                # No target: the person deciding picks one of the stages
+                # already filled on that run — «برگشت به مرحله‌ی قبل».
+                if target in (None, ""):
+                    target = None
+                elif str(target).lstrip("-").isdigit() \
                         and int(target) in numbers \
                         and int(target) != stage.stage_number:
                     target = int(target)
                 else:
-                    return fail("برای «برگشت برای تکمیل»، مرحله‌ی مقصد را "
-                                "انتخاب کنید.", 422)
+                    return fail("مرحله‌ی مقصدِ «برگشت» در این فرایند نیست.", 422)
             people, error = _people(a.get("user_ids") or [])
             if error:
                 return fail(error, 422)
@@ -621,6 +624,91 @@ def set_stage_items(stage_id):
     db.session.commit()
     db.session.refresh(stage)
     return ok(stage.to_dict(), message="فرم این مرحله ذخیره شد.")
+
+
+# ── one person's decision powers ─────────────────────────────────────────────
+# The same grants the process builder edits per action, seen from the other
+# side: every decision of the running process, and whether this person may
+# take it. An action with no names belongs to everyone who holds its stage.
+def _power_rows(user):
+    workflow = active_workflow()
+    rows = []
+    for stage in sorted(workflow.stages if workflow else [],
+                        key=lambda s: s.stage_number):
+        if not stage.is_active:
+            continue
+        owns = user.id in stage.owner_ids
+        for action in stage.actions:
+            target = (next((s.title for s in workflow.stages
+                            if s.stage_number == action["target_stage"]), None)
+                      if action["target_stage"] is not None else None)
+            rows.append({
+                "key": f"{stage.id}:{action['id']}",
+                "stage_number": stage.stage_number, "stage_title": stage.title,
+                "owns_stage": owns, "kind": action["kind"],
+                "kind_label": ACTION_KINDS.get(action["kind"], action["kind"]),
+                "label": action["label"],
+                "target_title": target, "needs_docs": action["needs_docs"],
+                "everyone": not action["user_ids"],
+                "allowed": not action["user_ids"] or user.id in action["user_ids"],
+            })
+    return rows
+
+
+@bp.get("/powers/<int:user_id>")
+@permission_required("workflow.manage")
+def user_powers(user_id):
+    user = db.session.get(AppUser, user_id)
+    if user is None:
+        return fail("کاربر یافت نشد.", 404)
+    return ok({"user_id": user.id, "rows": _power_rows(user)})
+
+
+@bp.put("/powers/<int:user_id>")
+@permission_required("workflow.manage")
+def set_user_powers(user_id):
+    import json
+    user = db.session.get(AppUser, user_id)
+    if user is None:
+        return fail("کاربر یافت نشد.", 404)
+    grants = (body().get("grants") or {})
+    workflow = active_workflow()
+    changed = []
+    for stage in (workflow.stages if workflow else []):
+        actions = stage.actions
+        touched = False
+        for action in actions:
+            key = f"{stage.id}:{action['id']}"
+            if key not in grants:
+                continue
+            want = grants[key] in (True, "true", "1", 1)
+            names = list(action["user_ids"])
+            has = not names or user.id in names
+            if want == has:
+                continue
+            if want:
+                names.append(user.id)
+            else:
+                # «Everyone on the stage» becomes the stage's owners by name,
+                # less this person — and a list that would come out empty is
+                # refused, since an empty list means everyone again.
+                names = [i for i in (names or stage.owner_ids) if i != user.id]
+                if not names:
+                    return fail(
+                        f"«{action['label']}» در مرحله {stage.stage_number} فقط به "
+                        f"همین کاربر می‌رسد. اگر نباید در اختیار کسی باشد، آن را در "
+                        f"فرایندساز حذف کنید.", 422)
+            action["user_ids"] = names
+            touched = True
+            changed.append(f"{action['label']} ({'داده شد' if want else 'گرفته شد'})")
+        if touched:
+            stage.actions_json = json.dumps(actions, ensure_ascii=False)
+    if changed:
+        record_audit("update", "workflow", workflow.id,
+                     summary=f"اختیارات «{user.full_name}»: " + "، ".join(changed))
+    db.session.commit()
+    return ok({"user_id": user.id, "rows": _power_rows(user)},
+              message="اختیارات ذخیره شد." if changed else "تغییری نبود.")
 
 
 # ── who is connected to what ─────────────────────────────────────────────────
@@ -1060,7 +1148,8 @@ def submit(instance_id):
     if action != ACTION_FORWARD:
         try:
             take_action(instance, int(stage_number), current_user(), action,
-                        note=payload.get("note"), payload=payload.get("data") or {})
+                        note=payload.get("note"), payload=payload.get("data") or {},
+                        target_stage=payload.get("target_stage"))
         except (WorkflowError, TypeError, ValueError) as exc:
             return fail(str(exc), 422, fields=getattr(exc, "fields", {}))
         message = ("فرایند متوقف شد." if instance.status == INSTANCE_STOPPED

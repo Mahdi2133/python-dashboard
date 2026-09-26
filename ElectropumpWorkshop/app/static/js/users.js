@@ -129,6 +129,70 @@
     }
   }
 
+  /* ── decision powers in the process ──────────────────────────────────── */
+  var powers = null;           // rows as loaded, to send only what changed
+
+  async function loadPowers(user) {
+    var box = A.qs('#u-powers-box');
+    powers = null;
+    if (!box) return;
+    var allowed = user && A.can && A.can('workflow.manage');
+    box.classList.toggle('hidden', !allowed);
+    if (!allowed) return;
+    A.qs('#u-powers').innerHTML = '<div class="loading">در حال بارگذاری</div>';
+    try {
+      var res = await A.api.get('/api/workflow/powers/' + user.id);
+      if (!editing || editing.id !== user.id) return;
+      powers = res.data.rows;
+      renderPowers();
+    } catch (err) {
+      A.qs('#u-powers').innerHTML = '<div class="hint">' + A.esc(err.message) + '</div>';
+    }
+  }
+
+  function renderPowers() {
+    var box = A.qs('#u-powers');
+    if (!powers.length) {
+      box.innerHTML = '<div class="hint">هنوز برای هیچ مرحله‌ای اقدامی جز «ارسال» '
+        + 'تعریف نشده است. در فرایندساز، بخش «⚖ اقدام‌ها و اختیارات کاربران» '
+        + 'هر مرحله را باز کنید و «افزودن اقدام» را بزنید.</div>';
+      return;
+    }
+    var last = null;
+    box.innerHTML = powers.map(function (r) {
+      var head = '';
+      if (r.stage_number !== last) {
+        last = r.stage_number;
+        head = '<div class="power-stage">مرحله ' + J.toFaDigits(r.stage_number)
+          + ' — ' + A.esc(r.stage_title)
+          + (r.owns_stage ? ' <span class="badge">متولی این مرحله</span>'
+                          : ' <span class="hint">(متولی نیست؛ فقط وقتی کاری به او ارجاع شود)</span>')
+          + '</div>';
+      }
+      var icon = r.kind === 'stop' ? '⛔' : '↩';
+      var what = r.kind === 'return'
+        ? (r.target_title ? 'برگشت به «' + A.esc(r.target_title) + '»'
+                          : 'برگشت به هر مرحله‌ی قبلی')
+          + (r.needs_docs ? ' · مستند الزامی' : '')
+        : 'توقف فرایند';
+      return head + '<label class="power-row"><input type="checkbox" data-power="'
+        + A.esc(r.key) + '"' + (r.allowed ? ' checked' : '') + '>'
+        + '<span>' + icon + ' ' + A.esc(r.label) + '</span>'
+        + '<i>' + what + (r.everyone ? ' · فعلاً برای همه‌ی متولی‌ها' : '') + '</i></label>';
+    }).join('');
+  }
+
+  async function savePowers(userId) {
+    if (!powers) return;
+    var grants = {}, any = false;
+    powers.forEach(function (r) {
+      var box = A.qs('#u-powers [data-power="' + r.key + '"]');
+      if (box && box.checked !== r.allowed) { grants[r.key] = box.checked; any = true; }
+    });
+    if (!any) return;
+    await A.api.put('/api/workflow/powers/' + userId, { grants: grants });
+  }
+
   /* ── editor ─────────────────────────────────────────────────────────── */
   function openEditor(user) {
     editing = user;
@@ -164,6 +228,7 @@
     A.qs('#u-custom').checked = !!(user && user.custom_permissions);
     setPermissionBoxes(user ? user.permissions : (roleByKey('operator') || {}).permissions || []);
     applyCustomToggle();
+    loadPowers(user);
     A.openModal('user-modal');
   }
 
@@ -232,6 +297,17 @@
       var res = editing
         ? await A.api.put('/api/users/' + editing.id, payload)
         : await A.api.post('/api/users', payload);
+      if (editing) {
+        try {
+          await savePowers(editing.id);
+        } catch (perr) {
+          // The person's details are saved; only the powers change was refused.
+          A.qs('#user-alert').innerHTML = '<div class="alert error">مشخصات کاربر ذخیره شد، '
+            + 'اما اختیارات تغییر نکرد: ' + A.esc(perr.message) + '</div>';
+          loadUsers();
+          return;
+        }
+      }
       A.toast(res.message);
       A.closeModal('user-modal');
       loadUsers();

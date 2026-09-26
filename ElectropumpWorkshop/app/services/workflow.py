@@ -713,6 +713,11 @@ def owners_of(instance: WorkflowInstance, stage: WorkflowStage) -> list:
     entry = _entry_for(instance, stage.stage_number)
     if entry is not None and entry.pinned_owner_ids:
         return list(entry.pinned_owner_ids)
+    return [u.id for u in _standing_owners(instance, stage)]
+
+
+def _standing_owners(instance: WorkflowInstance, stage: WorkflowStage) -> list:
+    """The stage's own متولی‌ها on this run, before any referral pins it."""
     people = stage.all_owners
     # A disabled account cannot open its کارتابل, so work must not rest there
     # while somebody else on the stage could do it. If every owner is disabled
@@ -722,7 +727,7 @@ def owners_of(instance: WorkflowInstance, stage: WorkflowStage) -> list:
     people = live or people
     if stage.route_by_center:
         people = _for_this_center(people, instance)
-    return [u.id for u in people]
+    return list(people)
 
 
 def _for_this_center(people: list, instance: WorkflowInstance) -> list:
@@ -989,18 +994,78 @@ def actions_for(instance: WorkflowInstance, stage: WorkflowStage, user) -> list:
                 and user.id not in action["user_ids"]:
             continue
         if action["kind"] == ACTION_RETURN:
-            target = stage_by_number(instance, action["target_stage"]) \
-                if action["target_stage"] is not None else None
-            if target is None or target.stage_number == stage.stage_number:
-                continue                   # points nowhere on this run
-            action = dict(action, target_title=target.title)
+            if action["target_stage"] is None:
+                # «برگشت به مرحله‌ی قبل»: the decider picks which one, from
+                # the stages of this run that were actually filled.
+                choices = earlier_stages(instance, stage)
+                if not choices:
+                    continue               # nothing behind this stage yet
+                action = dict(action, choices=choices, target_title=None)
+            else:
+                target = stage_by_number(instance, action["target_stage"])
+                if target is None or target.stage_number == stage.stage_number:
+                    continue               # points nowhere on this run
+                action = dict(action, target_title=target.title)
         out.append(action)
     return out
 
 
+def earlier_stages(instance: WorkflowInstance, stage: WorkflowStage) -> list:
+    """The stages before this one that somebody filled on this run.
+
+    What «برگشت به مرحله‌ی قبل» can go back to — each with the name of the
+    person who filled it, since that is who the work goes back to.
+    """
+    start = instance.entry_stage
+    out = []
+    for other in applicable_stages(instance):
+        if other.stage_number >= stage.stage_number:
+            continue
+        if start is not None and other.stage_number < start:
+            continue                       # closed unused when this run began
+        entry = _entry_for(instance, other.stage_number)
+        if entry is None or entry.status not in (ENTRY_SUBMITTED, ENTRY_DONE):
+            continue
+        out.append({"stage_number": other.stage_number, "title": other.title,
+                    "by": entry.user.full_name if entry.user else None})
+    return out
+
+
+def _earlier_people(instance: WorkflowInstance, stage: WorkflowStage) -> set:
+    """Who filled, or owns, a stage of this run that comes before ``stage``."""
+    ids = set()
+    for other in applicable_stages(instance):
+        if other.stage_number >= stage.stage_number:
+            continue
+        entry = _entry_for(instance, other.stage_number)
+        if entry is not None and entry.user_id:
+            ids.add(entry.user_id)
+        ids.update(owners_of(instance, other))
+    return ids
+
+
+def forward_candidates(instance: WorkflowInstance, stage: WorkflowStage) -> list:
+    """Who «ارجاع» at ``stage`` may hand the next stage to.
+
+    Anybody active — «ارجاع به دفتر فنی و بهره‌بردار» names people outside
+    the stage — except somebody whose part of this run is already behind it: a
+    مرکز آبرسانی picked here would be handed کارگاه مکانیک's forms. Sending the
+    work back to them is «برگشت», which reopens their own stage instead.
+    Someone who also holds the next stage is not «behind» and stays.
+    """
+    target = next_stage_after(instance, stage.stage_number)
+    if target is None:
+        return []
+    behind = _earlier_people(instance, target) - set(stage_owner_ids(target))
+    return [u for u in AppUser.query.filter_by(is_active=True)
+            .order_by(AppUser.first_name, AppUser.username).all()
+            if u.id not in behind]
+
+
 def take_action(instance: WorkflowInstance, stage_number: int, user,
                 action_id: str, note: str | None = None,
-                payload: dict | None = None) -> WorkflowInstance:
+                payload: dict | None = None,
+                target_stage: int | None = None) -> WorkflowInstance:
     """Stop the process, or send it back — the decisions beyond «ارسال».
 
     Neither asks the stage's required fields to be complete: deciding that a
@@ -1049,7 +1114,18 @@ def take_action(instance: WorkflowInstance, stage_number: int, user,
         return instance
 
     # ACTION_RETURN — back to a stage to complete it, or to document it.
-    back = stage_by_number(instance, action["target_stage"])
+    back_to = action["target_stage"]
+    if back_to is None:
+        allowed = {c["stage_number"] for c in action.get("choices") or []}
+        try:
+            back_to = int(target_stage)
+        except (TypeError, ValueError):
+            back_to = None
+        if back_to not in allowed:
+            raise WorkflowError("به کدام مرحله برگردد؟ یکی از مرحله‌های قبلِ "
+                                "ثبت‌شده را انتخاب کنید.",
+                                fields={"__target": "مرحله را انتخاب کنید."})
+    back = stage_by_number(instance, back_to)
     target = _ensure_entry(instance, back)
     target.status = ENTRY_REJECTED
     # Back to whoever filled it, or else the stage's own owners.
@@ -1151,12 +1227,10 @@ def referral_choices(instance: WorkflowInstance, stage: WorkflowStage) -> dict:
         "users": [],
     }
     if stage.referral_mode == REFER_CHOOSE:
-        from ..models.auth import AppUser
         data["users"] = [
             {"id": u.id, "full_name": u.full_name, "username": u.username,
              "role_label": u.role_label}
-            for u in AppUser.query.filter_by(is_active=True)
-            .order_by(AppUser.first_name, AppUser.username).all()]
+            for u in forward_candidates(instance, stage)]
     return data
 
 
@@ -1180,6 +1254,13 @@ def _refer_onward(instance, stage, user, refer_to=None, referral_note=None):
         # One id or several — «ارجاع به دفتر فنی و بهره‌بردار» picks two.
         picked = refer_to if isinstance(refer_to, (list, tuple)) else [refer_to]
         chosen = [int(x) for x in picked if str(x or "").strip().isdigit()]
+        allowed = {u.id for u in forward_candidates(instance, stage)}
+        wrong = [p for p in _users(chosen) if p.id not in allowed]
+        if wrong:
+            raise WorkflowError(
+                f"«{wrong[0].full_name}» نمی‌تواند مرحله‌ی بعد («{target.title}») را "
+                "انجام دهد. برای برگرداندن کار به مرحله‌های قبل، در «تصمیم شما» "
+                "گزینه‌ی برگشت را انتخاب کنید.")
         chosen = chosen or stage.referral_ids
     else:
         chosen = []                       # the next stage's own متولی

@@ -741,6 +741,43 @@ def seed_prefill_sources() -> dict:
     return {"prefill_sources_set": told} if told else {}
 
 
+_BACK_KEY = "workflow_default_return_v1"
+
+
+def seed_default_return() -> dict:
+    """Give every stage but the first a way back, once.
+
+    «ارجاع» hands on the *next* stage, so a reviewer who wanted the work back
+    with مرکز آبرسانی and referred it to them handed them کارگاه مکانیک's
+    forms instead. The way back is a «برگشت» decision; each stage gets one
+    whose target the decider picks from the stages already filled. It is an
+    ordinary action: the admin can rename it, limit it to some people or
+    delete it, and this runs only once so a deletion stays deleted.
+    """
+    import json
+    from ..models import WorkflowDefinition
+    from ..models.meta import AppMeta
+
+    if AppMeta.get(_BACK_KEY):
+        return {}
+    given = 0
+    for workflow in WorkflowDefinition.query.all():
+        live = sorted((st for st in workflow.stages if st.is_active),
+                      key=lambda st: st.stage_number)
+        for stage in live[1:]:
+            if stage.stage_number == 0 or stage.actions:
+                continue
+            stage.actions_json = json.dumps([{
+                "id": "back", "kind": "return",
+                "label": "برگشت به مرحله‌ی قبل برای اصلاح",
+                "target_stage": None, "needs_docs": False, "user_ids": []}],
+                ensure_ascii=False)
+            given += 1
+    AppMeta.set(_BACK_KEY, "done")
+    db.session.commit()
+    return {"default_returns_added": given} if given else {}
+
+
 from .seed_failure import seed_failure_forms
 
 
@@ -760,6 +797,7 @@ def seed_all(force: bool = False) -> dict:
     result.update(seed_start_kinds())
     result.update(backfill_entry_stages())
     result.update(seed_prefill_sources())
+    result.update(seed_default_return())
     result["changed"] = any(v for k, v in result.items() if isinstance(v, int))
     if result["changed"]:
         log.info("Seed applied: %s", result)

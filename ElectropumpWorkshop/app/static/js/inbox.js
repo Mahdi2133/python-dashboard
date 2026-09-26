@@ -399,7 +399,16 @@
     if (!show) return;
     A.qs('#wf-decision-options').innerHTML = acts.map(function (a, i) {
       var icon = a.kind === 'stop' ? '⛔' : a.kind === 'return' ? '↩' : '✅';
-      var sub = a.kind === 'return'
+      var sub = a.kind === 'return' && a.choices
+        ? 'برگشت به: <select class="d-target">'
+          + '<option value="">— کدام مرحله؟ —</option>'
+          + a.choices.map(function (c) {
+              return '<option value="' + c.stage_number + '">مرحله '
+                + J.toFaDigits(c.stage_number) + ' — ' + A.esc(c.title)
+                + (c.by ? ' (' + A.esc(c.by) + ')' : '') + '</option>';
+            }).join('') + '</select>'
+          + (a.needs_docs ? ' · بارگذاری مستند الزامی' : '')
+        : a.kind === 'return'
         ? 'برگشت به مرحله ' + J.toFaDigits(a.target_stage) + ' — '
           + A.esc(a.target_title || '')
           + (a.needs_docs ? ' · بارگذاری مستند الزامی' : '')
@@ -418,12 +427,23 @@
 
   function chosenAction() {
     var r = A.qs('input[name="wf_action"]:checked');
-    return r ? { id: r.value, kind: r.dataset.kind } : { id: 'forward', kind: 'forward' };
+    if (!r) return { id: 'forward', kind: 'forward' };
+    var pick = r.closest('.decision-opt').querySelector('.d-target');
+    return { id: r.value, kind: r.dataset.kind, picks: !!pick,
+             target: pick ? pick.value : null };
   }
 
   function decisionChanged() {
     var a = chosenAction();
     A.qs('#wf-decision-note-row').classList.toggle('hidden', a.kind === 'forward');
+    /* «ارجاع» hands on the next stage; it means nothing when the work is
+       being stopped or sent back, so it steps aside. */
+    var refer = A.qs('#wf-refer-pick');
+    if (refer && current && current.detail) {
+      var r = current.detail.referral || {};
+      refer.classList.toggle('hidden', a.kind !== 'forward' || r.mode !== 'choose'
+        || !current.detail.may_act || current.detail.awaiting_my_decision);
+    }
     var btn = A.qs('#wf-submit');
     if (btn) {
       btn.textContent = a.kind === 'stop' ? '⛔ توقف فرایند'
@@ -490,7 +510,19 @@
             ? (refer.refer_all ? ' و همه باید ثبت کنند.' : ' و ثبت یکی کافی است.')
             : '.');
     } else if (choosing) {
-      where = A.esc(refer.hint || 'کار را به کارتابل چه کسی ارجاع می‌دهید؟');
+      where = A.esc(refer.hint || 'کار را به کارتابل چه کسی ارجاع می‌دهید؟')
+        + (refer.next_stage
+            ? ' <span class="hint">(ارجاع یعنی سپردن مرحله‌ی بعد — <b>مرحله '
+              + J.toFaDigits(refer.next_stage.stage_number) + ' «'
+              + A.esc(refer.next_stage.title) + '»</b>)</span>'
+            : '');
+      /* Sending the work back to somebody behind this stage is not a
+         referral — it would hand them the next stage's forms. Say where the
+         way back is, when this person has one. */
+      if ((detail.actions || []).some(function (a) { return a.kind === 'return'; })) {
+        where += '<div class="hint mt-1">↩ برای برگرداندن کار به مرحله‌های قبل، '
+          + 'در «تصمیم شما در این مرحله» گزینه‌ی برگشت را انتخاب کنید.</div>';
+      }
     } else {
       where = 'پس از ثبت، کار به متولی مرحله بعد می‌رود'
         + (refer.next_stage && refer.next_stage.assignee_name
@@ -719,6 +751,12 @@
       if (decision.kind !== 'forward') {
         var why = A.qs('#wf-decision-note').value.trim();
         var err = A.qs('#wf-decision-err');
+        if (decision.picks && !decision.target) {
+          err.textContent = 'به کدام مرحله برگردد؟ مرحله را انتخاب کنید.';
+          err.classList.remove('hidden');
+          button.disabled = false;
+          return;
+        }
         if (!why) {
           err.textContent = 'دلیل را بنویسید.'; err.classList.remove('hidden');
           A.qs('#wf-decision-note').focus();
@@ -736,7 +774,7 @@
         if (!go) { button.disabled = false; return; }
         var r2 = await A.api.post('/api/workflow/instances/' + current.id + '/submit',
           { stage_number: current.stage_number, action: decision.id, note: why,
-            data: form.collect() });
+            target_stage: decision.target, data: form.collect() });
         A.toast(r2.message || 'انجام شد.', 'success');
         A.qs('#wf-detail').classList.add('hidden');
         current = null;
@@ -852,7 +890,13 @@
     });
     A.qs('#btn-refresh').addEventListener('click', loadInbox);
     var decisionBox = A.qs('#wf-decision-options');
-    if (decisionBox) decisionBox.addEventListener('change', decisionChanged);
+    if (decisionBox) decisionBox.addEventListener('change', function (ev) {
+      // Picking a stage to go back to is choosing that decision.
+      if (ev.target.classList.contains('d-target')) {
+        ev.target.closest('.decision-opt').querySelector('input[type=radio]').checked = true;
+      }
+      decisionChanged();
+    });
     var referSearch = A.qs('#wf-refer-search');
     if (referSearch) referSearch.addEventListener('input', function () {
       var q = this.value.trim().toLowerCase();
