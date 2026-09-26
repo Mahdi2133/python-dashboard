@@ -72,10 +72,10 @@
       return;
     }
     var html = canStart
-      ? '<div class="wf-group">مرحله ۰ — شروع فرایند</div>'
+      ? '<div class="wf-group">🚦 شروع فرایند</div>'
         + '<button class="wf-item wf-item-start" data-start="1" type="button">'
         + '<div class="wf-item-top">'
-        + '<span class="wf-stage-no">۰</span>'
+        + '<span class="wf-stage-no">＋</span>'
         + '<span class="wf-item-title">شروع فرایند جدید</span>'
         + '<span class="badge">🚦</span></div>'
         + '<div class="wf-item-sub">نوع عملیات و چاه را تعیین کنید تا فرایند '

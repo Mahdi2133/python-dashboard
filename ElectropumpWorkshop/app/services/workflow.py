@@ -128,12 +128,33 @@ def entry_stage(workflow, kind: str | None):
 
 
 def doors_for(workflow, kind: str | None) -> list:
-    """Every stage a ``kind`` process may be opened at, earliest first."""
+    """Every stage a ``kind`` process may be opened at, earliest first.
+
+    A process made for one operation that nobody marked a door on opens at its
+    first stage that has an owner — a process has to start somewhere, and
+    «فرایند نصب» with one stage, «کارگاه نصب», starts there.
+    """
     if workflow is None:
         return []
-    return [s for s in sorted(workflow.stages, key=lambda x: x.stage_number)
-            if s.is_active and s.can_start
-            and _kind_matches(s.start_kind or s.applies_to, kind)]
+    ordered = [s for s in sorted(workflow.stages, key=lambda x: x.stage_number)
+               if s.is_active]
+    marked = [s for s in ordered if s.can_start
+              and _kind_matches(s.start_kind or s.applies_to, kind)]
+    if marked or not workflow.operation_kind:
+        return marked
+    if kind and kind != workflow.operation_kind:
+        return []
+    return [s for s in ordered if s.owner_ids][:1]
+
+
+def default_door(workflow):
+    """The stage a one-operation process opens at when none is marked."""
+    if workflow is None or not workflow.operation_kind:
+        return None
+    if any(s.is_active and s.can_start for s in workflow.stages):
+        return None
+    doors = doors_for(workflow, workflow.operation_kind)
+    return doors[0] if doors else None
 
 
 def door_of(workflow, kind: str | None, user):
@@ -649,6 +670,75 @@ def start_instance(payload: dict, user) -> WorkflowInstance:
                          + (f" برای «{well.name}»" if well else ""))
     db.session.commit()
     return instance
+
+
+def readiness(workflow) -> dict:
+    """Whether this process can be started, and by whom — or what is missing.
+
+    The answer to «فرایند را تعریف کردم ولی در کارتابل شروع فرایند نیست»:
+    each thing a start needs, checked, with what to do about the one that
+    fails.
+    """
+    checks = []
+    kinds = ([workflow.operation_kind] if workflow.operation_kind
+             else list(OPERATION_KINDS))
+    stages = [s for s in workflow.stages if s.is_active and s.stage_number > 0]
+    checks.append({"ok": bool(stages), "key": "stages",
+                   "text": (f"{len(stages)} مرحله دارد" if stages
+                            else "هیچ مرحله‌ای ندارد — با «افزودن مرحله» بسازید.")})
+    checks.append({"ok": workflow.is_active, "key": "active",
+                   "text": ("فعال است" if workflow.is_active
+                            else "فعال نیست — تا فعال نشود، کسی نمی‌تواند آن را شروع کند.")})
+    clash = None
+    for other in active_workflows():
+        if other.id == workflow.id:
+            continue
+        both = set(kinds) & ({other.operation_kind} if other.operation_kind
+                             else set(OPERATION_KINDS))
+        if both:
+            clash = {"id": other.id, "name": other.name,
+                     "kinds": sorted(both),
+                     "other_is_both": not other.operation_kind}
+    if clash:
+        names = "، ".join(OPERATION_KINDS[k] for k in clash["kinds"])
+        checks.append({"ok": False, "key": "clash", "clash": clash,
+                       "text": f"فرایند «{clash['name']}» هم برای «{names}» تعریف شده؛ "
+                               "برای هر عملیات فقط یک فرایند می‌تواند فعال باشد."})
+    starters = []
+    for kind in kinds:
+        doors = doors_for(workflow, kind)
+        if not doors:
+            checks.append({"ok": False, "key": "door", "kind": kind,
+                           "text": f"مرحله‌ی شروعِ «{OPERATION_KINDS[kind]}» مشخص نیست — "
+                                   "روی مرحله‌ی اول تیک «فرایند از همین مرحله شروع "
+                                   "می‌شود» را بزنید و متولی‌اش را تعیین کنید."})
+            continue
+        door = doors[0]
+        auto = not door.can_start
+        people = [u for u in door.all_owners if u.is_active]
+        if not people:
+            checks.append({"ok": False, "key": "owner", "kind": kind,
+                           "text": f"مرحله‌ی شروع («{door.title}») متولی ندارد."})
+            continue
+        blocked = [u.full_name for u in people if not u.can("workflow.act")]
+        if blocked:
+            checks.append({"ok": False, "key": "perm",
+                           "text": "این کاربران اجازه‌ی «کار با کارتابل» ندارند: "
+                                   + "، ".join(blocked)
+                                   + " — در صفحه‌ی کاربران دسترسی‌شان را درست کنید."})
+        starters.append({"kind": kind, "label": OPERATION_KINDS[kind],
+                         "stage_number": door.stage_number, "stage_title": door.title,
+                         "automatic": auto,
+                         "people": [u.full_name for u in people]})
+        checks.append({"ok": True, "key": "door", "kind": kind,
+                       "text": f"«{OPERATION_KINDS[kind]}» از مرحله {door.stage_number} "
+                               f"«{door.title}» شروع می‌شود"
+                               + (" (اولین مرحله، چون مرحله‌ی شروعی علامت نخورده)"
+                                  if auto else "")
+                               + " — متولی: " + "، ".join(u.full_name for u in people)})
+    ready = all(c["ok"] for c in checks)
+    return {"ready": ready, "checks": checks, "starters": starters if ready else [],
+            "clash": clash}
 
 
 def clone_workflow(source: WorkflowDefinition, name: str, kind: str | None,

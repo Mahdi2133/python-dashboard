@@ -147,7 +147,9 @@ def get_definition():
                       "section_title": f.section.title if f.section else None,
                       "options": [o["value"] for o in _options_of(f)]}
                      for f in _choice_sources()]
+    from ..services.workflow import readiness
     return ok({"workflow": workflow.to_dict(),
+               "readiness": readiness(workflow),
                "choice_fields": choice_fields,
                "palette": {"sections": palette_sections, "fields": palette_fields},
                "users": users,
@@ -201,8 +203,18 @@ def create_definition():
         is_active=False)
     db.session.add(workflow)
     db.session.flush()
-    # Step zero exists in every process: it is what the «شروع فرایند» card in
-    # the کارتابل opens, and it is where the operation and the well are set.
+    if kind is not None:
+        # A process for one operation needs no step zero to ask which one:
+        # it opens straight at its first stage, and an ownerless «مرحله ۰»
+        # only hid the start button from the people who should have it.
+        record_audit("create", "workflow_definition", workflow.id,
+                     summary=f"تعریف فرایند «{name}»")
+        db.session.commit()
+        return ok(workflow.to_dict(), message="فرایند ساخته شد. حالا مرحله‌ها را "
+                                              "اضافه کنید و متولی مرحله‌ی اول را "
+                                              "تعیین کنید.")
+    # Step zero exists in a process for both operations: it is what the
+    # «شروع فرایند» card in the کارتابل opens, and where the operation is set.
     intake = WorkflowStage(workflow_id=workflow.id, stage_number=0,
                            title="شروع فرایند",
                            description="این مرحله فرایند را آغاز می‌کند.",
@@ -249,11 +261,23 @@ def update_definition(workflow_id):
     # Several processes run at once, one per operation — «فرایند کشیدن» and
     # «فرایند نصب». Two running for the same operation would leave nobody
     # knowing which one a new job opens in, so that is refused.
+    if workflow.is_active and payload.get("resolve_clash") and workflow.operation_kind:
+        # «فرایند اصلی» did both; from now on it does the other operation
+        # only, and its door for this one is closed.
+        rest = [k for k in OPERATION_KINDS if k != workflow.operation_kind]
+        for other in WorkflowDefinition.query.filter(
+                WorkflowDefinition.is_active.is_(True),
+                WorkflowDefinition.id != workflow.id).all():
+            if not other.operation_kind and len(rest) == 1:
+                other.operation_kind = rest[0]
+                for stage in other.stages:
+                    if stage.can_start and stage.start_kind == workflow.operation_kind:
+                        stage.can_start = False
     if workflow.is_active:
         clash = _clash(workflow)
         if clash is not None:
             db.session.rollback()
-            return fail(clash, 422)
+            return fail(clash, 422, clash=True)
     record_audit("update", "workflow_definition", workflow.id,
                  summary=f"ویرایش فرایند «{workflow.name}»")
     db.session.commit()

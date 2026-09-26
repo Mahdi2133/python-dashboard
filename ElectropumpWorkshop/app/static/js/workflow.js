@@ -74,6 +74,60 @@
       note.push('غیرفعال است: فرایند تازه‌ای روی آن شروع نمی‌شود.');
     }
     fillNote(note.join(' '));
+    renderReadiness();
+  }
+
+  /* «شروع فرایند در کارتابل نیست»: say which of the things a start needs is
+     missing, and fix the ones a click can fix. */
+  function renderReadiness() {
+    var box = A.qs('#wf-ready');
+    var r = definition && definition.readiness;
+    if (!box || !r) return;
+    var head = r.ready
+      ? '<div class="wf-ready-head ok">✅ آماده است: ' + r.starters.map(function (s) {
+          return '<b>' + A.esc(s.people.join('، ')) + '</b> در کارتابل خود گزینه‌ی '
+            + '«شروع فرایند جدید — ' + A.esc(s.label) + '» را می‌بیند';
+        }).join('؛ ') + '.</div>'
+      : '<div class="wf-ready-head warn">⚠️ این فرایند هنوز در کارتابل کسی «شروع فرایند» '
+        + 'نشان نمی‌دهد. موارد زیر را درست کنید:</div>';
+    box.innerHTML = head + '<ul class="wf-ready-list">' + r.checks.map(function (c) {
+      var fix = '';
+      if (!c.ok && c.key === 'active' && !r.clash) {
+        fix = ' <button type="button" class="btn-ghost btn-sm" data-ready="activate">فعال کن</button>';
+      } else if (!c.ok && c.key === 'clash' && c.clash.other_is_both
+                 && definition.workflow.operation_kind) {
+        fix = ' <button type="button" class="btn-ghost btn-sm" data-ready="resolve">«'
+          + A.esc(c.clash.name) + '» فقط برای ' + A.esc(otherKindLabel()) + ' باشد و این فعال شود</button>';
+      }
+      return '<li class="' + (c.ok ? 'ok' : 'bad') + '">' + (c.ok ? '✓ ' : '✗ ')
+        + A.esc(c.text) + fix + '</li>';
+    }).join('') + '</ul>';
+  }
+
+  function otherKindLabel() {
+    var k = definition.workflow.operation_kind;
+    return k === 'install' ? 'کشیدن' : k === 'pull' ? 'نصب' : '';
+  }
+
+  async function activateProcess(resolve) {
+    try {
+      await A.api.put('/api/workflow/definitions/' + definition.workflow.id,
+                      { is_active: true, resolve_clash: !!resolve });
+      A.toast('فرایند فعال شد.', 'success');
+    } catch (err) {
+      if (err.payload && err.payload.clash && definition.workflow.operation_kind) {
+        var go = await A.confirmDialog({
+          title: 'تداخل با فرایند دیگر',
+          message: err.message + ' آیا فرایند دیگر از این به بعد فقط برای «'
+            + otherKindLabel() + '» باشد و این فرایند فعال شود؟',
+          confirmText: 'بله، همین کار را بکن', danger: false });
+        if (go) return activateProcess(true);
+      } else {
+        A.toast(err.message, 'error');
+      }
+    }
+    await switchProcess(definition.workflow.id);
+    await loadProcesses(definition.workflow.id);
   }
 
   function fillNote(text) {
@@ -95,13 +149,18 @@
   async function saveProcess() {
     if (!definition) return;
     try {
+      var wantActive = A.qs('#wf-proc-active').checked;
       await A.api.put('/api/workflow/definitions/' + definition.workflow.id, {
         name: A.qs('#wf-proc-name').value.trim(),
         description: A.qs('#wf-proc-desc').value.trim(),
-        is_active: A.qs('#wf-proc-active').checked,
+        is_active: wantActive && definition.workflow.is_active,
         operation_kind: (A.qs('#wf-proc-kind') || {}).value || null,
       });
       A.toast('فرایند ذخیره شد.', 'success');
+      if (wantActive && !definition.workflow.is_active) {
+        definition.workflow.operation_kind = (A.qs('#wf-proc-kind') || {}).value || null;
+        return activateProcess(false);
+      }
       await switchProcess(definition.workflow.id);
       await loadProcesses(definition.workflow.id);
     } catch (err) { A.toast(err.message, 'error'); }
@@ -1181,6 +1240,10 @@
     A.qs('#wf-proc-save').addEventListener('click', saveProcess);
     A.qs('#wf-proc-new').addEventListener('click', newProcess);
     A.qs('#np2-go').addEventListener('click', createProcess);
+    A.qs('#wf-ready').addEventListener('click', function (ev) {
+      var b = ev.target.closest('[data-ready]');
+      if (b) activateProcess(b.dataset.ready === 'resolve');
+    });
     A.qs('#np2-kind').addEventListener('change', procModalSync);
     A.qsa('input[name="np2-from"]').forEach(function (r) {
       r.addEventListener('change', procModalSync);

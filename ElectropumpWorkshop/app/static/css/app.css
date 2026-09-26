@@ -1134,3 +1134,14 @@ select.mini { font-size:11px; padding:2px 4px; width:auto; }
 
 .inline-select { display:inline-block; width:auto; min-width:160px; margin:0 4px;
   padding:2px 6px; font:inherit; }
+
+/* فرایندساز: can this process be started, and by whom. */
+.wf-ready { margin-top:8px; }
+.wf-ready:empty { display:none; }
+.wf-ready-head { padding:8px 10px; border-radius:9px; font-size:13px; line-height:1.9; }
+.wf-ready-head.ok { background:#e9f7ef; border:1px solid #b9e2c8; }
+.wf-ready-head.warn { background:#fff3cd; border:1px solid #f0d58a; }
+.wf-ready-list { list-style:none; margin:6px 0 0; padding:0; font-size:12.5px;
+  display:flex; flex-direction:column; gap:3px; }
+.wf-ready-list li.ok { color:#2e7d4f; }
+.wf-ready-list li.bad { color:#9a3b12; font-weight:600; }

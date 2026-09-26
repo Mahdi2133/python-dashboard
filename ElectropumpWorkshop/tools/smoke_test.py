@@ -1629,6 +1629,63 @@ def main():
         s3.can_start, s3.start_kind = True, "install"
         _db.session.commit()
 
+    print("\n— فرایند تازه‌ی «خالی» با کاربر تازه: شروع فرایند در کارتابل —")
+    r = c.post("/api/users", json={"username": "nasb_new", "password": "pass1234",
+                                   "first_name": "کاربر", "last_name": "نصب",
+                                   "role": "stage_owner", "must_change_password": False})
+    nasb = (r.get_json() or {}).get("data", {}).get("id")
+    r = c.post("/api/workflow/definitions", json={"name": "نصب آزمایشی",
+                                                  "operation_kind": "install"})
+    np_id = r.get_json()["data"]["id"]
+    check("فرایند یک‌عملیاتی بدون «مرحله ۰»ِ بی‌متولی ساخته می‌شود",
+          not r.get_json()["data"]["stages"], str(r.get_json()["data"]["stages"])[:80])
+    c.post("/api/workflow/stages", json={"workflow_id": np_id, "title": "کارگاه نصب"})
+    d = c.get(f"/api/workflow/definition?workflow_id={np_id}").get_json()["data"]
+    st = d["workflow"]["stages"][0]
+    c.put(f"/api/workflow/stages/{st['id']}", json={"title": "کارگاه نصب",
+                                                   "owner_ids": [nasb], "applies_to": "both"})
+    d = c.get(f"/api/workflow/definition?workflow_id={np_id}").get_json()["data"]
+    keys = {x["key"]: x["ok"] for x in d["readiness"]["checks"]}
+    check("وضعیت آمادگی می‌گوید چه چیزی کم است (فعال نیست، تداخل دارد)",
+          not d["readiness"]["ready"] and keys.get("active") is False
+          and keys.get("clash") is False, str(keys))
+    check("و مرحله‌ی اول، بی‌تیک هم، مرحله‌ی شروع حساب می‌شود",
+          keys.get("door") is True, str(d["readiness"]["checks"])[:160])
+    r = c.put(f"/api/workflow/definitions/{np_id}", json={"is_active": True})
+    check("فعال کردن با وجود فرایند «هر دو» رد می‌شود و علتش گفته می‌شود",
+          r.status_code == 422 and r.get_json().get("clash") is True)
+    r = c.put(f"/api/workflow/definitions/{np_id}",
+              json={"is_active": True, "resolve_clash": True})
+    d = c.get(f"/api/workflow/definition?workflow_id={np_id}").get_json()["data"]
+    check("با «فرایند دیگر فقط برای کشیدن باشد» فعال می‌شود",
+          r.status_code == 200 and d["readiness"]["ready"],
+          str(r.get_json().get("error") or d["readiness"]["checks"])[:160])
+    with app.app_context():
+        from app.models import AppUser, WorkflowDefinition
+        from app.services.workflow import (active_workflow, start_instance,
+                                           startable_kinds)
+        u = _db.session.get(AppUser, nasb)
+        check("کاربر تازه در کارتابل «شروع فرایند — نصب» را دارد",
+              startable_kinds(u) == ["install"], str(startable_kinds(u)))
+        inst = start_instance({"operation_kind": "نصب", "well": "امام رضا 11"}, u)
+        check("و فرایند نصب از مرحله‌ی اولِ فرایند تازه شروع می‌شود",
+              inst.workflow_id == np_id and inst.entry_stage == 1,
+              f"{inst.workflow_id}/{inst.entry_stage}")
+        main = (WorkflowDefinition.query.filter(WorkflowDefinition.id != np_id,
+                                                WorkflowDefinition.is_active.is_(True))
+                .first())
+        check("فرایند اصلی حالا فقط برای کشیدن است", main.operation_kind == "pull")
+        main_id = main.id
+    r = c.get("/api/workflow/inbox")
+    # back to one process for both, for whatever runs after this
+    c.put(f"/api/workflow/definitions/{np_id}", json={"is_active": False})
+    c.put(f"/api/workflow/definitions/{main_id}", json={"operation_kind": None})
+    with app.app_context():
+        main = _db.session.get(WorkflowDefinition, main_id)
+        s3 = next(x for x in main.stages if x.stage_number == 3)
+        s3.can_start, s3.start_kind = True, "install"
+        _db.session.commit()
+
     html = c.get("/inbox").get_data(as_text=True)
     check("نشانی فایل‌های ثابت نسخه دارد (کش مرورگر نسخه‌ی قدیم را نگه ندارد)",
           "inbox.js?v=" in html)
