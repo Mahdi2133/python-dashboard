@@ -32,6 +32,16 @@
     <span class="cl-gap" id="cl-gap"></span>
   </div>
   <div id="cl-rows"><div class="loading">در حال بارگذاری</div></div>
+  <!-- The same links turned around: one line per form or field, a box per
+       option — one field opened by several options is ticked on one line. -->
+  <div class="cl-matrix-box">
+    <div class="cl-matrix-head"><b>🔁 هر فرم یا فیلد با کدام گزینه‌ها باز شود</b>
+      <span class="hint">یک فرم یا فیلد را می‌توانید به هر تعداد گزینه وصل کنید؛
+        کافی است جلوی آن، گزینه‌ها را تیک بزنید.</span>
+      <select id="cl-matrix-add"><option value="">➕ افزودن فرم یا فیلد…</option></select>
+    </div>
+    <div id="cl-matrix"></div>
+  </div>
   <div class="form-actions-inline">
     <button class="btn-primary" id="cl-save" type="button">💾 ذخیره اتصال‌ها</button>
     <span class="save-state" id="cl-state"></span>

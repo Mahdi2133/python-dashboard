@@ -9,6 +9,7 @@
   'use strict';
   var A = window.App, J = window.Jalali;
   var data = null, links = {};          // cause value → [form code]
+  var extra = [];                      // targets added in the matrix, not yet ticked
 
   function formTitle(code) {
     var f = (data.forms || []).concat(data.others || [], data.field_links || [],
@@ -71,6 +72,57 @@
         + 'title="یک فرم خالی تازه برای همین علت بسازید">➕ فرم تازه</button>'
         + '</div>';
     }).join('') || '<div class="hint">این فیلد گزینه‌ای ندارد.</div>';
+    renderMatrix(choices, otherChoices, fieldChoices);
+  }
+
+  /* Every form or field linked to any option of this question, with a box
+     per option. */
+  function renderMatrix(choices, otherChoices, fieldChoices) {
+    var box = A.qs('#cl-matrix');
+    if (!box) return;
+    var causes = data.causes || [];
+    var targets = [];
+    causes.forEach(function (c) {
+      (links[c.value] || []).forEach(function (code) {
+        if (targets.indexOf(code) === -1) targets.push(code);
+      });
+    });
+    extra.forEach(function (code) { if (targets.indexOf(code) === -1) targets.push(code); });
+    box.innerHTML = targets.length ? '<table class="cl-matrix"><thead><tr><th></th>'
+      + causes.map(function (c) { return '<th>' + A.esc(c.label) + '</th>'; }).join('')
+      + '</tr></thead><tbody>' + targets.map(function (code) {
+          return '<tr data-target="' + A.esc(code) + '"><th>' + A.esc(formTitle(code)) + '</th>'
+            + causes.map(function (c) {
+                var on = (links[c.value] || []).indexOf(code) !== -1;
+                return '<td><input type="checkbox" class="cl-tick" data-cause="'
+                  + A.esc(c.value) + '"' + (on ? ' checked' : '') + '></td>';
+              }).join('') + '</tr>';
+        }).join('') + '</tbody></table>'
+      : '<div class="hint">هنوز فرم یا فیلدی به گزینه‌های این پرسش وصل نیست.</div>';
+    var add = A.qs('#cl-matrix-add');
+    if (add) {
+      add.innerHTML = '<option value="">➕ افزودن فرم یا فیلد…</option>'
+        + (choices ? '<optgroup label="فرم‌های وصل‌شده">' + choices + '</optgroup>' : '')
+        + (otherChoices ? '<optgroup label="بخش‌های دیگر فرم">' + otherChoices + '</optgroup>' : '')
+        + (fieldChoices ? '<optgroup label="یک فیلد تکی">' + fieldChoices + '</optgroup>' : '');
+    }
+  }
+
+  function adopt(code, opt) {
+    /* A target offered from «others» becomes one this question links. */
+    if (opt && opt.dataset.field === '1') {
+      var f = (data.field_others || []).find(function (x) { return x.code === code; });
+      if (f) {
+        data.field_others = data.field_others.filter(function (x) { return x.code !== code; });
+        data.field_links.push(Object.assign({ causes: [] }, f));
+      }
+    } else {
+      var s = (data.others || []).find(function (x) { return x.code === code; });
+      if (s) {
+        data.others = data.others.filter(function (x) { return x.code !== code; });
+        data.forms.push(Object.assign({ causes: [] }, s));
+      }
+    }
   }
 
   async function load(fieldName) {
@@ -78,6 +130,7 @@
                               + encodeURIComponent(fieldName || 'failure'));
     data = res.data;
     links = {};
+    extra = [];
     (data.causes || []).forEach(function (c) { links[c.value] = c.forms.slice(); });
     var sel = A.qs('#cl-field');
     sel.innerHTML = (data.sources || []).map(function (s) {
@@ -148,6 +201,24 @@
     });
     A.qs('#cl-field').addEventListener('change', function () { load(this.value); });
     A.qs('#cl-save').addEventListener('click', save);
+    A.qs('#cl-matrix').addEventListener('change', function (ev) {
+      if (!ev.target.classList.contains('cl-tick')) return;
+      var code = ev.target.closest('[data-target]').dataset.target;
+      var cause = ev.target.dataset.cause;
+      var list = links[cause] = links[cause] || [];
+      if (ev.target.checked && list.indexOf(code) === -1) list.push(code);
+      if (!ev.target.checked) links[cause] = list.filter(function (x) { return x !== code; });
+      if (extra.indexOf(code) === -1) extra.push(code);   // keep its line while editing
+      render();
+      A.qs('#cl-state').textContent = 'تغییرات ذخیره نشده است';
+    });
+    A.qs('#cl-matrix-add').addEventListener('change', function () {
+      var code = this.value;
+      if (!code) return;
+      adopt(code, this.selectedOptions[0]);
+      if (extra.indexOf(code) === -1) extra.push(code);
+      render();
+    });
     A.qs('#cl-rows').addEventListener('change', async function (ev) {
       if (!ev.target.classList.contains('cl-add') || !ev.target.value) return;
       var row = ev.target.closest('.cl-row');

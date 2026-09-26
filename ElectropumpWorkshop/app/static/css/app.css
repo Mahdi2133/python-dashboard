@@ -1145,3 +1145,13 @@ select.mini { font-size:11px; padding:2px 4px; width:auto; }
   display:flex; flex-direction:column; gap:3px; }
 .wf-ready-list li.ok { color:#2e7d4f; }
 .wf-ready-list li.bad { color:#9a3b12; font-weight:600; }
+
+/* اتصال‌ها: one line per form or field, a box per option. */
+.cl-matrix-box { margin-top:12px; border-top:1px dashed var(--border,#dfe6ea); padding-top:10px; }
+.cl-matrix-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:8px; }
+.cl-matrix-head select { margin-inline-start:auto; max-width:320px; }
+.cl-matrix { width:100%; border-collapse:collapse; font-size:12.5px; }
+.cl-matrix th, .cl-matrix td { border:1px solid var(--border,#dfe6ea); padding:5px 8px; text-align:center; }
+.cl-matrix tbody th { text-align:start; font-weight:600; background:#fbfcfd; }
+.cl-matrix thead th { background:#e8f1f5; color:#1d3a48; font-weight:800; }
+.cl-matrix input { width:auto; transform:scale(1.15); cursor:pointer; }
