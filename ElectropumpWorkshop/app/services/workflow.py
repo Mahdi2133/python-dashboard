@@ -391,6 +391,10 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
             if value in (None, "", [], {}) and field.get("prefill_from"):
                 value = from_history(field.get("field_name"))
             field["is_required"] = False       # not this stage's to answer
+            if field.get("lookup_category") == "__months__" \
+                    and str(value or "").isdigit() and 1 <= int(value) <= 12:
+                from .jalali import MONTHS_FA
+                value = MONTHS_FA[int(value)]  # shown by name, stored as its number
             if value not in (None, "", [], {}):
                 field["read_only_value"] = (
                     "، ".join(str(v) for v in value if v not in (None, ""))
@@ -1614,6 +1618,28 @@ def decide_stage(instance: WorkflowInstance, stage_number: int, user,
     return instance
 
 
+def asked_fields(instance: WorkflowInstance, with_stage: bool = False):
+    """Every field some stage of this run asked (not only showed).
+
+    With ``with_stage``, a map of field name → the first stage number that
+    asks it, to say where a missing answer belongs.
+    """
+    out = {}
+    for stage in applicable_stages(instance):
+        try:
+            blocks = stage_form(instance, stage)["sections"]
+        except Exception:                      # never let the check itself fail
+            continue
+        for block in blocks:
+            if block.get("is_locked"):
+                continue
+            for f in block.get("fields") or []:
+                name = f.get("field_name")
+                if name and not f.get("read_only"):
+                    out.setdefault(name, stage.stage_number)
+    return out if with_stage else set(out)
+
+
 def finalize(instance: WorkflowInstance, user) -> Record:
     """Turn a finished process into a row in ``records``.
 
@@ -1629,14 +1655,27 @@ def finalize(instance: WorkflowInstance, user) -> Record:
     if (instance.well_id and not payload.get("center")
             and instance.well.center is not None):
         payload["center"] = instance.well.center.label
+    # The stages of this run asked what it needed and each one held its own
+    # required answers. A field the form builder marks required but no stage
+    # of this run ever asked — «تیپ پمپ فعلی» in a pull that did not replace
+    # the pump — cannot be anybody's to fill, so it does not block the record.
+    asked = asked_fields(instance)
+    never_asked = {f.field_name for f in
+                   FormField.query.filter_by(is_required=True, is_active=True).all()
+                   if f.field_name not in asked}
     try:
-        record = create_record(payload)
+        record = create_record(payload, not_required=never_asked)
     except ValidationError as exc:
-        # Do not lose the process over a missing field — say which one.
-        names = "، ".join(sorted(k for k in exc.errors
-                                 if not k.startswith("__"))) or "نامشخص"
+        # Do not lose the process over a missing field — say which one, by
+        # its label, and which stage asks it.
+        labels = {f.field_name: f.label for f in FormField.query.all()}
+        where = asked_fields(instance, with_stage=True)
+        names = "، ".join(
+            f"«{labels.get(k, k)}»" + (f" (مرحله {where[k]})" if k in where else "")
+            for k in sorted(k for k in exc.errors if not k.startswith("__"))) or "نامشخص"
         raise WorkflowError(
-            "ثبت نهایی ممکن نشد؛ این فیلدها کامل نیستند: " + names) from exc
+            "ثبت نهایی ممکن نشد؛ این فیلدها کامل نیستند: " + names
+            + ". آن مرحله را باز کنید و فیلد را پر کنید.") from exc
     instance.record_id = record.id
     instance.status = INSTANCE_COMPLETED
     instance.completed_at = local_now()
@@ -1711,6 +1750,57 @@ def _value_from(previous, source: str, fields_by_name: dict):
     return held.value
 
 
+def _fit(value, field):
+    """A value off the well's history, shaped for the field it fills.
+
+    The history speaks its own formats: a month as «شهریور», a date column as
+    a Gregorian date, a number as text. The form's month list stores «6», a
+    Jalali date field wants ۱۴۰۵/۰۶/۲۲, a choice field wants one of its own
+    stored values. Without this the value arrives and matches nothing, and
+    «ماه نصب قبلی» stays empty.
+    """
+    import datetime as _dt
+    from .jalali import MONTHS_FA, to_jalali_str
+    if value in (None, "", [], {}):
+        return value
+    # Dates — never hand a Jalali field a Gregorian date, or the reverse.
+    if isinstance(value, (_dt.date, _dt.datetime)):
+        if field.field_type == "date":
+            return value.isoformat()[:10]
+        return to_jalali_str(value)
+    if field.lookup_category == "__months__":
+        text = normalize_text(str(value))
+        if text in MONTHS_FA[1:]:
+            return str(MONTHS_FA.index(text))
+        digits = text.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789"))
+        if digits.isdigit() and 1 <= int(digits) <= 12:
+            return str(int(digits))
+        # a whole date: take its month
+        parts = digits.replace("-", "/").split("/")
+        if len(parts) == 3 and parts[1].isdigit() and 1 <= int(parts[1]) <= 12:
+            return str(int(parts[1]))
+        return value
+    if field.field_type == "number" and not isinstance(value, (int, float)):
+        digits = str(value).translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٫", "0123456789."))
+        try:
+            num = float(digits)
+            return int(num) if num.is_integer() else num
+        except ValueError:
+            return value
+    if field.field_type == "jalali_date" and isinstance(value, str) and value[:2] in ("19", "20"):
+        try:
+            return to_jalali_str(_dt.date.fromisoformat(value[:10]))
+        except ValueError:
+            return value
+    if field.options and not isinstance(value, list):
+        # a label where the field stores a value
+        for opt in field.options:
+            if normalize_text(str(value)) in (normalize_text(opt.value),
+                                              normalize_text(opt.label or "")):
+                return opt.value
+    return value
+
+
 def previous_values_for(well_id, before_record_id=None) -> dict:
     """The «…قبلی» answers, read off this well's history.
 
@@ -1751,12 +1841,12 @@ def previous_values_for(well_id, before_record_id=None) -> dict:
             value = (getattr(well, attr, None)
                      if well is not None and attr in PREFILL_WELL_ATTRS else None)
             if value not in (None, ""):
-                values[field.field_name] = value
+                values[field.field_name] = _fit(value, field)
             continue
         for previous in history:            # newest first
             value = _value_from(previous, source, by_name)
             if value not in (None, "", [], {}):
-                values[field.field_name] = value
+                values[field.field_name] = _fit(value, field)
                 if previous not in used:
                     used.append(previous)
                 break

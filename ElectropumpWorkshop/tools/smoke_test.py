@@ -918,6 +918,12 @@ def main():
     check("تاریخ نصب قبلی شمسی است",
           str(prev["values"].get("prev_install_date", "")).startswith("14"),
           str(prev["values"].get("prev_install_date")))
+    _pv = prev["values"]
+    check("ماه نصب قبلی با فهرست ماه‌ها جور است (شماره‌ی ماه) و با تاریخ نصب قبلی یکی است",
+          str(_pv.get("old_install_month")) in [str(n) for n in range(1, 13)]
+          and str(_pv.get("prev_install_date", "")).split("/")[1:2]
+          == [f"{int(_pv['old_install_month']):02d}"],
+          f"{_pv.get('old_install_month')} / {_pv.get('prev_install_date')}")
     check("منبع مقادیر قبلی اعلام می‌شود", bool(prev["source"]))
     # A well with no history is not a broken prefill; the page must be able to
     # tell the two apart, which it does from an empty values map.
@@ -1735,6 +1741,66 @@ def main():
     check("برداشتن اتصال پرسش دوم، اتصال علت خرابی را نگه می‌دارد",
           (rule or "").startswith("failure=") and "test_result_ml" in (rule or ""),
           str(rule))
+
+    print("\n— ثبت نهایی: فیلد الزامی‌ای که هیچ مرحله‌ای نپرسیده، مانع نیست —")
+    with app.app_context():
+        from app.models import AppUser, FormField, WorkflowStageItem
+        from app.services.records import ValidationError, create_record
+        from app.services.workflow import (WorkflowError, active_workflow,
+                                           asked_fields, finalize, start_instance)
+        mk = AppUser.query.filter_by(username="markaz").one()
+        good = {"op_jdate": "1405/07/10", "well": "امام رضا 11", "center": "سوران",
+                "operation": "کشیدن", "operation_kind": "کشیدن",
+                "motor_curr": "18.5", "pump_curr": "233", "failure": ["هوادهی"]}
+        motor = FormField.query.filter_by(field_name="motor_curr").one()
+        # Take «تیپ الکتروموتور فعلی»'s section off every stage, as in a pull
+        # whose stages never ask it.
+        wf = active_workflow()
+        items = [i for s in wf.stages for i in s.items
+                 if i.section_id == motor.section_id or i.field_id == motor.id]
+        kept = [(i.stage_id, i.section_id, i.field_id, i.sort_order, i.applies_to,
+                 i.is_optional, i.is_read_only, i.locked_fields) for i in items]
+        for i in items:
+            _db.session.delete(i)
+        _db.session.commit()
+        inst = start_instance({"operation_kind": "کشیدن", "well": "امام رضا 11"}, mk)
+        check("«تیپ الکتروموتور فعلی» در هیچ مرحله‌ای از این اجرا پرسیده نشده",
+              "motor_curr" not in asked_fields(inst))
+        without = {k: v for k, v in good.items() if k != "motor_curr"}
+        try:
+            create_record(dict(without))
+            plain_blocked = False
+        except ValidationError as exc:
+            plain_blocked = "motor_curr" in exc.errors
+        _db.session.rollback()
+        check("ثبت مستقیم رکورد (صفحه‌ی ثبت اطلاعات) هنوز آن را می‌خواهد", plain_blocked)
+        inst.set_payload(dict(without))
+        try:
+            rec = finalize(inst, mk)
+            ok_final, why = rec is not None, ""
+        except WorkflowError as exc:
+            ok_final, why = False, str(exc)
+        check("ولی ثبت نهاییِ فرایند به‌خاطر آن متوقف نمی‌شود", ok_final, why[:140])
+        for row in kept:
+            _db.session.add(WorkflowStageItem(
+                stage_id=row[0], section_id=row[1], field_id=row[2], sort_order=row[3],
+                applies_to=row[4], is_optional=row[5], is_read_only=row[6],
+                locked_fields=row[7]))
+        _db.session.commit()
+
+        inst2 = start_instance({"operation_kind": "کشیدن", "well": "امام رضا 11"}, mk)
+        asked = asked_fields(inst2, with_stage=True)
+        if "motor_curr" in asked:
+            inst2.set_payload({k: v for k, v in good.items() if k != "motor_curr"})
+            try:
+                finalize(inst2, mk)
+                msg = ""
+            except WorkflowError as exc:
+                msg = str(exc)
+            check("اگر فیلدی که مرحله‌ای پرسیده خالی باشد، پیام برچسب و مرحله را می‌گوید",
+                  "تیپ الکتروموتور" in msg and "مرحله" in msg and "motor_curr" not in msg,
+                  msg[:140])
+        _db.session.rollback()
 
     html = c.get("/inbox").get_data(as_text=True)
     check("نشانی فایل‌های ثابت نسخه دارد (کش مرورگر نسخه‌ی قدیم را نگه ندارد)",

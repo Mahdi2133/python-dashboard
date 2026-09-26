@@ -379,7 +379,7 @@ def _check_required(record, payload, errors, hidden=frozenset()):
 
 
 def apply_payload(record: Record, payload: dict, create_missing=False,
-                  partial=False) -> Record:
+                  partial=False, not_required=frozenset()) -> Record:
     """Map a submitted payload onto a Record.
 
     ``partial=True`` is the import/patch mode: a missing date or a
@@ -471,7 +471,7 @@ def apply_payload(record: Record, payload: dict, create_missing=False,
     if partial:
         _demote_coercion_errors(errors, warnings)
     else:
-        _check_required(record, payload, errors, hidden)
+        _check_required(record, payload, errors, set(hidden) | set(not_required))
 
     record.import_warnings = warnings
     if errors:
@@ -491,9 +491,13 @@ def _actor_id():
     return None
 
 
-def create_record(payload: dict, create_missing=False) -> Record:
+def create_record(payload: dict, create_missing=False,
+                  not_required=frozenset()) -> Record:
+    """``not_required``: required fields the caller never asked for — a
+    process run whose stages did not include them."""
     record = Record()
-    apply_payload(record, payload, create_missing=create_missing)
+    apply_payload(record, payload, create_missing=create_missing,
+                  not_required=not_required)
     record.created_by = _actor_id()
     record.updated_by = record.created_by
     db.session.add(record)
