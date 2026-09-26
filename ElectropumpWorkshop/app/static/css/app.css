@@ -1081,3 +1081,19 @@ select.mini { font-size:11px; padding:2px 4px; width:auto; }
 .power-row input { width:auto; }
 .power-row i { margin-inline-start:auto; font-style:normal; font-size:11px;
   color:var(--text-muted,#6c8592); }
+
+/* «تصمیم‌های این مرحله»: one card per decision, switched on or off. */
+.wf-action.fixed { background:#fff; }
+.wf-action-switch { display:flex; align-items:center; gap:8px; cursor:pointer;
+  font-size:13px; }
+.wf-action-switch input { width:auto; }
+.wf-action-body { display:flex; flex-direction:column; gap:8px;
+  border-top:1px dashed var(--border,#dfe6ea); padding-top:8px; }
+.wf-action-body[hidden], .who-some[hidden], .wf-action-return[hidden] { display:none; }
+.act-field { display:flex; flex-direction:column; flex-wrap:nowrap; align-items:stretch;
+  gap:4px; font-size:12px; }
+.act-field > label:first-child { font-weight:700; }
+.act-field .act-label, .act-field select { width:100%; }
+.who-opt { display:flex; align-items:center; gap:6px; cursor:pointer; font-weight:500; }
+.who-opt input { width:auto; }
+.who-some { display:flex; flex-direction:column; gap:6px; padding-inline-start:22px; }

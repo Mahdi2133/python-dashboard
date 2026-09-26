@@ -453,61 +453,103 @@
      sending the work on. امین checking مرکز آبرسانی's report may stop the
      process («نیاز به کشیدن ندارد، قابل اصلاح است») or send it back for a
      photo or a video — and the admin says, per action, who may. */
+  /* «اقدام‌ها»: the buttons the person at this stage has besides «ارسال».
+
+     Two are what a reviewer actually needs — stop the whole process (the well
+     does not need pulling), or send it back to be corrected — so each is a
+     card with one switch, rather than a list to build. More of either kind
+     can still be added underneath. For each button the admin says plainly who
+     sees it: everyone who holds the stage, or only the people named. */
+  var ACTION_DEFAULTS = {
+    stop: { label: 'نیاز به ادامه ندارد — توقف فرایند',
+            title: '⛔ توقف کل فرایند',
+            help: 'فرایند همین‌جا بسته می‌شود و به مرحله‌های بعد نمی‌رود؛ '
+              + 'دلیل آن ثبت می‌شود و در رصد فرایندها دیده می‌شود.' },
+    'return': { label: 'برگشت به مرحله‌ی قبل برای اصلاح',
+                title: '↩ برگشت برای اصلاح یا مستندسازی',
+                help: 'کار به کسی که مرحله‌ی قبل را پر کرده برمی‌گردد تا '
+                  + 'اصلاح کند (یا عکس و فیلم بارگذاری کند) و دوباره بفرستد.' },
+  };
+
   function actionsEditor(s) {
-    var n = (s.actions || []).length;
+    var acts = s.actions || [];
+    var stop = acts.find(function (a) { return a.kind === 'stop'; });
+    var back = acts.find(function (a) { return a.kind === 'return'; });
+    var extras = acts.filter(function (a) { return a !== stop && a !== back; });
+    var on = (stop ? 1 : 0) + (back ? 1 : 0) + extras.length;
     return '<details class="wf-refer wf-actions" open data-stage-number="'
       + s.stage_number + '">'
-      + '<summary>⚖ اقدام‌ها و اختیارات کاربران'
-      + '<span class="wf-refer-tag">' + (n ? J.toFaDigits(n) + ' اقدام'
-                                            : 'فقط «ارسال به مرحله بعد»')
+      + '<summary>⚖ تصمیم‌های این مرحله'
+      + '<span class="wf-refer-tag">' + (on ? J.toFaDigits(on) + ' دکمه‌ی فعال'
+                                             : 'فقط «ارسال به مرحله بعد»')
       + '</span></summary>'
-      + '<div class="wf-actions-head">'
-      + '<span class="hint">«ارسال به مرحله بعد» همیشه هست. با «افزودن اقدام» '
-      + 'تعیین کنید در این مرحله چه تصمیم‌های دیگری ممکن است — <b>توقف فرایند</b> '
-      + 'یا <b>برگشت به مرحله‌ی قبل</b> (برای اصلاح یا مستندسازی) — و هر کدام را '
-      + 'چه کاربرانی می‌توانند بگیرند.</span>'
-      + '</div>'
-      + '<div class="wf-action-list">' + (s.actions || []).map(function (a) {
-          return actionRow(a, s);
+      + '<div class="wf-actions-head"><span class="hint">کسی که این مرحله را بررسی '
+      + 'می‌کند، همیشه دکمه‌ی <b>«ارسال به مرحله بعد»</b> را دارد. هر کدام از '
+      + 'تصمیم‌های زیر را که روشن کنید، به‌عنوان یک دکمه‌ی دیگر در کارتابل او '
+      + 'نمایش داده می‌شود.</span></div>'
+      + actionRow(stop || { kind: 'stop' }, s, { fixed: true, on: !!stop })
+      + actionRow(back || { kind: 'return' }, s, { fixed: true, on: !!back })
+      + '<div class="wf-action-list">' + extras.map(function (a) {
+          return actionRow(a, s, { on: true });
         }).join('') + '</div>'
       + '<button type="button" class="btn-ghost btn-sm wf-action-add">'
-      + '➕ افزودن اقدام</button></details>';
+      + '➕ یک دکمه‌ی دیگر (مثلاً برگشت به مرحله‌ای مشخص)</button></details>';
   }
 
-  function actionRow(a, s) {
+  var actionSeq = 0;
+
+  function actionRow(a, s, opts) {
+    opts = opts || {};
     var stages = definition.workflow.stages.filter(function (x) {
       return x.is_active !== false && x.stage_number !== s.stage_number;
     });
-    var kinds = (definition.action_kinds || []).map(function (k) {
-      return '<option value="' + k.value + '"' + (k.value === a.kind ? ' selected' : '')
-        + '>' + A.esc(k.label) + '</option>';
-    }).join('');
+    var d = ACTION_DEFAULTS[a.kind] || ACTION_DEFAULTS.stop;
     var isReturn = a.kind === 'return';
     var who = a.user_ids || [];
-    return '<div class="wf-action" data-id="' + A.esc(a.id || '') + '"'
-      + ' data-users="' + who.join(',') + '">'
-      + '<div class="wf-action-top">'
-      + '<select class="act-kind">' + kinds + '</select>'
-      + '<input class="act-label" value="' + A.esc(a.label || '')
-      + '" placeholder="' + (isReturn ? 'مثلاً: نیاز به مستند تصویری'
-                                      : 'مثلاً: نیاز به کشیدن ندارد') + '">'
-      + '<button type="button" class="act-del" title="حذف اقدام">🗑</button></div>'
-      + '<div class="wf-action-return"' + (isReturn ? '' : ' hidden') + '>'
+    var group = 'act-who-' + (++actionSeq);
+    var owners = (s.owner_names || []).join('، ') || 'متولی تعیین نشده';
+    var head = opts.fixed
+      ? '<label class="wf-action-switch"><input type="checkbox" class="act-on"'
+        + (opts.on ? ' checked' : '') + '><b>' + d.title + '</b></label>'
+        + '<div class="hint">' + d.help + '</div>'
+      : '<div class="wf-action-top"><select class="act-kind">'
+        + (definition.action_kinds || []).map(function (k) {
+            return '<option value="' + k.value + '"'
+              + (k.value === a.kind ? ' selected' : '') + '>' + A.esc(k.label)
+              + '</option>';
+          }).join('') + '</select>'
+        + '<button type="button" class="act-del" title="حذف این دکمه">🗑</button></div>';
+    return '<div class="wf-action' + (opts.fixed ? ' fixed' : '') + '"'
+      + ' data-id="' + A.esc(a.id || (opts.fixed ? (isReturn ? 'back' : 'stop') : ''))
+      + '" data-kind="' + a.kind + '" data-users="' + who.join(',') + '">'
+      + head
+      + '<div class="wf-action-body"' + (opts.on ? '' : ' hidden') + '>'
+      + '<div class="act-field"><label>متن دکمه در کارتابل</label>'
+      + '<input class="act-label" value="' + A.esc(a.label || d.label) + '"></div>'
+      + '<div class="wf-action-return act-field"' + (isReturn ? '' : ' hidden') + '>'
       + '<label>برگشت به</label><select class="act-target">'
-      + '<option value="">هر مرحله‌ی قبلی — تصمیم‌گیرنده انتخاب می‌کند</option>'
+      + '<option value="">هر مرحله‌ی قبلی (بررسی‌کننده انتخاب می‌کند)</option>'
       + stages.map(function (x) {
           return '<option value="' + x.stage_number + '"'
             + (x.stage_number === a.target_stage ? ' selected' : '') + '>'
-            + 'مرحله ' + J.toFaDigits(x.stage_number) + ' — ' + A.esc(x.title)
+            + 'همیشه مرحله ' + J.toFaDigits(x.stage_number) + ' — ' + A.esc(x.title)
             + '</option>';
         }).join('') + '</select>'
       + '<label class="mini-check"><input type="checkbox" class="act-docs"'
-      + (a.needs_docs ? ' checked' : '') + '> بارگذاری مستند (عکس، فیلم، فایل) '
-      + 'الزامی است</label></div>'
-      + '<div class="wf-action-who"><label>چه کسی اجازه دارد</label>'
+      + (a.needs_docs ? ' checked' : '') + '> تا عکس، فیلم یا فایلی بارگذاری نشود، '
+      + 'ثبت دوباره ممکن نیست</label></div>'
+      + '<div class="wf-action-who act-field">'
+      + '<label>این دکمه برای چه کسانی نمایش داده شود؟</label>'
+      + '<label class="who-opt"><input type="radio" class="act-who-mode" name="' + group
+      + '" value="all"' + (who.length ? '' : ' checked') + '> همه‌ی متولی‌های این مرحله '
+      + '<span class="hint">(' + A.esc(owners) + ')</span></label>'
+      + '<label class="who-opt"><input type="radio" class="act-who-mode" name="' + group
+      + '" value="some"' + (who.length ? ' checked' : '') + '> فقط این افراد:</label>'
+      + '<div class="who-some"' + (who.length ? '' : ' hidden') + '>'
       + '<div class="owner-chips">' + actionWho(who) + '</div>'
-      + '<select class="act-who-add">' + userOptions(null, 'افزودن کاربر…')
-      + '</select></div></div>';
+      + '<select class="act-who-add">' + userOptions(null, 'افزودن فرد…')
+      + '</select></div></div>'
+      + '</div></div>';
   }
 
   function actionWho(ids) {
@@ -518,20 +560,31 @@
             + A.esc(u ? u.full_name : '#' + id)
             + '<button type="button" class="act-who-off">×</button></span>';
         }).join('')
-      : '<span class="owner-none">همهٔ متولی‌های این مرحله</span>';
+      : '<span class="owner-none">هنوز کسی انتخاب نشده</span>';
   }
 
   function readActions(card) {
-    return A.qsa('.wf-action', card).map(function (row) {
-      return {
+    var out = [];
+    A.qsa('.wf-action', card).forEach(function (row) {
+      var sw = row.querySelector('.act-on');
+      if (sw && !sw.checked) return;               // this decision is switched off
+      var kindSel = row.querySelector('.act-kind');
+      var mode = row.querySelector('.act-who-mode:checked');
+      var ids = (row.dataset.users || '').split(',').filter(Boolean).map(Number);
+      if (mode && mode.value === 'some' && !ids.length) {
+        throw new Error('برای «' + row.querySelector('.act-label').value.trim()
+          + '» گزینه‌ی «فقط این افراد» انتخاب شده ولی کسی اضافه نشده است.');
+      }
+      out.push({
         id: row.dataset.id || '',
-        kind: row.querySelector('.act-kind').value,
+        kind: kindSel ? kindSel.value : row.dataset.kind,
         label: row.querySelector('.act-label').value.trim(),
         target_stage: row.querySelector('.act-target').value || null,
         needs_docs: row.querySelector('.act-docs').checked,
-        user_ids: (row.dataset.users || '').split(',').filter(Boolean).map(Number),
-      };
+        user_ids: mode && mode.value === 'all' ? [] : ids,
+      });
     });
+    return out;
   }
 
   function referPicker(s) {
@@ -1025,7 +1078,8 @@
         var stageData = definition.workflow.stages.find(function (x) {
           return String(x.id) === acard.dataset.stage; });
         var holder = document.createElement('div');
-        holder.innerHTML = actionRow({ kind: 'return', user_ids: [] }, stageData);
+        holder.innerHTML = actionRow({ kind: 'return', user_ids: [] }, stageData,
+                                     { on: true });
         acard.querySelector('.wf-action-list').appendChild(holder.firstChild);
         markDirty(acard);
         return;
@@ -1094,7 +1148,16 @@
       }
       if (ev.target.classList.contains('act-kind')) {
         var krow = ev.target.closest('.wf-action');
+        krow.dataset.kind = ev.target.value;
         krow.querySelector('.wf-action-return').hidden = ev.target.value !== 'return';
+      }
+      if (ev.target.classList.contains('act-on')) {
+        ev.target.closest('.wf-action').querySelector('.wf-action-body').hidden =
+          !ev.target.checked;
+      }
+      if (ev.target.classList.contains('act-who-mode')) {
+        ev.target.closest('.wf-action').querySelector('.who-some').hidden =
+          ev.target.value !== 'some';
       }
       if (ev.target.classList.contains('act-who-add') && ev.target.value) {
         var wrow = ev.target.closest('.wf-action');
