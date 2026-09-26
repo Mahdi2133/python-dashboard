@@ -719,6 +719,28 @@ def backfill_entry_stages() -> dict:
     return {"entry_stages_backfilled": filled} if filled else {}
 
 
+# The «…قبلی» fields the engine used to fill from a fixed list, written onto the
+# fields themselves once so the admin can see, change and extend them.
+_PREFILL_KEY = "form_prefill_sources_v1"
+
+
+def seed_prefill_sources() -> dict:
+    from ..models.meta import AppMeta
+    from .workflow import PREVIOUS_SOURCES
+
+    if AppMeta.get(_PREFILL_KEY):
+        return {}
+    told = 0
+    for name, source in PREVIOUS_SOURCES.items():
+        field = FormField.query.filter_by(field_name=name).first()
+        if field is not None and not field.prefill_from:
+            field.prefill_from = source
+            told += 1
+    AppMeta.set(_PREFILL_KEY, "done")
+    db.session.commit()
+    return {"prefill_sources_set": told} if told else {}
+
+
 from .seed_failure import seed_failure_forms
 
 
@@ -737,6 +759,7 @@ def seed_all(force: bool = False) -> dict:
     result.update(seed_failure_forms())
     result.update(seed_start_kinds())
     result.update(backfill_entry_stages())
+    result.update(seed_prefill_sources())
     result["changed"] = any(v for k, v in result.items() if isinstance(v, int))
     if result["changed"]:
         log.info("Seed applied: %s", result)

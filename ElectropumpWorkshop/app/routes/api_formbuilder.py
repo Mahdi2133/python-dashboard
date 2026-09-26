@@ -88,8 +88,11 @@ def get_schema():
                 on, _, value = rule.partition("=")
                 conditional.append({"field": field["field_name"],
                                     "on": on.strip(), "value": value.strip()})
+    from ..services.workflow import PREFILL_WHEN
     return ok({"sections": sections, "lookups": lookups,
                "conditional": conditional,
+               "prefill_when": [{"value": k, "label": v}
+                                for k, v in PREFILL_WHEN.items()],
                "field_types": list(FIELD_TYPES)})
 
 
@@ -236,10 +239,11 @@ def update_field(field_id):
         editable = {"label", "placeholder", "help_text", "default_value", "is_required",
                     "is_active", "sort_order", "col_span", "min_value", "max_value",
                     "step", "show_in_table", "table_order", "export_header",
-                    "allow_other", "section_id", "visible_when"}
+                    "allow_other", "section_id", "visible_when", "prefill_from"}
         payload = {k: v for k, v in payload.items() if k in editable}
     for attr in ("label", "placeholder", "help_text", "default_value", "export_header",
-                 "step", "lookup_category", "field_type", "field_name", "visible_when"):
+                 "step", "lookup_category", "field_type", "field_name", "visible_when",
+                 "prefill_from"):
         if attr in payload:
             setattr(field, attr, normalize_text(payload[attr]) or None)
     for attr in ("sort_order", "col_span", "table_order", "section_id", "max_length"):
@@ -438,3 +442,106 @@ def reorder_fields():
         FormSection.query.filter_by(id=int(section_id)).update({"sort_order": position})
     db.session.commit()
     return ok(message="ترتیب ذخیره شد.")
+
+
+# ── which choice opens which form ────────────────────────────────────────────
+#
+# «علت خرابی ← فرم» as a table the admin edits, rather than a rule typed into
+# each section. The links live where they always did — a section's
+# ``visible_when`` — so the stage forms, the entry page and the server's
+# required-field check all read the same thing; this is only a better way to
+# see and change them. A section keyed on the field but linked to nothing is
+# stored as «field=» and opens for nothing, rather than for everything.
+def _choice_sources():
+    """Choice fields a form can be hung off — the ones that have options."""
+    out = []
+    for f in (FormField.query.filter(FormField.is_active.is_(True))
+              .order_by(FormField.sort_order).all()):
+        if f.field_type in ("checkbox", "multiselect", "radio", "select",
+                            "checklist") and (f.lookup_category or f.options):
+            out.append(f)
+    return out
+
+
+def _options_of(field):
+    if field.options:
+        return [{"value": o.value, "label": o.label or o.value}
+                for o in field.options if o.is_active]
+    cat = LookupCategory.query.filter_by(code=field.lookup_category).first()
+    if cat is None:
+        return []
+    return [{"value": i.value, "label": i.label or i.value}
+            for i in sorted(cat.items, key=lambda x: x.sort_order) if i.is_active]
+
+
+def _links_on(section, field_name):
+    rule = (section.visible_when or "").strip()
+    on, _, values = rule.partition("=")
+    if on.strip() != field_name:
+        return None
+    return [v for v in values.split("|") if v.strip()]
+
+
+@bp.get("/cause-links")
+@permission_required("form.manage")
+def cause_links():
+    name = request.args.get("field") or "failure"
+    field = FormField.query.filter_by(field_name=name).first()
+    if field is None:
+        return fail("فیلد مبنا یافت نشد.", 404)
+    options = _options_of(field)
+    forms, others = [], []
+    for sec in (FormSection.query.filter(FormSection.is_active.is_(True))
+                .order_by(FormSection.sort_order).all()):
+        links = _links_on(sec, name)
+        row = {"id": sec.id, "code": sec.code, "title": sec.title,
+               "icon": sec.icon,
+               "field_count": len([f for f in sec.fields if f.is_active])}
+        if links is None:
+            # Offered for linking, with a warning when it currently shows for
+            # everybody: linking it makes it conditional.
+            row["has_rule"] = bool((sec.visible_when or "").strip())
+            if sec.id != field.section_id:
+                others.append(row)
+        else:
+            row["causes"] = links
+            forms.append(row)
+    for opt in options:
+        opt["forms"] = [f["code"] for f in forms if opt["value"] in f["causes"]]
+    return ok({
+        "field": {"name": field.field_name, "label": field.label},
+        "sources": [{"name": f.field_name, "label": f.label}
+                    for f in _choice_sources()],
+        "causes": options, "forms": forms, "others": others,
+    })
+
+
+@bp.put("/cause-links")
+@permission_required("form.manage")
+def save_cause_links():
+    payload = body()
+    name = payload.get("field") or "failure"
+    field = FormField.query.filter_by(field_name=name).first()
+    if field is None:
+        return fail("فیلد مبنا یافت نشد.", 404)
+    allowed = {o["value"] for o in _options_of(field)}
+    links = payload.get("links") or {}
+    if not isinstance(links, dict):
+        return fail("ساختار اتصال‌ها نامعتبر است.", 422)
+    changed = 0
+    for code, values in links.items():
+        section = FormSection.query.filter_by(code=code).first()
+        if section is None:
+            return fail(f"فرم «{code}» یافت نشد.", 404)
+        if section.id == field.section_id:
+            return fail("فرمی که خود «" + field.label + "» در آن است نمی‌تواند "
+                        "به آن وصل شود.", 422)
+        picked = [v for v in dict.fromkeys(values or []) if v in allowed]
+        rule = f"{name}=" + "|".join(picked)
+        if section.visible_when != rule:
+            section.visible_when = rule
+            changed += 1
+    record_audit("update", "form_section", None,
+                 summary=f"ویرایش اتصال «{field.label}» به فرم‌ها ({changed} فرم)")
+    db.session.commit()
+    return ok({"changed": changed}, message="اتصال‌ها ذخیره شد.")

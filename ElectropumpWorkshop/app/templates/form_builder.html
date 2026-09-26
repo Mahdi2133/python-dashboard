@@ -20,6 +20,24 @@
   فیلدهایی که شما می‌سازید در جدول <code>record_dynamic_values</code> ذخیره می‌شوند.
 </div>
 
+<details class="card cause-links" id="cause-links" open>
+  <summary>🔗 اتصال علت‌های خرابی به فرم‌ها
+    <span class="hint">هر علت را به فرم (یا فرم‌هایی) وصل کنید که با انتخابش باز می‌شود</span>
+  </summary>
+  <div class="cl-head">
+    <label>فیلد مبنا
+      <select id="cl-field"></select></label>
+    <span class="hint">هر چند علت که تیک بخورد، فرم‌های همه‌ی آن‌ها با هم باز
+      می‌شود. اگر دو علت به یک فرم وصل باشند، آن فرم یک بار باز می‌شود.</span>
+    <span class="cl-gap" id="cl-gap"></span>
+  </div>
+  <div id="cl-rows"><div class="loading">در حال بارگذاری</div></div>
+  <div class="form-actions-inline">
+    <button class="btn-primary" id="cl-save" type="button">💾 ذخیره اتصال‌ها</button>
+    <span class="save-state" id="cl-state"></span>
+  </div>
+</details>
+
 <div id="sections-container"><div class="loading">در حال بارگذاری</div></div>
 
 <div class="modal-overlay" id="field-modal">
@@ -43,6 +61,12 @@
       <div class="field"><label>نمایش در جدول رکوردها</label>
         <select id="fb-table"><option value="0">خیر</option><option value="1">بله</option></select></div>
       <div class="field"><label>مقدار پیش‌فرض</label><input type="text" id="fb-default"></div>
+      <div class="field span-2"><label>پر شدن خودکار از سوابق همان چاه</label>
+        <select id="fb-prefill"><option value="">— خیر —</option></select>
+        <span class="hint">وقتی چاه انتخاب شد، این فیلد با مقداری که در
+          <b>آخرین عملیات همان چاه</b> ثبت شده پر می‌شود (قابل ویرایش می‌ماند).
+          مثلاً «تیپ الکتروموتور قبلی» ← «تیپ الکتروموتور فعلی»، یا
+          «تاریخ نصب قبلی» ← «تاریخ آخرین عملیات روی چاه».</span></div>
       <div class="field"><label>متن راهنمای داخل کادر</label><input type="text" id="fb-placeholder"></div>
       <div class="field"><label>دسته گزینه (برای فیلدهای انتخابی)</label>
         <select id="fb-lookup"><option value="">— گزینه‌های اختصاصی —</option></select></div>
@@ -108,4 +132,5 @@
   </div>
 </div>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='js/form_builder.js') }}"></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/form_builder.js') }}"></script>
+<script src="{{ url_for('static', filename='js/cause_links.js') }}"></script>{% endblock %}

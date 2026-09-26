@@ -198,6 +198,32 @@
     return head;
   }
 
+  /* «پر شدن خودکار از سوابق همان چاه»: which answer on the well's last
+     operation this field starts from. The list is when it happened, then
+     every field the form has — so a reading added today can be carried
+     forward tomorrow without anyone touching the code. */
+  function fillPrefill(field) {
+    var box = A.qs('#fb-prefill');
+    if (!box) return;
+    var current = field && field.prefill_from ? field.prefill_from : '';
+    var html = '<option value="">— خیر —</option>'
+      + '<optgroup label="زمان آخرین عملیات">'
+      + (schema.prefill_when || []).map(function (w) {
+          return '<option value="' + A.esc(w.value) + '"'
+            + (w.value === current ? ' selected' : '') + '>'
+            + A.esc(w.label) + '</option>';
+        }).join('') + '</optgroup><optgroup label="مقدار یک فیلد در آخرین عملیات">';
+    (schema.sections || []).forEach(function (sec) {
+      (sec.fields || []).forEach(function (f) {
+        if (field && f.field_name === field.field_name) return;
+        html += '<option value="' + A.esc(f.field_name) + '"'
+          + (f.field_name === current ? ' selected' : '') + '>'
+          + A.esc(f.label) + ' — ' + A.esc(sec.title) + '</option>';
+      });
+    });
+    box.innerHTML = html + '</optgroup>';
+  }
+
   function openFieldEditor(field) {
     editingField = field;
     A.qs('#field-modal-title').textContent = field
@@ -214,6 +240,7 @@
     A.qs('#fb-active').value = field && !field.is_active ? '0' : '1';
     A.qs('#fb-table').value = field && field.show_in_table ? '1' : '0';
     A.qs('#fb-default').value = field && field.default_value ? field.default_value : '';
+    fillPrefill(field);
     A.qs('#fb-placeholder').value = field && field.placeholder ? field.placeholder : '';
     A.qs('#fb-lookup').value = field && field.lookup_category ? field.lookup_category : '';
     A.qs('#fb-lookup').disabled = !!(field && field.is_builtin);
@@ -240,6 +267,7 @@
       is_active: A.qs('#fb-active').value === '1',
       show_in_table: A.qs('#fb-table').value === '1',
       default_value: A.qs('#fb-default').value.trim(),
+      prefill_from: (A.qs('#fb-prefill') || {}).value || '',
       placeholder: A.qs('#fb-placeholder').value.trim(),
       lookup_category: A.qs('#fb-lookup').value,
       min_value: A.qs('#fb-min').value, max_value: A.qs('#fb-max').value,
@@ -314,25 +342,32 @@
     fillWhenValues(onName, value);
   }
 
+  /* Several values may open the same section («a|b|c»), so the value list is
+     a multi-select; the same links are edited more comfortably in «اتصال
+     علت‌های خرابی به فرم‌ها» at the top of the page. */
   function fillWhenValues(onName, selected) {
     var valueBox = A.qs('#sb-when-value');
     if (!valueBox) return;
+    var picked = String(selected || '').split('|');
     var field = whenSources().find(function (f) { return f.field_name === onName; });
     var opts = field ? optionsOf(field) : [];
-    valueBox.innerHTML = '<option value="">—</option>'
-      + opts.map(function (o) {
-          var v = o.value === undefined ? o : o.value;
-          return '<option value="' + A.esc(v) + '"'
-            + (String(v) === String(selected) ? ' selected' : '') + '>'
-            + A.esc(o.label || v) + '</option>';
-        }).join('');
+    valueBox.multiple = true;
+    valueBox.size = Math.min(6, Math.max(3, opts.length));
+    valueBox.innerHTML = opts.map(function (o) {
+      var v = o.value === undefined ? o : o.value;
+      return '<option value="' + A.esc(v) + '"'
+        + (picked.indexOf(String(v)) !== -1 ? ' selected' : '') + '>'
+        + A.esc(o.label || v) + '</option>';
+    }).join('');
     valueBox.disabled = !opts.length;
   }
 
   function readWhen() {
     var onName = (A.qs('#sb-when-field') || {}).value || '';
-    var value = (A.qs('#sb-when-value') || {}).value || '';
-    return onName && value ? onName + '=' + value : '';
+    var box = A.qs('#sb-when-value');
+    var values = box ? Array.prototype.slice.call(box.selectedOptions)
+      .map(function (o) { return o.value; }).filter(Boolean) : [];
+    return onName ? onName + '=' + values.join('|') : '';
   }
 
   function openSectionEditor(section) {
@@ -370,6 +405,8 @@
       await load();
     } catch (err) { A.toast(err.message, 'error'); }
   }
+
+  window.FormBuilderReload = function () { return load(); };
 
   document.addEventListener('DOMContentLoaded', async function () {
     try { await load(); }

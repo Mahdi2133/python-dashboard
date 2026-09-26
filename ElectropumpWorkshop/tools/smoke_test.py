@@ -1064,6 +1064,83 @@ def main():
         s3.referral_mode = "next"
         _db.session.commit()
 
+    print("\n— اتصال علت خرابی به فرم، قابل ویرایش —")
+    links = c.get("/api/form-builder/cause-links?field=failure").get_json()["data"]
+    check("فهرست علت‌ها و فرم‌هایشان خوانده می‌شود",
+          len(links["causes"]) > 10 and len(links["forms"]) == 10,
+          f"{len(links['causes'])} علت، {len(links['forms'])} فرم")
+    empty = [x["value"] for x in links["causes"] if not x["forms"]]
+    check("علت‌های بی‌فرم مشخص‌اند", len(empty) > 0, f"{len(empty)} علت")
+    # «سوختن الکتروموتور» joins «سوختن الکتروپمپ» on the burn form, and
+    # «گیرپاژ» opens two forms at once.
+    rr = c.put("/api/form-builder/cause-links", json={"field": "failure", "links": {
+        "fail_burn": ["سوختن الکتروپمپ", "سوختن الکتروموتور"],
+        "fail_vibration": ["صدا و لرزش", "گیرپاژ"],
+        "fail_noflow": ["عدم آبدهی", "گیرپاژ"]}})
+    check("اتصال‌ها ذخیره می‌شود", rr.status_code == 200,
+          str(rr.get_json().get("error")))
+    with app.app_context():
+        from app.services.records import _hidden_by_condition
+        from app.models import FormSection
+        burn = FormSection.query.filter_by(code="fail_burn").one()
+        vib = FormSection.query.filter_by(code="fail_vibration").one()
+        noflow = FormSection.query.filter_by(code="fail_noflow").one()
+        hid = _hidden_by_condition({"failure": ["سوختن الکتروموتور"]})
+        check("علت تازه‌وصل‌شده فرم را باز می‌کند",
+              all(f.field_name not in hid for f in burn.fields))
+        hid = _hidden_by_condition({"failure": ["گیرپاژ"]})
+        check("یک علت می‌تواند دو فرم را با هم باز کند",
+              all(f.field_name not in hid for f in vib.fields + noflow.fields))
+    rr = c.put("/api/form-builder/cause-links", json={"field": "failure",
+                                                      "links": {"fail_reeng": []}})
+    with app.app_context():
+        from app.services.records import _hidden_by_condition
+        from app.models import FormSection
+        reeng = FormSection.query.filter_by(code="fail_reeng").one()
+        hid = _hidden_by_condition({"failure": ["مهندسی مجدد"]})
+        check("فرمی که به هیچ علتی وصل نیست برای کسی باز نمی‌شود",
+              reeng.visible_when == "failure="
+              and all(f.field_name in hid for f in reeng.fields),
+              str(reeng.visible_when))
+    c.put("/api/form-builder/cause-links", json={"field": "failure",
+          "links": {"fail_reeng": ["مهندسی مجدد"]}})
+
+    print("\n— پر شدن خودکار از سوابق چاه، تنظیم‌شدنی در فرم‌ساز —")
+    with app.app_context():
+        from app.models import FormField
+        pre = {f.field_name: f.prefill_from for f in
+               FormField.query.filter(FormField.prefill_from.isnot(None)).all()}
+        check("فیلدهای «قبلی» منبعشان را دارند",
+              pre.get("prev_install_date") == "@op_date"
+              and pre.get("motor_prev") == "motor_curr", str(pre)[:80])
+    fid = next(f["id"] for s_ in c.get("/api/form-builder").get_json()["data"]["sections"]
+               for f in s_["fields"] if f["field_name"] == "flow_before_pull")
+    rr = c.put(f"/api/form-builder/fields/{fid}",
+               json={"prefill_from": "flow_after_install"})
+    check("مدیر منبع هر فیلد را تعیین می‌کند", rr.status_code == 200)
+    # A known last operation on a well, so the answer is checked against a
+    # value rather than against whatever the fixture happens to hold.
+    made = c.post("/api/records", json={
+        "op_jdate": "1405/05/10", "well": "کورده 1", "center": "سوران",
+        "operation": "نصب", "motor_curr": "18.5", "pump_curr": "233",
+        "flow_after_install": 27}).get_json()
+    check("عملیات آزمایشی روی چاه ثبت شد", made.get("ok") is True,
+          str(made.get("fields") or made.get("error"))[:80])
+    with app.app_context():
+        from app.models import Record
+        from app.services.workflow import previous_values_for
+        rec = Record.query.get(made["data"]["id"])
+        vals = previous_values_for(rec.well_id)["values"]
+        check("و مقدار از آخرین عملیات همان چاه خوانده می‌شود",
+              str(vals.get("flow_before_pull")) in ("27", "27.0"),
+              str(vals.get("flow_before_pull")))
+        check("تاریخ نصب قبلی از تاریخ آخرین عملیات پر می‌شود",
+              vals.get("prev_install_date") == "1405/05/10",
+              str(vals.get("prev_install_date")))
+        check("تیپ موتور قبلی از تیپ موتور فعلی همان عملیات",
+              str(vals.get("motor_prev")) == "18.5", str(vals.get("motor_prev")))
+    c.put(f"/api/form-builder/fields/{fid}", json={"prefill_from": ""})
+
     print("\n— ستون‌های محاسباتی در گزارش‌ساز —")
     # A row with both readings, so the arithmetic is checked against a known
     # answer rather than against whatever the fixture happens to contain.

@@ -595,6 +595,10 @@
     buildForm(res.data.form ? res.data.form.sections : [],
               res.data.operation_label,
               Object.assign({}, current.detail.payload || {}, answers));
+    /* The rebuild can bring in a section that was not there before —
+       «اطلاعات چاه و نصب» appears only once «اقدام مورد نیاز» is answered —
+       and its «تاریخ نصب قبلی» has to be filled like everything else was. */
+    if (current.detail.well) fillPrevious(current.detail.well);
   }, 250);
 
   /* The «…قبلی» fields are read off the well's last operation. Whether that
@@ -602,9 +606,12 @@
      broken prefill, and the operator is left wondering which it was. */
   async function fillPrevious(wellName) {
     if (!wellName || !form) return;
+    /* Which fields start from the well's history is the admin's setting in
+       فرم‌ساز («پر شدن خودکار از سوابق همان چاه»), not a guess from how a
+       field happens to be named. */
     var wanted = [];
     form.eachField(function (f) {
-      if (/_prev|prev_|old_install/.test(f.field_name)) wanted.push(f.field_name);
+      if (f.prefill_from && !f.read_only) wanted.push(f.field_name);
     });
     if (!wanted.length) { fill('#wf-prev-note', ''); return; }
     try {

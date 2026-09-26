@@ -1181,12 +1181,45 @@ def cancel_instance(instance: WorkflowInstance, reason: str, user):
 # ── «قبلی» fields ────────────────────────────────────────────────────────────
 # What this operation installs becomes what the next one finds. Each pair is
 # (field to fill now, where to read it from on the previous record).
+# Kept only as the seed for ``FormField.prefill_from`` — the admin's setting in
+# the form builder is what is read.
 PREVIOUS_SOURCES = {
-    "motor_prev": "motor_curr_id",
-    "pump_prev": "pump_curr_id",
+    "motor_prev": "motor_curr",
+    "pump_prev": "pump_curr",
     "pump_prev_stages": "pump_stages",
     "prev_install_depth": "curr_install_depth",
+    "prev_install_date": "@op_date",
+    "old_install_year": "@j_year",
+    "old_install_month": "@j_month",
 }
+
+# What «when it happened» can be read as, for the form builder's list.
+PREFILL_WHEN = {
+    "@op_date": "تاریخ آخرین عملیات روی چاه",
+    "@j_year": "سال آخرین عملیات",
+    "@j_month": "ماه آخرین عملیات",
+}
+
+
+def _value_from(previous, source: str, fields_by_name: dict):
+    """One value off a record: a moment, a column, or a form-builder answer."""
+    from .jalali import MONTHS_FA, to_jalali_str
+    from .records import _label
+    if source == "@op_date":
+        return to_jalali_str(previous.op_date) if previous.op_date else None
+    if source == "@j_year":
+        return previous.j_year
+    if source == "@j_month":
+        return MONTHS_FA[previous.j_month] if previous.j_month else None
+    field = fields_by_name.get(source)
+    if field is not None and field.model_attr:
+        raw = getattr(previous, field.model_attr, None)
+        return _label(raw) if field.model_attr.endswith("_id") else raw
+    held = next((v for v in previous.dynamic_values
+                 if v.field and v.field.field_name == source), None)
+    if held is None:
+        return None
+    return held.value
 
 
 def previous_values_for(well_id, before_record_id=None) -> dict:
@@ -1209,20 +1242,17 @@ def previous_values_for(well_id, before_record_id=None) -> dict:
     if previous is None:
         return {}
 
+    # Every field the admin pointed at the well's history, whatever it is.
+    fields = FormField.query.filter(FormField.is_active.is_(True)).all()
+    by_name = {f.field_name: f for f in fields}
     values = {}
-    for target, source in PREVIOUS_SOURCES.items():
-        raw = getattr(previous, source, None)
-        value = _label(raw) if source.endswith("_id") else raw
-        if value not in (None, ""):
-            values[target] = value
-    if previous.op_date:
-        from .jalali import to_jalali_str
-        values["prev_install_date"] = to_jalali_str(previous.op_date)
-    if previous.j_year:
-        values["old_install_year"] = previous.j_year
-    if previous.j_month:
-        from .jalali import MONTHS_FA
-        values["old_install_month"] = MONTHS_FA[previous.j_month]
+    for field in fields:
+        source = (field.prefill_from or "").strip()
+        if not source:
+            continue
+        value = _value_from(previous, source, by_name)
+        if value not in (None, "", [], {}):
+            values[field.field_name] = value
     return {
         "values": values,
         "source": {

@@ -278,7 +278,11 @@
     }
 
     function ruleIsMet(rule) {
-      return valuesOf(rule.on).indexOf(rule.value) !== -1;
+      /* «a|b|c»: any one of several values opens it — two causes can share
+         one form. An empty list is a form linked to nothing yet. */
+      var wanted = String(rule.value || '').split('|').filter(Boolean);
+      var have = valuesOf(rule.on);
+      return wanted.some(function (w) { return have.indexOf(w) !== -1; });
     }
 
     self.applyConditional = function () {

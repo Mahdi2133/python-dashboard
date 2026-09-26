@@ -93,6 +93,12 @@ class FormField(db.Model):
     # value. Used for «نام پیمانکار», which is meaningless unless the work was
     # done by a contractor (مجری = پیمانی).
     visible_when = db.Column(db.String(120))
+    # Where this field's suggested value comes from on the well's last
+    # operation: another field's name, or «@op_date» / «@j_year» / «@j_month»
+    # for when it happened. «تیپ الکتروموتور قبلی» is «تیپ الکتروموتور فعلی»
+    # as it was the last time this well was worked on — the admin says so in
+    # the form builder instead of the code knowing it.
+    prefill_from = db.Column(db.String(80))
     show_in_table = db.Column(db.Boolean, nullable=False, default=False)
     table_order = db.Column(db.Integer, nullable=False, default=0)
     export_header = db.Column(db.String(200))
@@ -137,6 +143,7 @@ class FormField(db.Model):
             "lookup_category": self.lookup_category, "placeholder": self.placeholder,
             "help_text": self.help_text, "default_value": self.default_value,
             "is_required": self.is_required, "is_active": self.is_active,
+            "prefill_from": self.prefill_from,
             "is_builtin": self.is_builtin, "allow_other": self.allow_other,
             "sort_order": self.sort_order, "col_span": self.col_span,
             "min_value": self.min_value, "max_value": self.max_value,

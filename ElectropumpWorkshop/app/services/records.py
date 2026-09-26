@@ -329,8 +329,11 @@ def _hidden_by_condition(payload, record=None, unanswered_hides=False) -> set:
         values = sent if isinstance(sent, list) else [sent]
         if not isinstance(sent, list) and isinstance(sent, str) and "،" in sent:
             values = sent.split("،")
-        wanted = normalize_text(expected)
-        return all(normalize_text(v) != wanted for v in values)
+        # «a|b|c» — several values open the same thing: «سوختن الکتروپمپ» and
+        # «سوختن الکتروموتور» can both open the burn form. An empty list is a
+        # form linked to no cause yet, which opens for nothing.
+        wanted = {normalize_text(x) for x in expected.split("|") if x.strip()}
+        return not any(normalize_text(v) in wanted for v in values)
 
     hidden = set()
     # A section can carry the rule for all of its fields at once, which is how

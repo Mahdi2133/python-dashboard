@@ -95,7 +95,44 @@
   }
 
   function openModal(id) { document.getElementById(id).classList.add('show'); }
-  function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+  function closeModal(id) {
+    var el = document.getElementById(id);
+    if (el) el.classList.remove('show');
+  }
+
+  /* Every dialog closes the same three ways: its × or «انصراف» (anything
+     marked data-close="<dialog id>"), the Escape key, and a click on the dark
+     backdrop around it. The start-process dialog had the buttons but nothing
+     listening to them — it only ever closed when a start succeeded, so the
+     second time somebody opened it just to look, it would not go away.
+
+     The confirmation dialog is left out on purpose: it answers a question
+     with a promise, and closing it any other way would leave that question
+     hanging. */
+  function closableModal(el) {
+    return el && el.classList.contains('modal-overlay')
+      && el.id !== 'confirm-modal';
+  }
+  document.addEventListener('click', function (ev) {
+    var closer = ev.target.closest('[data-close]');
+    if (closer) {
+      var target = document.getElementById(closer.dataset.close);
+      if (closableModal(target)) {
+        ev.preventDefault();
+        target.classList.remove('show');
+        return;
+      }
+    }
+    if (closableModal(ev.target) && ev.target.classList.contains('show')) {
+      ev.target.classList.remove('show');       // the backdrop itself
+    }
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Escape') return;
+    var open = Array.prototype.slice.call(
+      document.querySelectorAll('.modal-overlay.show')).filter(closableModal);
+    if (open.length) open[open.length - 1].classList.remove('show');
+  });
 
   /* Never build HTML from data without going through this. */
   function esc(value) {
