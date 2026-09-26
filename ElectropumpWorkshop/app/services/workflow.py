@@ -342,10 +342,11 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
         """
         kept = []
         for field in fields:
-            rule = (field.get("visible_when") or "").strip()
-            if rule.startswith("operation_kind=") and instance.operation_kind:
-                wanted = rule.split("=", 1)[1].strip()
-                if wanted != OPERATION_KINDS.get(instance.operation_kind):
+            from .conditions import parse_rules
+            rules = parse_rules(field.get("visible_when"))
+            if (len(rules) == 1 and rules[0][0] == "operation_kind"
+                    and instance.operation_kind):
+                if OPERATION_KINDS.get(instance.operation_kind) not in rules[0][1]:
                     continue
             if field.get("field_name") == "well" and instance.well_id:
                 field = dict(field)
@@ -508,8 +509,9 @@ def _dependent_sections(blocks: list, usable, settled=None) -> list:
             FormSection.visible_when.isnot(None),
             FormSection.is_active.is_(True))
             .order_by(FormSection.sort_order).all()):
-        on = (section.visible_when or "").partition("=")[0].strip()
-        if on not in asked or section.code in present:
+        from .conditions import parse_rules
+        sources = {on for on, _values in parse_rules(section.visible_when)}
+        if not (sources & asked) or section.code in present:
             continue
         block = section.to_dict(include_fields=True, active_only=True)
         block["fields"] = usable(block.get("fields") or [])

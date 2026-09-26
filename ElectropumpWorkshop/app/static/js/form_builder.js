@@ -338,9 +338,27 @@
     return [];
   }
 
+  /* A section may be opened by several questions («a=x;b=y»). This editor
+     shows the first; the others are kept as they are and listed, and are
+     edited in «اتصال‌ها» at the top of the page. */
+  var whenRest = [];
   function fillWhen(rule) {
-    var parts = String(rule || '').split('=');
+    var rules = String(rule || '').split(';').filter(function (r) {
+      return r.indexOf('=') !== -1;
+    });
+    whenRest = rules.slice(1);
+    var parts = String(rules[0] || '').split('=');
     var onName = parts[0] || '', value = parts.slice(1).join('=') || '';
+    var note = A.qs('#sb-when-more');
+    if (note) {
+      note.textContent = whenRest.length
+        ? 'این بخش با ' + J.toFaDigits(whenRest.length) + ' پرسش دیگر هم باز می‌شود ('
+          + whenRest.map(function (r) {
+              var f = whenSources().find(function (x) { return x.field_name === r.split('=')[0]; });
+              return f ? f.label : r.split('=')[0];
+            }).join('، ') + ')؛ آن‌ها سر جایشان می‌مانند.'
+        : '';
+    }
     var fieldBox = A.qs('#sb-when-field');
     var valueBox = A.qs('#sb-when-value');
     if (!fieldBox || !valueBox) return;
@@ -378,7 +396,8 @@
     var box = A.qs('#sb-when-value');
     var values = box ? Array.prototype.slice.call(box.selectedOptions)
       .map(function (o) { return o.value; }).filter(Boolean) : [];
-    return onName ? onName + '=' + values.join('|') : '';
+    var rest = whenRest.filter(function (r) { return r.split('=')[0] !== onName; });
+    return (onName ? [onName + '=' + values.join('|')] : []).concat(rest).join(';');
   }
 
   function openSectionEditor(section) {

@@ -485,8 +485,9 @@ def main():
     print("\n— پیمانکار مشروط به مجری —")
     rules = c.get("/api/form-builder").get_json()["data"]["conditional"]
     check("قاعده نمایش پیمانکار تعریف شده",
-          {"field": "contractor", "on": "executor", "value": "پیمانی"} in rules,
-          str(rules))
+          any(r.get("field") == "contractor" and r.get("on") == "executor"
+              and r.get("value") == "پیمانی" for r in rules),
+          str(rules)[:200])
     base = dict(payload)
     base.pop("dynamic", None)
     r = c.post("/api/records", json=dict(base, executor="امانی", contractor="جوادی"))
@@ -1685,6 +1686,55 @@ def main():
         s3 = next(x for x in main.stages if x.stage_number == 3)
         s3.can_start, s3.start_kind = True, "install"
         _db.session.commit()
+
+    print("\n— یک فرم یا فیلد، وصل به چند پرسش —")
+    fb = c.get("/api/form-builder?all=1").get_json()["data"]
+    home = fb["sections"][0]["id"]
+    c.post("/api/form-builder/fields", json={
+        "field_name": "test_result_ml", "label": "نتیجه تست (آزمایشی)",
+        "field_type": "radio", "section_id": home,
+        "options": [{"value": "دبی کم", "label": "دبی کم"},
+                    {"value": "عادی", "label": "عادی"}]})
+    r = c.put("/api/form-builder/cause-links", json={
+        "field": "test_result_ml", "links": {"fail_aeration": ["دبی کم"]}})
+    with app.app_context():
+        from app.models import FormSection
+        rule = FormSection.query.filter_by(code="fail_aeration").one().visible_when
+    check("وصل کردن فرم به پرسش دوم، اتصال قبلی را پاک نمی‌کند",
+          r.status_code == 200 and "failure=" in (rule or "")
+          and "test_result_ml=دبی کم" in (rule or ""), str(rule))
+    cl = c.get("/api/form-builder/cause-links?field=failure").get_json()["data"]
+    check("و فرم هنوز در فهرست «علت خرابی» وصل است",
+          any(f["code"] == "fail_aeration" for f in cl["forms"]))
+    cl2 = c.get("/api/form-builder/cause-links?field=test_result_ml").get_json()["data"]
+    check("و در فهرست پرسش دوم هم وصل نشان داده می‌شود",
+          any(f["code"] == "fail_aeration" and f["causes"] == ["دبی کم"]
+              for f in cl2["forms"]))
+    schema2 = c.get("/api/form-builder").get_json()["data"]
+    entry = next((x for x in schema2["conditional"] if x.get("section") == "fail_aeration"),
+                 {})
+    check("صفحه‌ی فرم هر دو شرط را می‌گیرد", len(entry.get("any") or []) == 2,
+          str(entry.get("any")))
+    with app.app_context():
+        from app.services.records import _hidden_by_condition
+        aer = [f.field_name for f in FormSection.query.filter_by(code="fail_aeration")
+               .one().fields if f.is_active]
+        open_by_test = _hidden_by_condition({"failure": ["سوختن الکتروپمپ"],
+                                             "test_result_ml": "دبی کم"})
+        open_by_cause = _hidden_by_condition({"failure": ["هوادهی"],
+                                              "test_result_ml": "عادی"})
+        closed = _hidden_by_condition({"failure": ["سوختن الکتروپمپ"],
+                                       "test_result_ml": "عادی"})
+    check("با پاسخ پرسش دوم باز می‌شود", not (set(aer) & open_by_test))
+    check("با علت خرابی هم هنوز باز می‌شود", not (set(aer) & open_by_cause))
+    check("و وقتی هیچ‌کدام برقرار نیست، بسته است", set(aer) <= closed)
+    c.put("/api/form-builder/cause-links", json={
+        "field": "test_result_ml", "links": {"fail_aeration": []}})
+    with app.app_context():
+        rule = FormSection.query.filter_by(code="fail_aeration").one().visible_when
+    check("برداشتن اتصال پرسش دوم، اتصال علت خرابی را نگه می‌دارد",
+          (rule or "").startswith("failure=") and "test_result_ml" in (rule or ""),
+          str(rule))
 
     html = c.get("/inbox").get_data(as_text=True)
     check("نشانی فایل‌های ثابت نسخه دارد (کش مرورگر نسخه‌ی قدیم را نگه ندارد)",

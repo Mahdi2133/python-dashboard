@@ -305,7 +305,21 @@ def _hidden_by_condition(payload, record=None, unanswered_hides=False) -> set:
     silently clear every conditional field on the record, because a partial
     update carries no مجری and the rule would read it as "not پیمانی".
     """
-    def unmet(rule) -> bool | None:
+    def unmet(raw) -> bool | None:
+        """Several rules: shown when any one of them is met.
+
+        True only when every rule that can be judged is unmet; None when
+        none of them can be judged.
+        """
+        from .conditions import SEP
+        verdicts = [unmet_one(part) for part in str(raw or "").split(SEP)
+                    if "=" in part]
+        judged = [v for v in verdicts if v is not None]
+        if not judged:
+            return None
+        return all(judged)
+
+    def unmet_one(rule) -> bool | None:
         """True when the rule is not satisfied, None when it cannot be judged.
 
         A multi-valued source — «علت خرابی» is a multi-select — satisfies the

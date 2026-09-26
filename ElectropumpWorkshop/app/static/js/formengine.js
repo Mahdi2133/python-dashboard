@@ -277,7 +277,22 @@
       return one ? [one] : [];
     }
 
+    /* Several questions may open one form («any»): shown when any of them
+       holds. Only the questions actually on this page are asked. */
+    function sourcesHere(rule) {
+      return (rule.any || [rule]).filter(function (r) {
+        return !!qs('[data-wrap="' + r.on + '"]');
+      });
+    }
+
     function ruleIsMet(rule) {
+      if (rule.any) {
+        return sourcesHere(rule).some(function (r) { return oneRuleIsMet(r); });
+      }
+      return oneRuleIsMet(rule);
+    }
+
+    function oneRuleIsMet(rule) {
       /* «a|b|c»: any one of several values opens it — two causes can share
          one form. An empty list is a form linked to nothing yet. */
       var wanted = String(rule.value || '').split('|').filter(Boolean);
@@ -296,8 +311,7 @@
            did not. Re-deciding it here from a second copy of the answer is how
            the one field a stage exists to collect ended up hidden behind its
            own heading. */
-        var source = qs('[data-wrap="' + rule.on + '"]');
-        if (!source) return;
+        if (!sourcesHere(rule).length) return;
         var show = ruleIsMet(rule);
         wrap.classList.toggle('hidden', !show);
         if (!show) {
@@ -319,8 +333,7 @@
     function applySectionRule(rule) {
       var block = qs('[data-section="' + rule.section + '"]');
       if (!block) return;
-      var source = qs('[data-wrap="' + rule.on + '"]');
-      if (!source) return;
+      if (!sourcesHere(rule).length) return;
       var show = ruleIsMet(rule);
       block.classList.toggle('hidden', !show);
       if (show) return;
@@ -338,7 +351,9 @@
     function onFieldChanged(ev) {
       var name = ev.target.name || (ev.target.id || '').replace(/^fld-/, '');
       if (!name) return;
-      if ((schema.conditional || []).some(function (r) { return r.on === name; })) {
+      if ((schema.conditional || []).some(function (r) {
+            return (r.any || [r]).some(function (x) { return x.on === name; });
+          })) {
         self.applyConditional();
       }
       if (name === 'well') {

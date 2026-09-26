@@ -42,7 +42,7 @@ class FormSection(db.Model):
     # field's own rule uses. A whole section is the unit here because the
     # parameters of one علت خرابی belong together: tick «سوختن الکتروپمپ» and
     # its dozen readings appear as one block, not one field at a time.
-    visible_when = db.Column(db.String(120))
+    visible_when = db.Column(db.String(1000))
 
     fields = db.relationship("FormField", back_populates="section",
                              cascade="all, delete-orphan", order_by="FormField.sort_order")
@@ -92,7 +92,7 @@ class FormField(db.Model):
     # "field=value" — the field is only shown while that other field holds that
     # value. Used for «نام پیمانکار», which is meaningless unless the work was
     # done by a contractor (مجری = پیمانی).
-    visible_when = db.Column(db.String(120))
+    visible_when = db.Column(db.String(1000))
     # Where this field's suggested value comes from on the well's last
     # operation: another field's name, or «@op_date» / «@j_year» / «@j_month»
     # for when it happened. «تیپ الکتروموتور قبلی» is «تیپ الکتروموتور فعلی»

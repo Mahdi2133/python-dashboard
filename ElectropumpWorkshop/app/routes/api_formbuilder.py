@@ -74,20 +74,28 @@ def get_schema():
     lookups["__months__"] = _month_options()
     # Flattened "show this field only while that one holds this value" rules,
     # so the form can evaluate them without re-walking the section tree.
+    # One entry per form or field, carrying every rule on it («any»): the page
+    # shows it when any one of them holds.
+    from ..services.conditions import parse_rules
+
+    def entry(raw):
+        rules = parse_rules(raw)
+        if not rules:
+            return None
+        return {"on": rules[0][0], "value": "|".join(rules[0][1]),
+                "any": [{"on": on, "value": "|".join(vals)} for on, vals in rules]}
+
     conditional = []
     for section in sections:
-        rule = (section.get("visible_when") or "").strip()
-        if "=" in rule:
-            on, _, value = rule.partition("=")
+        rule = entry(section.get("visible_when"))
+        if rule:
             conditional.append({"section": section["code"],
                                 "fields": [f["field_name"] for f in section["fields"]],
-                                "on": on.strip(), "value": value.strip()})
+                                **rule})
         for field in section["fields"]:
-            rule = (field.get("visible_when") or "").strip()
-            if "=" in rule:
-                on, _, value = rule.partition("=")
-                conditional.append({"field": field["field_name"],
-                                    "on": on.strip(), "value": value.strip()})
+            rule = entry(field.get("visible_when"))
+            if rule:
+                conditional.append({"field": field["field_name"], **rule})
     from ..services.workflow import PREFILL_WELL_ATTRS, PREFILL_WHEN
     return ok({"sections": sections, "lookups": lookups,
                "conditional": conditional,
@@ -553,11 +561,8 @@ def _options_of(field):
 
 
 def _links_on(section, field_name):
-    rule = (section.visible_when or "").strip()
-    on, _, values = rule.partition("=")
-    if on.strip() != field_name:
-        return None
-    return [v for v in values.split("|") if v.strip()]
+    from ..services.conditions import rule_for
+    return rule_for(section.visible_when, field_name)
 
 
 @bp.get("/cause-links")
@@ -578,7 +583,10 @@ def cause_links():
         if links is None:
             # Offered for linking, with a warning when it currently shows for
             # everybody: linking it makes it conditional.
+            # Already opened by another question: linking it here adds a
+            # second way in, it does not take the first one away.
             row["has_rule"] = bool((sec.visible_when or "").strip())
+            row["linked_elsewhere"] = bool((sec.visible_when or "").strip())
             if sec.id != field.section_id:
                 others.append(row)
         else:
@@ -593,13 +601,13 @@ def cause_links():
             continue
         row = {"code": "field:" + f.field_name, "title": f.label,
                "section_title": f.section.title if f.section else None}
-        rule = (f.visible_when or "").strip()
-        on, _, values = rule.partition("=")
-        if rule and on.strip() == name:
-            row["causes"] = [v for v in values.split("|") if v.strip()]
+        from ..services.conditions import rule_for
+        mine = rule_for(f.visible_when, name)
+        if mine is not None:
+            row["causes"] = mine
             field_links.append(row)
         else:
-            row["has_rule"] = bool(rule)
+            row["has_rule"] = bool((f.visible_when or "").strip())
             field_others.append(row)
     for opt in options:
         opt["forms"] = ([f["code"] for f in forms if opt["value"] in f["causes"]]
@@ -636,8 +644,10 @@ def save_cause_links():
             if target.id == field.id:
                 return fail("یک فیلد نمی‌تواند به خودش وصل شود.", 422)
             picked = [v for v in dict.fromkeys(values or []) if v in allowed]
-            # A field with no choice left becomes an ordinary field again.
-            rule = (f"{name}=" + "|".join(picked)) if picked else None
+            # Only this question's rule changes; links to other questions stay.
+            # A field left with no rule at all is an ordinary field again.
+            from ..services.conditions import with_rule
+            rule = with_rule(target.visible_when, name, picked or None)
             if target.visible_when != rule:
                 target.visible_when = rule
                 changed += 1
@@ -649,7 +659,8 @@ def save_cause_links():
             return fail("فرمی که خود «" + field.label + "» در آن است نمی‌تواند "
                         "به آن وصل شود.", 422)
         picked = [v for v in dict.fromkeys(values or []) if v in allowed]
-        rule = f"{name}=" + "|".join(picked)
+        from ..services.conditions import with_rule
+        rule = with_rule(section.visible_when, name, picked)
         if section.visible_when != rule:
             section.visible_when = rule
             changed += 1

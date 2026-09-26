@@ -33,13 +33,15 @@
     }).join('');
     var otherChoices = (data.others || []).map(function (f) {
       return '<option value="' + A.esc(f.code) + '" data-plain="'
-        + (f.has_rule ? '0' : '1') + '">' + A.esc(f.title) + '</option>';
+        + (f.has_rule ? '0' : '1') + '">' + A.esc(f.title)
+        + (f.has_rule ? ' · به پرسش دیگری هم وصل است' : '') + '</option>';
     }).join('');
     var fieldChoices = (data.field_links || []).concat(data.field_others || [])
       .map(function (f) {
         return '<option value="' + A.esc(f.code) + '" data-plain="'
           + (f.causes || f.has_rule ? '0' : '1') + '" data-field="1">◽ '
           + A.esc(f.title) + (f.section_title ? ' — ' + A.esc(f.section_title) : '')
+          + (f.has_rule && !f.causes ? ' · به پرسش دیگری هم وصل است' : '')
           + '</option>';
       }).join('');
 
