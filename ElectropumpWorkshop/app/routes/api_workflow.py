@@ -26,6 +26,7 @@ from ..services.auth import (current_user, login_required,
 from ..services.jalali import to_jalali_str
 from ..services.lookups import normalize_text
 from ..services.workflow import (WorkflowError, active_workflow,
+                                 active_workflows, clone_workflow,
                                  applicable_stages, awaiting_approval,
                                  cancel_instance, current_stage_of,
                                  decide_stage, may_act, owner_of,
@@ -191,8 +192,11 @@ def create_definition():
     code = normalize_text(payload.get("code") or "") or f"p{secrets.token_hex(3)}"
     if WorkflowDefinition.query.filter_by(code=code).first():
         return fail(f"فرایندی با شناسه «{code}» از قبل هست.", 422)
+    kind = payload.get("operation_kind") or None
+    if kind is not None and kind not in OPERATION_KINDS:
+        return fail("نوع عملیات فرایند نامعتبر است.", 422)
     workflow = WorkflowDefinition(
-        code=code, name=name,
+        code=code, name=name, operation_kind=kind,
         description=(payload.get("description") or "").strip() or None,
         is_active=False)
     db.session.add(workflow)
@@ -230,23 +234,97 @@ def update_definition(workflow_id):
         workflow.name = name
     if "description" in payload:
         workflow.description = (payload["description"] or "").strip() or None
+    if "operation_kind" in payload:
+        kind = payload["operation_kind"] or None
+        if kind is not None and kind not in OPERATION_KINDS:
+            return fail("نوع عملیات فرایند نامعتبر است.", 422)
+        workflow.operation_kind = kind
     if "is_active" in payload:
         active = payload["is_active"] in (True, "true", "1", 1)
-        if active:
-            if not [s for s in workflow.stages if s.stage_number > 0
-                    and s.is_active]:
-                return fail("فرایندی که هیچ مرحله‌ای ندارد فعال نمی‌شود؛ "
-                            "اول مرحله‌ها را تعریف کنید.", 422)
-            # Exactly one process runs at a time; activating this retires the
-            # others rather than leaving two «فرایند فعال» to choose between.
-            (WorkflowDefinition.query
-             .filter(WorkflowDefinition.id != workflow.id)
-             .update({"is_active": False}, synchronize_session=False))
+        if active and not [s for s in workflow.stages if s.stage_number > 0
+                           and s.is_active]:
+            return fail("فرایندی که هیچ مرحله‌ای ندارد فعال نمی‌شود؛ "
+                        "اول مرحله‌ها را تعریف کنید.", 422)
         workflow.is_active = active
+    # Several processes run at once, one per operation — «فرایند کشیدن» and
+    # «فرایند نصب». Two running for the same operation would leave nobody
+    # knowing which one a new job opens in, so that is refused.
+    if workflow.is_active:
+        clash = _clash(workflow)
+        if clash is not None:
+            db.session.rollback()
+            return fail(clash, 422)
     record_audit("update", "workflow_definition", workflow.id,
                  summary=f"ویرایش فرایند «{workflow.name}»")
     db.session.commit()
     return ok(workflow.to_dict(), message="فرایند ذخیره شد.")
+
+
+def _clash(workflow):
+    """Why ``workflow`` cannot run beside the others, or None."""
+    mine = ({workflow.operation_kind} if workflow.operation_kind
+            else set(OPERATION_KINDS))
+    for other in WorkflowDefinition.query.filter(
+            WorkflowDefinition.is_active.is_(True),
+            WorkflowDefinition.id != workflow.id).all():
+        theirs = ({other.operation_kind} if other.operation_kind
+                  else set(OPERATION_KINDS))
+        both = mine & theirs
+        if both:
+            names = "، ".join(OPERATION_KINDS[k] for k in sorted(both))
+            return (f"فرایند «{other.name}» هم‌اکنون برای «{names}» فعال است. "
+                    "برای هر عملیات فقط یک فرایند فعال می‌تواند باشد: نوع عملیات "
+                    "یکی از دو فرایند را عوض کنید یا یکی را غیرفعال کنید.")
+    return None
+
+
+@bp.post("/definitions/<int:workflow_id>/clone")
+@permission_required("workflow.manage")
+def clone_definition(workflow_id):
+    """«فرایند نصب» built from the current process, with every rule it had.
+
+    Optionally the source is narrowed to the other operation at the same time
+    — «این فرایند از این به بعد فقط برای کشیدن» — and the copy switched on, so
+    one step turns the single process into two.
+    """
+    source = db.session.get(WorkflowDefinition, workflow_id)
+    if source is None:
+        return fail("فرایند یافت نشد.", 404)
+    payload = body()
+    name = normalize_text(payload.get("name") or "")
+    if not name:
+        return fail("نام فرایند تازه الزامی است.", 422)
+    kind = payload.get("operation_kind") or None
+    if kind is not None and kind not in OPERATION_KINDS:
+        return fail("نوع عملیات فرایند نامعتبر است.", 422)
+    source_kind = payload.get("source_kind") or None
+    if source_kind is not None and source_kind not in OPERATION_KINDS:
+        return fail("نوع عملیات فرایند مبدأ نامعتبر است.", 422)
+    copy = clone_workflow(source, name, kind, f"p{secrets.token_hex(3)}")
+    if not [s for s in copy.stages if s.is_active]:
+        db.session.rollback()
+        return fail(f"در «{source.name}» مرحله‌ای برای «{OPERATION_KINDS.get(kind, kind)}» "
+                    "پیدا نشد.", 422)
+    if source_kind:
+        source.operation_kind = source_kind
+        # Its door for the operation that now has its own process is closed.
+        for stage in source.stages:
+            if stage.can_start and stage.start_kind and stage.start_kind != source_kind:
+                stage.can_start = False
+    if payload.get("activate") in (True, "true", "1", 1):
+        copy.is_active = True
+        clash = _clash(copy)
+        if clash is not None:
+            db.session.rollback()
+            return fail(clash, 422)
+    record_audit("create", "workflow_definition", copy.id,
+                 summary=f"ساخت فرایند «{name}» از روی «{source.name}»"
+                         + (f"؛ «{source.name}» فقط برای {OPERATION_KINDS[source_kind]}"
+                            if source_kind else ""))
+    db.session.commit()
+    return ok({**copy.to_dict(),
+               "stage_count": len([s for s in copy.stages if s.is_active])},
+              message=f"فرایند «{name}» با {len(copy.stages)} مرحله ساخته شد.")
 
 
 @bp.delete("/definitions/<int:workflow_id>")
@@ -654,10 +732,10 @@ def set_stage_items(stage_id):
 # side: every decision of the running process, and whether this person may
 # take it. An action with no names belongs to everyone who holds its stage.
 def _power_rows(user):
-    workflow = active_workflow()
     rows = []
-    for stage in sorted(workflow.stages if workflow else [],
-                        key=lambda s: s.stage_number):
+    running = active_workflows()
+    for workflow, stage in [(w, s) for w in running
+                            for s in sorted(w.stages, key=lambda s: s.stage_number)]:
         if not stage.is_active:
             continue
         owns = user.id in stage.owner_ids
@@ -667,7 +745,9 @@ def _power_rows(user):
                       if action["target_stage"] is not None else None)
             rows.append({
                 "key": f"{stage.id}:{action['id']}",
-                "stage_number": stage.stage_number, "stage_title": stage.title,
+                "stage_number": stage.stage_number,
+                "stage_title": (stage.title if len(running) < 2
+                                else f"{stage.title} ({workflow.name})"),
                 "owns_stage": owns, "kind": action["kind"],
                 "kind_label": ACTION_KINDS.get(action["kind"], action["kind"]),
                 "label": action["label"],
@@ -695,9 +775,10 @@ def set_user_powers(user_id):
     if user is None:
         return fail("کاربر یافت نشد.", 404)
     grants = (body().get("grants") or {})
-    workflow = active_workflow()
+    running = active_workflows()
+    workflow = running[0] if running else None
     changed = []
-    for stage in (workflow.stages if workflow else []):
+    for stage in [s for w in running for s in w.stages]:
         actions = stage.actions
         touched = False
         for action in actions:

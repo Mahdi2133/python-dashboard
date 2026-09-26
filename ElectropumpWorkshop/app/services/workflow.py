@@ -74,6 +74,31 @@ def active_workflow() -> WorkflowDefinition | None:
             .order_by(WorkflowDefinition.id).first())
 
 
+def active_workflows() -> list:
+    """Every process that is switched on — one per operation, or one for both."""
+    return (WorkflowDefinition.query.filter_by(is_active=True)
+            .order_by(WorkflowDefinition.id).all())
+
+
+def covers(workflow, kind: str) -> bool:
+    """Whether ``workflow`` is a process for ``kind`` (empty kind: both)."""
+    return not workflow.operation_kind or workflow.operation_kind == kind
+
+
+def workflow_for(kind: str | None):
+    """The running process a ``kind`` operation is opened in.
+
+    «فرایند نصب» for an install, «فرایند کشیدن» for a pull — a process made
+    for exactly that operation first, then one made for both.
+    """
+    running = active_workflows()
+    exact = [w for w in running if kind and w.operation_kind == kind]
+    if exact:
+        return exact[0]
+    both = [w for w in running if not w.operation_kind]
+    return both[0] if both else None
+
+
 def _kind_matches(applies_to: str, kind: str | None) -> bool:
     """Whether an item or stage marked ``applies_to`` is used for ``kind``."""
     if applies_to == APPLIES_BOTH or not applies_to:
@@ -155,13 +180,17 @@ def startable_kinds(user) -> list:
     """
     if user is None:
         return []
-    workflow = active_workflow()
-    if workflow is None:
-        return []
-    if user.role == "admin" or user.can("workflow.manage"):
-        return list(OPERATION_KINDS)
+    manager = user.role == "admin" or user.can("workflow.manage")
     out = []
     for kind in OPERATION_KINDS:
+        # Each operation is opened in its own process now, so its doors are
+        # looked for there.
+        workflow = workflow_for(kind)
+        if workflow is None:
+            continue
+        if manager:
+            out.append(kind)
+            continue
         doors = doors_for(workflow, kind)
         if any(user.id in stage_owner_ids(d) for d in doors):
             out.append(kind)
@@ -548,8 +577,7 @@ def may_start(user) -> bool:
 
 def start_instance(payload: dict, user) -> WorkflowInstance:
     """Answer step zero and open a process."""
-    workflow = active_workflow()
-    if workflow is None:
+    if not active_workflows():
         raise WorkflowError("هیچ فرایند فعالی تعریف نشده است.")
     allowed = startable_kinds(user)
     if not allowed:
@@ -581,6 +609,11 @@ def start_instance(payload: dict, user) -> WorkflowInstance:
     if well is None:
         raise WorkflowError(f"چاهی با نام «{raw}» در فهرست چاه‌ها نیست. "
                             f"از فهرست پیشنهادی یک چاه را انتخاب کنید.")
+    # «فرایند نصب» for an install, «فرایند کشیدن» for a pull.
+    workflow = workflow_for(kind)
+    if workflow is None:
+        raise WorkflowError(f"هیچ فرایند فعالی برای «{OPERATION_KINDS[kind]}» "
+                            "تعریف نشده است.")
     door = door_of(workflow, kind, user)
     start_at = (door.stage_number if door is not None
                 else first_stage_number(kind, workflow))
@@ -616,6 +649,67 @@ def start_instance(payload: dict, user) -> WorkflowInstance:
                          + (f" برای «{well.name}»" if well else ""))
     db.session.commit()
     return instance
+
+
+def clone_workflow(source: WorkflowDefinition, name: str, kind: str | None,
+                   code: str) -> WorkflowDefinition:
+    """A new process built from ``source`` for one operation.
+
+    «فرایند نصب» out of the process that used to do both: the stages an
+    install visits, from the stage an install opens at, renumbered from one,
+    each with its forms, owners, referrals, approvals, decisions and field
+    locks. Stage numbers the copied settings point at — «در صورت رد برگرد به
+    مرحله…», «برگشت به مرحله…» — follow the renumbering; one that points at a
+    stage left behind is dropped (or, for a return, lets the decider pick).
+    The new process starts switched off, so it can be checked first.
+    """
+    import json
+    stages = [s for s in sorted(source.stages, key=lambda x: x.stage_number)
+              if s.is_active and (kind is None or _kind_matches(s.applies_to, kind))]
+    door = door_of(source, kind, None) if kind else None
+    if door is not None:
+        stages = [s for s in stages if s.stage_number >= door.stage_number]
+    if kind:
+        stages = [s for s in stages if s.stage_number != STAGE_INTAKE]
+    renumber = {s.stage_number: n for n, s in enumerate(stages, start=1)}
+
+    workflow = WorkflowDefinition(code=code, name=name, operation_kind=kind,
+                                  description=f"ساخته‌شده از «{source.name}»",
+                                  is_active=False)
+    db.session.add(workflow)
+    db.session.flush()
+    skip = {"id", "workflow_id", "stage_number", "created_at", "updated_at"}
+    for old in stages:
+        new = WorkflowStage(workflow_id=workflow.id,
+                            stage_number=renumber[old.stage_number])
+        for column in WorkflowStage.__table__.columns:
+            if column.name not in skip:
+                setattr(new, column.name, getattr(old, column.name))
+        new.owners = list(old.owners)
+        new.reject_to_stage = renumber.get(old.reject_to_stage)
+        if door is not None and old.stage_number == door.stage_number:
+            new.can_start, new.start_kind = True, kind
+        elif kind and old.start_kind and old.start_kind != kind:
+            new.can_start = False      # the other operation's door
+        acts = []
+        for act in old.actions:
+            act = dict(act)
+            if act.get("target_stage") is not None:
+                act["target_stage"] = renumber.get(act["target_stage"])
+            acts.append(act)
+        new.actions_json = json.dumps(acts, ensure_ascii=False) if acts else None
+        db.session.add(new)
+        db.session.flush()
+        for item in sorted(old.items, key=lambda i: i.sort_order):
+            if kind and not _kind_matches(item.applies_to, kind):
+                continue
+            db.session.add(WorkflowStageItem(
+                stage_id=new.id, section_id=item.section_id,
+                field_id=item.field_id, sort_order=item.sort_order,
+                applies_to=item.applies_to, is_optional=item.is_optional,
+                is_read_only=item.is_read_only, locked_fields=item.locked_fields))
+    db.session.flush()
+    return workflow
 
 
 def applicable_stages(instance: WorkflowInstance) -> list:

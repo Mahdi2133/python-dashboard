@@ -161,8 +161,8 @@
     var last = null;
     box.innerHTML = powers.map(function (r) {
       var head = '';
-      if (r.stage_number !== last) {
-        last = r.stage_number;
+      if (r.stage_number + '|' + r.stage_title !== last) {
+        last = r.stage_number + '|' + r.stage_title;
         head = '<div class="power-stage">مرحله ' + J.toFaDigits(r.stage_number)
           + ' — ' + A.esc(r.stage_title)
           + (r.owns_stage ? ' <span class="badge">متولی این مرحله</span>'

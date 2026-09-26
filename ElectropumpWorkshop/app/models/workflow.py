@@ -112,7 +112,13 @@ ACTION_KINDS = {
 
 
 class WorkflowDefinition(db.Model):
-    """One named process. The workshop runs a single one, but not by force."""
+    """One named process.
+
+    Several may run at once, one per operation: «فرایند کشیدن» opens at مرکز
+    آبرسانی and «فرایند نصب» at کارگاه نصب, each with its own stages and
+    forms. ``operation_kind`` says which operation a process is for; empty
+    means both, as the single process of older installs was.
+    """
     __tablename__ = "workflow_definitions"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -120,6 +126,7 @@ class WorkflowDefinition(db.Model):
     name = db.Column(db.String(160), nullable=False)
     description = db.Column(db.Text)
     is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    operation_kind = db.Column(db.String(10))
     created_at = db.Column(db.DateTime, default=local_now, nullable=False)
     updated_at = db.Column(db.DateTime, default=local_now, onupdate=local_now,
                            nullable=False)
@@ -130,7 +137,10 @@ class WorkflowDefinition(db.Model):
 
     def to_dict(self, with_stages=True):
         data = {"id": self.id, "code": self.code, "name": self.name,
-                "description": self.description, "is_active": self.is_active}
+                "description": self.description, "is_active": self.is_active,
+                "operation_kind": self.operation_kind,
+                "operation_label": (OPERATION_KINDS.get(self.operation_kind)
+                                    if self.operation_kind else "هر دو عملیات")}
         if with_stages:
             data["stages"] = [s.to_dict() for s in self.stages]
         return data
@@ -493,6 +503,7 @@ class WorkflowInstance(db.Model):
         from ..services.jalali import tehran_time_str, to_jalali_str
         data = {
             "id": self.id, "workflow_id": self.workflow_id,
+            "workflow_name": self.workflow.name if self.workflow else None,
             "operation_kind": self.operation_kind,
             "operation_label": self.operation_label,
             "well_id": self.well_id,

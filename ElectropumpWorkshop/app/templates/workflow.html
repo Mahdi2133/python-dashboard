@@ -28,6 +28,14 @@
         <label>نام فرایند</label>
         <input type="text" id="wf-proc-name" placeholder="نام این فرایند">
       </div>
+      <div class="field">
+        <label>برای عملیات</label>
+        <select id="wf-proc-kind">
+          <option value="">هر دو (کشیدن و نصب)</option>
+          <option value="pull">فقط کشیدن</option>
+          <option value="install">فقط نصب</option>
+        </select>
+      </div>
       <div class="field wide">
         <label>توضیح</label>
         <input type="text" id="wf-proc-desc" placeholder="این فرایند برای چیست؟">
@@ -98,6 +106,43 @@
   </div>
   <div id="mon-list"><div class="loading">در حال بارگذاری</div></div>
 </section>
+<!-- A new process: empty, or built from an existing one for one operation. -->
+<div class="modal-overlay" id="proc-modal">
+  <div class="modal">
+    <h3>➕ فرایند جدید</h3>
+    <div class="field-group cols-2">
+      <div class="field"><label>نام فرایند <span class="req">*</span></label>
+        <input type="text" id="np2-name" value="فرایند نصب"></div>
+      <div class="field"><label>برای عملیات</label>
+        <select id="np2-kind">
+          <option value="install" selected>فقط نصب</option>
+          <option value="pull">فقط کشیدن</option>
+          <option value="">هر دو</option>
+        </select></div>
+      <div class="field span-2"><label>از کجا شروع شود؟</label>
+        <label class="mini-check"><input type="radio" name="np2-from" value="copy" checked>
+          📋 کپی از فرایند <select id="np2-source" class="inline-select"></select>
+          — مرحله‌هایی که این عملیات از آن‌ها می‌گذرد، از مرحله‌ی شروع همین عملیات،
+          با همه‌ی فرم‌ها، متولی‌ها، ارجاع‌ها، تأییدها، تصمیم‌ها و قفل فیلدها</label>
+        <label class="mini-check"><input type="radio" name="np2-from" value="empty">
+          ⬜ خالی — مرحله‌ها را از صفر تعریف می‌کنم</label>
+      </div>
+      <div class="field span-2" id="np2-copy-opts">
+        <label class="mini-check"><input type="checkbox" id="np2-narrow" checked>
+          فرایند مبدأ از این به بعد <b>فقط برای <span id="np2-other">کشیدن</span></b> باشد
+          (درِ شروعِ <span id="np2-this">نصب</span> از آن برداشته می‌شود)</label>
+        <label class="mini-check"><input type="checkbox" id="np2-activate" checked>
+          فرایند تازه همین حالا فعال شود</label>
+        <span class="hint">فرایندهای در جریان روی همان فرایندی که شروع شده‌اند ادامه
+          می‌دهند؛ فقط کارهای تازه در فرایند جدید شروع می‌شوند.</span>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" id="np2-go" type="button">ساخت فرایند</button>
+      <button class="btn-secondary" type="button" data-close>انصراف</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/workflow.js') }}"></script>

@@ -50,6 +50,7 @@
     select.innerHTML = processes.map(function (p) {
       return '<option value="' + p.id + '"'
         + (p.id === current ? ' selected' : '') + '>' + A.esc(p.name)
+        + ' (' + A.esc(p.operation_label || 'هر دو عملیات') + ')'
         + (p.is_active ? ' — فعال' : '') + '</option>';
     }).join('') || '<option value="">— فرایندی تعریف نشده —</option>';
     renderProcessBox();
@@ -62,6 +63,8 @@
     A.qs('#wf-proc-name').value = wf.name || '';
     A.qs('#wf-proc-desc').value = wf.description || '';
     A.qs('#wf-proc-active').checked = !!wf.is_active;
+    var kindSel = A.qs('#wf-proc-kind');
+    if (kindSel) kindSel.value = wf.operation_kind || '';
     var note = [];
     if (row.instance_count) {
       note.push('این فرایند ' + J.toFaDigits(row.instance_count)
@@ -96,6 +99,7 @@
         name: A.qs('#wf-proc-name').value.trim(),
         description: A.qs('#wf-proc-desc').value.trim(),
         is_active: A.qs('#wf-proc-active').checked,
+        operation_kind: (A.qs('#wf-proc-kind') || {}).value || null,
       });
       A.toast('فرایند ذخیره شد.', 'success');
       await switchProcess(definition.workflow.id);
@@ -103,13 +107,51 @@
     } catch (err) { A.toast(err.message, 'error'); }
   }
 
-  async function newProcess() {
-    var name = window.prompt('نام فرایند جدید:');
-    if (!name || !name.trim()) return;
+  /* «فرایند جدید»: empty, or — what the workshop needs — «فرایند نصب» built
+     from the current process, which then keeps only کشیدن. */
+  var KIND_LABEL = { pull: 'کشیدن', install: 'نصب' };
+
+  function newProcess() {
+    var src = A.qs('#np2-source');
+    src.innerHTML = processes.map(function (p) {
+      return '<option value="' + p.id + '"'
+        + (definition && p.id === definition.workflow.id ? ' selected' : '') + '>'
+        + A.esc(p.name) + '</option>';
+    }).join('');
+    procModalSync();
+    A.openModal('proc-modal');
+  }
+
+  function procModalSync() {
+    var kind = A.qs('#np2-kind').value;
+    var copy = A.qs('input[name="np2-from"]:checked').value === 'copy';
+    A.qs('#np2-copy-opts').classList.toggle('hidden', !copy);
+    var other = kind === 'install' ? 'pull' : kind === 'pull' ? 'install' : '';
+    A.qs('#np2-narrow').closest('label').classList.toggle('hidden', !other);
+    A.qs('#np2-other').textContent = KIND_LABEL[other] || '';
+    A.qs('#np2-this').textContent = KIND_LABEL[kind] || '';
+  }
+
+  async function createProcess() {
+    var name = A.qs('#np2-name').value.trim();
+    if (!name) { A.toast('نام فرایند را بنویسید.', 'error'); return; }
+    var kind = A.qs('#np2-kind').value || null;
+    var copy = A.qs('input[name="np2-from"]:checked').value === 'copy';
     try {
-      var res = await A.api.post('/api/workflow/definitions',
-                                 { name: name.trim() });
+      var res;
+      if (copy) {
+        var other = kind === 'install' ? 'pull' : kind === 'pull' ? 'install' : null;
+        res = await A.api.post('/api/workflow/definitions/'
+                               + A.qs('#np2-source').value + '/clone', {
+          name: name, operation_kind: kind,
+          source_kind: other && A.qs('#np2-narrow').checked ? other : null,
+          activate: A.qs('#np2-activate').checked });
+      } else {
+        res = await A.api.post('/api/workflow/definitions',
+                               { name: name, operation_kind: kind });
+      }
       A.toast(res.message || 'ساخته شد.', 'success');
+      A.closeModal('proc-modal');
       await switchProcess(res.data.id);
       await loadProcesses(res.data.id);
     } catch (err) { A.toast(err.message, 'error'); }
@@ -1081,6 +1123,8 @@
           + A.esc(r.status_label) + '</span></div>'
           + '<div class="mon-meta">'
           + '<span class="badge">' + A.esc(r.operation_label) + '</span>'
+          + (r.workflow_name ? '<span class="badge muted">🔀 ' + A.esc(r.workflow_name)
+             + '</span>' : '')
           + (r.well_pm_code ? '<span class="badge muted">کد PM: '
               + A.esc(r.well_pm_code) + '</span>' : '')
           + '<span class="badge muted">آغاز: ' + A.esc(r.created_at_j || '') + '</span>'
@@ -1136,6 +1180,11 @@
     });
     A.qs('#wf-proc-save').addEventListener('click', saveProcess);
     A.qs('#wf-proc-new').addEventListener('click', newProcess);
+    A.qs('#np2-go').addEventListener('click', createProcess);
+    A.qs('#np2-kind').addEventListener('change', procModalSync);
+    A.qsa('input[name="np2-from"]').forEach(function (r) {
+      r.addEventListener('change', procModalSync);
+    });
     A.qs('#wf-proc-del').addEventListener('click', deleteProcess);
 
     /* One delegated listener each, so redrawing the stages never leaves a

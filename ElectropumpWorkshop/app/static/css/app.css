@@ -1131,3 +1131,6 @@ select.mini { font-size:11px; padding:2px 4px; width:auto; }
 .lock-choice { display:flex; align-items:center; gap:4px; white-space:nowrap; }
 .lock-choice input { width:auto; }
 .lock-actions { display:flex; gap:6px; margin-top:4px; }
+
+.inline-select { display:inline-block; width:auto; min-width:160px; margin:0 4px;
+  padding:2px 6px; font:inherit; }

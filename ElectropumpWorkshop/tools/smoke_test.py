@@ -1558,6 +1558,77 @@ def main():
     for fid in (cp.get("id"), new_id):
         c.delete(f"/api/form-builder/fields/{fid}")
 
+    print("\n— دو فرایند جدا: «فرایند کشیدن» و «فرایند نصب» —")
+    with app.app_context():
+        from app.models import AppUser, WorkflowDefinition, WorkflowInstance
+        from app.services.workflow import (active_workflow, startable_kinds,
+                                           start_instance, workflow_for)
+        wf = active_workflow()
+        s3 = next(x for x in wf.stages if x.stage_number == 3)
+        s3.can_start, s3.start_kind = True, "install"
+        yq = AppUser.query.filter_by(username="yaghouti").one()
+        s3.owners = [yq]
+        s3.assignee_id = yq.id
+        _db.session.commit()
+        source_id = wf.id
+        install_titles = [s.title for s in sorted(wf.stages, key=lambda x: x.stage_number)
+                          if s.stage_number >= 3 and s.is_active]
+    r = c.post(f"/api/workflow/definitions/{source_id}/clone", json={
+        "name": "فرایند نصب", "operation_kind": "install",
+        "source_kind": "pull", "activate": True})
+    new_wf = (r.get_json() or {}).get("data") or {}
+    check("«فرایند نصب» از روی فرایند فعلی ساخته و فعال می‌شود",
+          r.status_code == 200 and new_wf.get("is_active") is True
+          and new_wf.get("operation_kind") == "install",
+          str((r.get_json() or {}).get("message"))[:90])
+    stages_new = sorted(new_wf.get("stages") or [], key=lambda s: s["stage_number"])
+    check("مرحله‌هایش از درِ نصب (مهدی یاقوتی) شروع و از ۱ شماره‌گذاری می‌شوند",
+          [s["title"] for s in stages_new] == install_titles
+          and stages_new and stages_new[0]["stage_number"] == 1
+          and stages_new[0]["can_start"],
+          str([(s["stage_number"], s["title"]) for s in stages_new]))
+    check("فرم‌ها و متولی‌ها هم کپی شده‌اند",
+          stages_new and stages_new[0]["items"]
+          and stages_new[0]["owner_names"]
+          and "یاقوتی" in "".join(stages_new[0]["owner_names"]),
+          str(stages_new[0]["owner_names"] if stages_new else ""))
+    with app.app_context():
+        src = _db.session.get(WorkflowDefinition, source_id)
+        check("فرایند فعلی از این به بعد فقط برای کشیدن است",
+              src.operation_kind == "pull" and src.is_active)
+        check("و درِ نصب از آن برداشته شده",
+              not any(s.can_start and s.start_kind == "install" for s in src.stages))
+        check("هر عملیات به فرایند خودش می‌رود",
+              workflow_for("pull").id == source_id
+              and workflow_for("install").id == new_wf["id"])
+        mk = AppUser.query.filter_by(username="markaz").one()
+        yq = AppUser.query.filter_by(username="yaghouti").one()
+        check("مرکز آبرسانی فقط کشیدن را شروع می‌کند",
+              startable_kinds(mk) == ["pull"], str(startable_kinds(mk)))
+        check("مهدی یاقوتی فقط نصب را شروع می‌کند",
+              startable_kinds(yq) == ["install"], str(startable_kinds(yq)))
+        inst = start_instance({"operation_kind": "نصب", "well": "امام رضا 11"}, yq)
+        check("نصب در «فرایند نصب» و از مرحله ۱ آن شروع می‌شود",
+              inst.workflow_id == new_wf["id"] and inst.entry_stage == 1,
+              f"{inst.workflow_id}/{inst.entry_stage}")
+        pull = start_instance({"operation_kind": "کشیدن", "well": "امام رضا 11"}, mk)
+        check("کشیدن در فرایند قبلی می‌ماند", pull.workflow_id == source_id)
+    r = c.post("/api/workflow/definitions", json={"name": "آزمایشی هر دو"})
+    third = r.get_json()["data"]["id"]
+    c.post("/api/workflow/stages", json={"workflow_id": third, "title": "یک مرحله"})
+    r = c.put(f"/api/workflow/definitions/{third}", json={"is_active": True})
+    check("فعال شدن فرایند سوم برای همان عملیات رد می‌شود", r.status_code == 422,
+          str(r.get_json().get("message"))[:80])
+    c.delete(f"/api/workflow/definitions/{third}")
+    # Back to one process for both, for whatever runs after this.
+    c.put(f"/api/workflow/definitions/{new_wf['id']}", json={"is_active": False})
+    c.put(f"/api/workflow/definitions/{source_id}", json={"operation_kind": None})
+    with app.app_context():
+        src = _db.session.get(WorkflowDefinition, source_id)
+        s3 = next(x for x in src.stages if x.stage_number == 3)
+        s3.can_start, s3.start_kind = True, "install"
+        _db.session.commit()
+
     html = c.get("/inbox").get_data(as_text=True)
     check("نشانی فایل‌های ثابت نسخه دارد (کش مرورگر نسخه‌ی قدیم را نگه ندارد)",
           "inbox.js?v=" in html)
