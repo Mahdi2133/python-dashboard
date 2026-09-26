@@ -88,10 +88,26 @@ ENTRY_DONE = (ENTRY_SUBMITTED, ENTRY_ARCHIVED, ENTRY_DEFERRED)
 INSTANCE_OPEN = "open"
 INSTANCE_COMPLETED = "completed"
 INSTANCE_CANCELLED = "cancelled"
+# Closed on purpose by somebody in the chain who judged it need not go on —
+# «نیاز به کشیدن ندارد، قابل اصلاح است». Not a failure and not a cancellation
+# by the admin, so it has its own name in the tracking view and the reports.
+INSTANCE_STOPPED = "stopped"
 INSTANCE_STATUS = {
     INSTANCE_OPEN: "در جریان",
     INSTANCE_COMPLETED: "تکمیل شده",
     INSTANCE_CANCELLED: "لغو شده",
+    INSTANCE_STOPPED: "متوقف شد (نیاز به ادامه نبود)",
+}
+
+# What somebody at a stage can decide, beyond sending the work on. Each stage
+# lists the ones it offers, and each one says who at that stage may use it.
+ACTION_FORWARD = "forward"   # the ordinary hand-on, always there
+ACTION_STOP = "stop"         # close the process here, with a reason
+ACTION_RETURN = "return"     # send it back to a stage to complete or document
+ACTION_KINDS = {
+    ACTION_FORWARD: "ارسال به مرحله بعد",
+    ACTION_STOP: "توقف فرایند",
+    ACTION_RETURN: "برگشت برای تکمیل یا مستندسازی",
 }
 
 
@@ -215,6 +231,11 @@ class WorkflowStage(db.Model):
     # When the work goes to more than one person: must every one of them
     # record before it moves on, or is one of them enough?
     refer_all = db.Column(db.Boolean, nullable=False, default=False)
+    # The decisions this stage offers beyond «ارسال به مرحله بعد», as a JSON
+    # list: {id, kind, label, target_stage, needs_docs, user_ids}. «امین checks
+    # مرکز آبرسانی's report and may stop it, or send it back for a video» is
+    # this list, and «who may» is per action, per stage.
+    actions_json = db.Column(db.Text)
 
     # ── the approval: whether somebody has to sign this stage off ───────────
     needs_approval = db.Column(db.Boolean, nullable=False, default=False)
@@ -266,6 +287,33 @@ class WorkflowStage(db.Model):
         return [u.id for u in self.all_owners]
 
     @property
+    def actions(self):
+        """The decision actions this stage offers, clean and in order."""
+        import json
+        try:
+            raw = json.loads(self.actions_json or "[]")
+        except ValueError:
+            raw = []
+        out = []
+        for n, a in enumerate(raw if isinstance(raw, list) else []):
+            kind = a.get("kind")
+            if kind not in (ACTION_STOP, ACTION_RETURN):
+                continue
+            out.append({
+                "id": str(a.get("id") or f"a{n + 1}"),
+                "kind": kind,
+                "label": (a.get("label") or "").strip() or ACTION_KINDS[kind],
+                "target_stage": (int(a["target_stage"])
+                                 if kind == ACTION_RETURN
+                                 and str(a.get("target_stage", "")).lstrip("-").isdigit()
+                                 else None),
+                "needs_docs": bool(a.get("needs_docs")) if kind == ACTION_RETURN
+                              else False,
+                "user_ids": _ids(",".join(str(x) for x in (a.get("user_ids") or []))),
+            })
+        return out
+
+    @property
     def referral_ids(self):
         """The fixed recipients, the first one first."""
         ids = _ids(self.referral_user_ids)
@@ -297,6 +345,7 @@ class WorkflowStage(db.Model):
             "referral_hint": self.referral_hint,
             "referral_user_ids": self.referral_ids,
             "refer_all": self.refer_all,
+            "actions": self.actions,
             "needs_approval": self.needs_approval,
             "approval_blocks": self.approval_blocks,
             "approval_sees": self.approval_sees,
@@ -373,6 +422,10 @@ class WorkflowInstance(db.Model):
     well_name_raw = db.Column(db.String(200))
 
     current_stage = db.Column(db.Integer, nullable=False, default=0, index=True)
+    # Why the run ended where it did, when somebody stopped it on purpose —
+    # «نیاز به کشیدن ندارد، قابل اصلاح است» — and who.
+    outcome_note = db.Column(db.Text)
+    outcome_by = db.Column(db.Integer, db.ForeignKey("app_users.id"))
     # The stage this run was opened at. Two doors can admit the same
     # operation — مرکز آبرسانی's and کارگاه نصب's — and the run starts at the
     # one its starter owns, so that choice is remembered here instead of being
@@ -435,6 +488,7 @@ class WorkflowInstance(db.Model):
             "well_pm_code": self.well.pm_code if self.well else None,
             "current_stage": self.current_stage,
             "entry_stage": self.entry_stage,
+            "outcome_note": self.outcome_note,
             "status": self.status,
             "status_label": INSTANCE_STATUS.get(self.status, self.status),
             "record_id": self.record_id,
@@ -488,6 +542,11 @@ class WorkflowStageEntry(db.Model):
     referred_to_ids = db.Column(db.String(200))
     refer_all = db.Column(db.Boolean, nullable=False, default=False)
     done_by_ids = db.Column(db.String(200))
+    # Sent back to be completed «with a photo, a video, any document»: this
+    # stage cannot be recorded again until something is attached after the
+    # request was made.
+    needs_docs = db.Column(db.Boolean, nullable=False, default=False)
+    docs_requested_at = db.Column(db.DateTime)
 
     # ── the approval, on this run ───────────────────────────────────────────
     approver_id = db.Column(db.Integer, db.ForeignKey("app_users.id"),

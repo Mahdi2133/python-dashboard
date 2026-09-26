@@ -47,6 +47,8 @@
       <div id="wf-attachments" class="mt-1"></div>
     </div>
 
+    <!-- Sent back with a request for documents that is not answered yet. -->
+    <div id="wf-docs-owed"></div>
     <!-- Filled when a blocking approval in front of this stage holds it up. -->
     <div id="wf-blocked"></div>
     <div id="wf-progress"></div>
@@ -85,6 +87,19 @@
       <div class="form-actions">
         <button class="btn-primary" id="wf-approve" type="button">✅ تأیید و ارجاع به مرحله بعد</button>
         <button class="btn-danger" id="wf-reject" type="button">↩ برگشت جهت اصلاح</button>
+      </div>
+    </div>
+
+    <!-- What this person may decide here: forward, stop, or send back. Only
+         shown when the stage offers more than «ارسال». -->
+    <div class="wf-decision hidden" id="wf-decision">
+      <div class="section-title"><span>⚖</span><span>تصمیم شما در این مرحله</span></div>
+      <div class="wf-decision-options" id="wf-decision-options"></div>
+      <div class="field hidden" id="wf-decision-note-row">
+        <label>دلیل <span class="req">*</span></label>
+        <textarea id="wf-decision-note" rows="2"
+          placeholder="مثلاً: با بررسی اطلاعات، چاه نیاز به کشیدن ندارد و قابل اصلاح در محل است."></textarea>
+        <span class="err hidden" id="wf-decision-err"></span>
       </div>
     </div>
 

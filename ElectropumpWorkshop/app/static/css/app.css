@@ -1026,3 +1026,43 @@ select.mini { font-size:11px; padding:2px 4px; width:auto; }
 .cl-forms { display:flex; flex-wrap:wrap; gap:6px; }
 .form-actions-inline { display:flex; align-items:center; gap:10px; margin-top:10px; }
 @media (max-width:900px) { .cl-row { grid-template-columns:1fr; } }
+
+/* «اقدام‌های تصمیم‌گیری» in the builder: stop, or send back, and who may. */
+.wf-actions { margin-top:10px; border-top:1px dashed var(--border,#dfe6ea);
+  padding-top:10px; }
+.wf-actions-head { font-size:12.5px; font-weight:800; color:var(--primary);
+  display:flex; flex-direction:column; gap:2px; margin-bottom:6px; }
+.wf-actions-head .hint { font-weight:500; }
+.wf-action-list { display:flex; flex-direction:column; gap:8px; margin-bottom:6px; }
+.wf-action { border:1px solid var(--border,#dfe6ea); border-radius:10px;
+  padding:8px; background:#fbfcfd; display:flex; flex-direction:column; gap:6px; }
+.wf-action-top { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.wf-action-top .act-kind { flex:1 1 140px; width:auto; min-width:0; }
+.wf-action-top .act-label { flex:1 1 100%; order:3; min-width:0; }
+.act-del { border:none; background:none; cursor:pointer; font-size:14px; }
+.wf-action-return, .wf-action-who { display:flex; flex-wrap:wrap; gap:6px;
+  align-items:center; font-size:12px; }
+.wf-action-return[hidden] { display:none; }
+.wf-action-return > label:first-child, .wf-action-who > label { font-weight:700; }
+.wf-action-who .owner-chips { flex:1; }
+
+/* «تصمیم شما در این مرحله»: forward, stop, or send back. */
+.wf-decision { margin:12px 0; padding:12px; border:1px solid var(--border,#dfe6ea);
+  border-radius:12px; background:#fbfcfd; }
+.wf-decision-options { display:flex; flex-direction:column; gap:7px; margin:8px 0; }
+.decision-opt { display:grid; grid-template-columns:auto 1fr; gap:2px 9px;
+  align-items:center; padding:9px 12px; border:1px solid var(--border,#dfe6ea);
+  border-radius:10px; background:#fff; cursor:pointer; }
+.decision-opt input { grid-row:span 2; }
+.decision-opt .d-main { font-weight:800; font-size:13px; }
+.decision-opt .d-sub { font-size:11.5px; color:var(--text-muted,#6c8592); }
+.decision-opt:has(input:checked).forward { border-color:#8fc0d2; background:#eef6fa; }
+.decision-opt:has(input:checked).stop { border-color:#f0b4ad; background:#fdecea; }
+.decision-opt:has(input:checked).return { border-color:#f0c98a; background:#fff4e5; }
+.wf-docs-owed { font-size:12.5px; line-height:2; border-radius:10px;
+  padding:9px 12px; margin-bottom:10px; background:#fff4e5;
+  border:1px solid #f0c98a; color:#6b4a0e; }
+.wf-docs-owed.done { background:#e6f2ea; border-color:#b9dcc6; color:#1d6b3a; }
+.badge.power { background:#fdf0e3; color:#8a4a12; border:1px solid #f0cfa8; }
+.wf-action .act-label, .wf-action select { padding:6px 8px; border:1px solid var(--border,#dfe6ea);
+  border-radius:8px; background:#fff; font:inherit; font-size:12.5px; }

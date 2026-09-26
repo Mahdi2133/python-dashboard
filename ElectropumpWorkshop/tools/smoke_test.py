@@ -1141,6 +1141,101 @@ def main():
               str(vals.get("motor_prev")) == "18.5", str(vals.get("motor_prev")))
     c.put(f"/api/form-builder/fields/{fid}", json={"prefill_from": ""})
 
+    print("\n— تصمیم در مرحله: توقف یا برگشت برای مستندسازی —")
+    with app.app_context():
+        from app.extensions import db as _db
+        from app.models import AppUser, WorkflowAttachment
+        from app.models.workflow import (ENTRY_REJECTED, INSTANCE_OPEN,
+                                         INSTANCE_STOPPED)
+        from app.services.workflow import (WorkflowError, actions_for,
+                                           active_workflow, owners_of,
+                                           stage_by_number, start_instance,
+                                           submit_stage, sync_entries,
+                                           take_action)
+        wf = active_workflow()
+        s2 = next(x for x in wf.stages if x.stage_number == 2)
+        mk = AppUser.query.filter_by(username="markaz").one()
+        bz = AppUser.query.filter_by(username="bozorg").one()
+        kh = AppUser.query.filter_by(username="kahani").one()
+        # Stage 2 has two owners; only بزرگمهر may stop it, both may send it
+        # back to stage 1 for documents.
+        s2.owners = [bz, kh]
+        s2.assignee_id = bz.id
+        import json as _json
+        s2.actions_json = _json.dumps([
+            {"id": "stop", "kind": "stop", "label": "نیاز به کشیدن ندارد",
+             "user_ids": [bz.id]},
+            {"id": "docs", "kind": "return", "label": "مستند تصویری لازم است",
+             "target_stage": 1, "needs_docs": True, "user_ids": []}])
+        _db.session.commit()
+
+        def fresh():
+            i = start_instance({"operation_kind": "کشیدن",
+                                "well": "امام رضا 11"}, mk)
+            sync_entries(i)
+            _db.session.commit()
+            submit_stage(i, {"op_jdate": "1405/07/05", "failure": ["هوادهی"],
+                             "fail_aeration_p01": ["وضعیت لوله و اتصالات بررسی شده است"],
+                             "fail_aeration_p02": 3, "fail_aeration_p03": 12},
+                         mk, stage_number=1)
+            return i
+
+        inst = fresh()
+        st2 = stage_by_number(inst, 2)
+        ids_bz = [a["id"] for a in actions_for(inst, st2, bz)]
+        ids_kh = [a["id"] for a in actions_for(inst, st2, kh)]
+        check("بزرگمهر هر سه اقدام را دارد", ids_bz == ["forward", "stop", "docs"],
+              str(ids_bz))
+        check("کاهانی اجازه‌ی توقف ندارد", ids_kh == ["forward", "docs"], str(ids_kh))
+        try:
+            take_action(inst, 2, kh, "stop", note="نیاز نیست")
+            denied = False
+        except WorkflowError:
+            denied = True
+        check("توقف توسط کسی که اجازه ندارد رد می‌شود", denied)
+        try:
+            take_action(inst, 2, bz, "stop", note="")
+            noreason = False
+        except WorkflowError:
+            noreason = True
+        check("توقف بدون دلیل رد می‌شود", noreason)
+        take_action(inst, 2, bz, "stop",
+                    note="چاه نیاز به کشیدن ندارد و قابل اصلاح در محل است")
+        check("بزرگمهر فرایند را متوقف می‌کند",
+              inst.status == INSTANCE_STOPPED and bool(inst.outcome_note),
+              inst.status)
+        check("و مرحله‌های بعد از کارتابل‌ها می‌روند",
+              all(e.status != "pending" for e in inst.entries))
+
+        # Send back for documents.
+        inst = fresh()
+        take_action(inst, 2, kh, "docs", note="عکس تابلو و فیلم خروجی آب لازم است")
+        e1 = next(e for e in inst.entries if e.stage_number == 1)
+        check("برگشت، مرحله ۱ را دوباره باز می‌کند",
+              e1.status == ENTRY_REJECTED and inst.status == INSTANCE_OPEN, e1.status)
+        check("و به کارتابل همان کسی می‌رود که آن را پر کرده بود",
+              owners_of(inst, stage_by_number(inst, 1)) == [mk.id])
+        try:
+            submit_stage(inst, {}, mk, stage_number=1)
+            blocked = False
+        except WorkflowError as exc:
+            blocked, why = True, str(exc)
+        check("بدون بارگذاری مستند، ثبت دوباره رد می‌شود", blocked,
+              why[:60] if blocked else "")
+        _db.session.add(WorkflowAttachment(
+            instance_id=inst.id, stage_number=1, filename="tablo.jpg",
+            stored_name="x.jpg", content_type="image/jpeg", size_bytes=10,
+            uploaded_by=mk.id))
+        _db.session.commit()
+        submit_stage(inst, {}, mk, stage_number=1)
+        check("با بارگذاری مستند، مرحله ۱ دوباره ثبت می‌شود",
+              e1.status == "submitted", e1.status)
+        check("و کار دوباره به مرحله ۲ برمی‌گردد",
+              bz.id in owners_of(inst, stage_by_number(inst, 2)))
+        s2.actions_json = None
+        s2.owners = [bz]
+        _db.session.commit()
+
     print("\n— ستون‌های محاسباتی در گزارش‌ساز —")
     # A row with both readings, so the arithmetic is checked against a known
     # answer rather than against whatever the fixture happens to contain.

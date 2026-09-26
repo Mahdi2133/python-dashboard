@@ -97,6 +97,14 @@ def run_migrations_online():
     connectable = get_engine()
 
     with connectable.connect() as connection:
+        # The app turns SQLite foreign keys on for every connection. A batch
+        # migration drops a column by rebuilding the table, and with foreign
+        # keys on, dropping the old copy of a parent table cascades into its
+        # children — a downgrade of workflow_instances would empty
+        # workflow_stage_entries. Rebuilds are safe with them off.
+        if connection.dialect.name == "sqlite":
+            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            connection.commit()
         context.configure(
             connection=connection,
             target_metadata=get_metadata(),

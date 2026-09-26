@@ -10,7 +10,10 @@ from ..extensions import db
 from ..models import (AppUser, FormField, FormSection, WorkflowAttachment,
                       WorkflowDefinition, WorkflowInstance, WorkflowStage,
                       WorkflowStageEntry, WorkflowStageItem)
-from ..models.workflow import (APPLIES_TO, APPROVAL_SEES, ENTRY_AWAITING,
+from ..models.workflow import (ACTION_FORWARD, ACTION_KINDS,
+                               ACTION_RETURN, ACTION_STOP,
+                               INSTANCE_STOPPED,
+                               APPLIES_TO, APPROVAL_SEES, ENTRY_AWAITING,
                                ENTRY_DONE, SEE_PICK,
                                ENTRY_PENDING, ENTRY_STATUS, INSTANCE_OPEN,
                                INSTANCE_STATUS, OPERATION_KINDS,
@@ -29,6 +32,7 @@ from ..services.workflow import (WorkflowError, active_workflow,
                                  owners_of, startable_kinds,
                                  entry_stage, blocked_by,
                                  shareable_stages, referral_progress,
+                                 actions_for, docs_owed, take_action,
                                  pending_stages, previous_values_for,
                                  may_start, referral_choices, stage_by_number,
                                  stage_form, stages_of_user,
@@ -142,6 +146,9 @@ def get_definition():
                                   for k, v in REFERRAL_MODES.items()],
                "approval_sees": [{"value": k, "label": v}
                                  for k, v in APPROVAL_SEES.items()],
+               "action_kinds": [{"value": k, "label": v}
+                                for k, v in ACTION_KINDS.items()
+                                if k != ACTION_FORWARD],
                "operation_kinds": [{"value": k, "label": v}
                                    for k, v in OPERATION_KINDS.items()]})
 
@@ -493,6 +500,35 @@ def update_stage(stage_id):
         stage.referral_user_id = people[0].id if people else None
     if "refer_all" in payload:
         stage.refer_all = payload["refer_all"] in (True, "true", "1", 1)
+    # The decisions this stage offers beyond «ارسال», and who may use each.
+    if "actions" in payload:
+        import json
+        clean = []
+        numbers = {x.stage_number for x in stage.workflow.stages if x.is_active}
+        for n, a in enumerate(payload.get("actions") or [], start=1):
+            kind = a.get("kind")
+            if kind not in (ACTION_STOP, ACTION_RETURN):
+                return fail("نوع اقدام نامعتبر است.", 422)
+            target = a.get("target_stage")
+            if kind == ACTION_RETURN:
+                if str(target or "").lstrip("-").isdigit() \
+                        and int(target) in numbers \
+                        and int(target) != stage.stage_number:
+                    target = int(target)
+                else:
+                    return fail("برای «برگشت برای تکمیل»، مرحله‌ی مقصد را "
+                                "انتخاب کنید.", 422)
+            people, error = _people(a.get("user_ids") or [])
+            if error:
+                return fail(error, 422)
+            clean.append({
+                "id": str(a.get("id") or f"a{n}"), "kind": kind,
+                "label": normalize_text(a.get("label") or "") or None,
+                "target_stage": target if kind == ACTION_RETURN else None,
+                "needs_docs": bool(a.get("needs_docs")) and kind == ACTION_RETURN,
+                "user_ids": [p.id for p in people],
+            })
+        stage.actions_json = json.dumps(clean, ensure_ascii=False) if clean else None
     if "referral_hint" in payload:
         stage.referral_hint = (payload["referral_hint"] or "").strip() or None
     if stage.referral_mode == REFER_USER and stage.referral_user_id is None:
@@ -644,7 +680,11 @@ def connections():
         for person in people:
             owner = row(person)
             if owner is not None:
-                owner["owns"].append(card)
+                # The decisions this person may take here — «توقف»، «برگشت» —
+                # which the admin grants per action, per person.
+                powers = [a["label"] for a in stage.actions
+                          if not a["user_ids"] or person.id in a["user_ids"]]
+                owner["owns"].append({**card, "powers": powers})
         approver = row(stage.approver)
         if approver is not None:
             approver["approves"].append(card)
@@ -967,6 +1007,13 @@ def get_instance(instance_id):
             "choices": (shareable_stages(instance, stage)
                         if stage.approval_sees == SEE_PICK else []),
         }
+    # What this person may decide here beyond «ارسال», and whether this stage
+    # was sent back with a request for documents that is still unanswered.
+    data["actions"] = actions_for(instance, stage, user) if stage else []
+    owed = docs_owed(instance, stage.stage_number) if stage else None
+    data["docs_owed"] = ({**owed, "requested_at": (
+        to_jalali_str(owed["requested_at"]) if owed["requested_at"] else None)}
+        if owed else None)
     # A blocking approval anywhere in front of this stage stops it being filled.
     hold = blocked_by(instance, stage.stage_number) if stage else None
     data["blocked_by"] = ({"stage_number": hold.stage_number,
@@ -1009,6 +1056,16 @@ def submit(instance_id):
         return fail("فرایند یافت نشد.", 404)
     payload = body()
     stage_number = payload.get("stage_number")
+    action = payload.get("action") or ACTION_FORWARD
+    if action != ACTION_FORWARD:
+        try:
+            take_action(instance, int(stage_number), current_user(), action,
+                        note=payload.get("note"), payload=payload.get("data") or {})
+        except (WorkflowError, TypeError, ValueError) as exc:
+            return fail(str(exc), 422, fields=getattr(exc, "fields", {}))
+        message = ("فرایند متوقف شد." if instance.status == INSTANCE_STOPPED
+                   else "فرایند برای تکمیل برگشت داده شد.")
+        return ok(instance.to_dict(), message=message)
     try:
         submit_stage(instance, payload.get("data") or {}, current_user(),
                      note=payload.get("note"),
@@ -1100,8 +1157,17 @@ def upload_attachment(instance_id):
         target.unlink(missing_ok=True)
         return fail("حجم فایل بیش از ۶۴ مگابایت است.", 413)
 
+    # The stage the uploader has open, not the run's lowest open stage: with
+    # a stage sent back for documents, or several people on parallel
+    # stages, the two differ and the file must count where it was asked for.
+    try:
+        stage_no = int(request.form.get("stage_number") or instance.current_stage)
+    except (TypeError, ValueError):
+        stage_no = instance.current_stage
+    if not any(s.stage_number == stage_no for s in instance.workflow.stages):
+        stage_no = instance.current_stage
     attachment = WorkflowAttachment(
-        instance_id=instance.id, stage_number=instance.current_stage,
+        instance_id=instance.id, stage_number=stage_no,
         filename=original, stored_name=stored, size_bytes=size,
         content_type=(uploaded.mimetype
                       or mimetypes.guess_type(original)[0]

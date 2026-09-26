@@ -358,6 +358,8 @@
           : (detail.may_act ? '' : 'این مرحله در اختیار شما نیست.');
       }
       fill('#wf-progress', progressHtml(detail.referral_progress));
+      renderDocsOwed(detail);
+      renderDecisionChoices(detail);
       fill('#wf-blocked', hold
         ? '<div class="wf-blocked">⛔ مرحله ' + J.toFaDigits(hold.stage_number)
           + ' — ' + A.esc(hold.title) + ' در انتظار تأیید '
@@ -385,6 +387,70 @@
      shape of this in the process builder: a fixed person, the next stage's own
      متولی, or — the case this box exists for — whoever the person finishing
      the stage names. */
+  /* «تصمیم شما»: forward, stop, or send back — whichever this stage offers and
+     this person may use. With only «ارسال» there is nothing to choose and the
+     box stays out of the way. */
+  function renderDecisionChoices(detail) {
+    var box = A.qs('#wf-decision');
+    if (!box) return;
+    var acts = detail.actions || [];
+    var show = detail.may_act && !detail.awaiting_my_decision && acts.length > 1;
+    box.classList.toggle('hidden', !show);
+    if (!show) return;
+    A.qs('#wf-decision-options').innerHTML = acts.map(function (a, i) {
+      var icon = a.kind === 'stop' ? '⛔' : a.kind === 'return' ? '↩' : '✅';
+      var sub = a.kind === 'return'
+        ? 'برگشت به مرحله ' + J.toFaDigits(a.target_stage) + ' — '
+          + A.esc(a.target_title || '')
+          + (a.needs_docs ? ' · بارگذاری مستند الزامی' : '')
+        : a.kind === 'stop'
+          ? 'فرایند همین‌جا بسته می‌شود و ادامه پیدا نمی‌کند.'
+          : 'فرم را کامل کنید تا کار به مرحله‌ی بعد برود.';
+      return '<label class="decision-opt ' + a.kind + '">'
+        + '<input type="radio" name="wf_action" value="' + A.esc(a.id) + '"'
+        + ' data-kind="' + a.kind + '"' + (i === 0 ? ' checked' : '') + '>'
+        + '<span class="d-main">' + icon + ' ' + A.esc(a.label) + '</span>'
+        + '<span class="d-sub">' + sub + '</span></label>';
+    }).join('');
+    A.qs('#wf-decision-note').value = '';
+    decisionChanged();
+  }
+
+  function chosenAction() {
+    var r = A.qs('input[name="wf_action"]:checked');
+    return r ? { id: r.value, kind: r.dataset.kind } : { id: 'forward', kind: 'forward' };
+  }
+
+  function decisionChanged() {
+    var a = chosenAction();
+    A.qs('#wf-decision-note-row').classList.toggle('hidden', a.kind === 'forward');
+    var btn = A.qs('#wf-submit');
+    if (btn) {
+      btn.textContent = a.kind === 'stop' ? '⛔ توقف فرایند'
+        : a.kind === 'return' ? '↩ برگشت برای تکمیل'
+        : '✅ ثبت و ارسال مرحله';
+      btn.classList.toggle('btn-danger', a.kind === 'stop');
+      btn.classList.toggle('btn-primary', a.kind !== 'stop');
+    }
+  }
+
+  /* Sent back «with a photo, a video, any document»: say by whom and why,
+     and that nothing goes on until something is attached. */
+  function renderDocsOwed(detail) {
+    var d = detail.docs_owed;
+    fill('#wf-docs-owed', d
+      ? '<div class="wf-docs-owed' + (d.sent ? ' done' : '') + '">📎 '
+        + '<b>' + A.esc(d.by || 'مرحله‌ی بعد') + '</b> درخواست مستند کرده است'
+        + (d.note ? ': «' + A.esc(d.note) + '»' : '') + '.<br>'
+        + (d.sent
+            ? '✓ ' + J.toFaDigits(d.sent) + ' مستند بارگذاری شده؛ حالا می‌توانید '
+              + 'مرحله را دوباره ثبت کنید.'
+            : 'پیش از ثبت دوباره، دست‌کم یک عکس، فیلم یا فایل در بخش «مستندات '
+              + 'این فرایند» پایین همین صفحه بارگذاری کنید.')
+        + '</div>'
+      : '');
+  }
+
   /* A stage referred to several people who must all record: say who has and
      who has not, so nobody wonders why pressing ثبت did not move it on. */
   function progressHtml(progress) {
@@ -649,6 +715,34 @@
     form.clearErrors();
     try {
       var refer = (current.detail && current.detail.referral) || {};
+      var decision = chosenAction();
+      if (decision.kind !== 'forward') {
+        var why = A.qs('#wf-decision-note').value.trim();
+        var err = A.qs('#wf-decision-err');
+        if (!why) {
+          err.textContent = 'دلیل را بنویسید.'; err.classList.remove('hidden');
+          A.qs('#wf-decision-note').focus();
+          button.disabled = false;
+          return;
+        }
+        err.classList.add('hidden');
+        var go = await A.confirmDialog({
+          title: decision.kind === 'stop' ? 'توقف فرایند' : 'برگشت برای تکمیل',
+          message: decision.kind === 'stop'
+            ? 'فرایند همین‌جا بسته می‌شود و به مرحله‌های بعد نمی‌رود. مطمئن هستید؟'
+            : 'کار به مرحله‌ی انتخاب‌شده برمی‌گردد و این مرحله منتظر پاسخ می‌ماند.',
+          confirmText: decision.kind === 'stop' ? 'توقف' : 'برگشت',
+          danger: decision.kind === 'stop' });
+        if (!go) { button.disabled = false; return; }
+        var r2 = await A.api.post('/api/workflow/instances/' + current.id + '/submit',
+          { stage_number: current.stage_number, action: decision.id, note: why,
+            data: form.collect() });
+        A.toast(r2.message || 'انجام شد.', 'success');
+        A.qs('#wf-detail').classList.add('hidden');
+        current = null;
+        await loadInbox();
+        return;
+      }
       var recipients = A.qsa('.refer-pick:checked')
         .map(function (b) { return Number(b.value); });
       if (refer.mode === 'choose' && !recipients.length) {
@@ -681,6 +775,7 @@
     for (var i = 0; i < files.length; i++) {
       var body = new FormData();
       body.append('file', files[i]);
+      body.append('stage_number', current.stage_number);
       try {
         await A.request('/api/workflow/instances/' + current.id + '/attachments',
                         { method: 'POST', body: body });
@@ -691,6 +786,7 @@
     var res = await A.api.get('/api/workflow/instances/' + current.id
                               + '?stage=' + current.stage_number);
     renderAttachments(res.data);
+    renderDocsOwed(res.data);
     A.toast('مستندات بارگذاری شد.', 'success');
   }
 
@@ -755,6 +851,8 @@
       if (button) openStage(items[Number(button.dataset.i)]);
     });
     A.qs('#btn-refresh').addEventListener('click', loadInbox);
+    var decisionBox = A.qs('#wf-decision-options');
+    if (decisionBox) decisionBox.addEventListener('change', decisionChanged);
     var referSearch = A.qs('#wf-refer-search');
     if (referSearch) referSearch.addEventListener('input', function () {
       var q = this.value.trim().toLowerCase();
@@ -784,6 +882,7 @@
         var res = await A.api.get('/api/workflow/instances/' + current.id
                                   + '?stage=' + current.stage_number);
         renderAttachments(res.data);
+        renderDocsOwed(res.data);
       } catch (err) { A.toast(err.message, 'error'); }
     });
     A.qs('#np-start').addEventListener('click', startProcess);

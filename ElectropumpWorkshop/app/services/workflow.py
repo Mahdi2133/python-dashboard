@@ -24,7 +24,9 @@ from ..models import (AppUser, FormField, FormSection, Record,
                       WorkflowDefinition, WorkflowInstance, WorkflowStage,
                       WorkflowStageEntry, WorkflowStageItem)
 from ..models.workflow import (APPLIES_BOTH, ENTRY_ARCHIVED, ENTRY_AWAITING,
-                               SEE_PICK, SEE_STAGE,
+                               SEE_PICK, SEE_STAGE, ACTION_FORWARD,
+                               ACTION_KINDS, ACTION_RETURN,
+                               ACTION_STOP, INSTANCE_STOPPED,
                                ENTRY_DEFERRED, ENTRY_DONE, ENTRY_PENDING,
                                ENTRY_REJECTED, ENTRY_SKIPPED, ENTRY_STATUS,
                                ENTRY_SUBMITTED, INSTANCE_CANCELLED,
@@ -827,6 +829,15 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
             f"مرحله «{hold.title}» در انتظار تأیید «{who}» است و تا زمانی که "
             f"تأیید نشود، مرحله‌های بعدی ثبت نمی‌شوند.")
 
+    # Sent back «with a photo, a video, any document»: nothing goes on until
+    # something has been attached to this stage since the request.
+    owed = docs_owed(instance, stage.stage_number)
+    if owed is not None and not owed["sent"]:
+        raise WorkflowError(
+            "برای این مرحله درخواست مستند شده است"
+            + (f" ({owed['by']}: {owed['note']})" if owed.get("note") else "")
+            + "؛ پیش از ثبت دوباره، دست‌کم یک عکس، فیلم یا فایل بارگذاری کنید.")
+
     # When several people share one stage, what an earlier one of them wrote
     # counts — the second is confirming the form, not typing it again.
     shared = _entry_for(instance, stage.stage_number)
@@ -883,6 +894,7 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
 
     if note:
         entry.note = ((entry.note + " ") if entry.note else "") + note
+    entry.needs_docs = False
     entry.user_id = user.id if user else None
     entry.submitted_at = local_now()
     entry.set_payload(payload or {})
@@ -957,6 +969,125 @@ def shareable_stages(instance: WorkflowInstance, stage: WorkflowStage) -> list:
                     "field_count": filled,
                     "owner": (entry.user.full_name if entry.user else None)})
     return out
+
+
+# ── decisions: forward, stop, or send back ───────────────────────────────────
+def actions_for(instance: WorkflowInstance, stage: WorkflowStage, user) -> list:
+    """What this person may decide at this stage, forward first.
+
+    Forwarding is always there for whoever may fill the stage. The rest are the
+    stage's own list, each limited to the people the admin named for it — an
+    empty list means every owner of the stage. An admin may use all of them.
+    """
+    if user is None or stage is None:
+        return []
+    manager = user.role == "admin" or user.can("workflow.manage")
+    out = [{"id": ACTION_FORWARD, "kind": ACTION_FORWARD,
+            "label": ACTION_KINDS[ACTION_FORWARD]}]
+    for action in stage.actions:
+        if action["user_ids"] and not manager \
+                and user.id not in action["user_ids"]:
+            continue
+        if action["kind"] == ACTION_RETURN:
+            target = stage_by_number(instance, action["target_stage"]) \
+                if action["target_stage"] is not None else None
+            if target is None or target.stage_number == stage.stage_number:
+                continue                   # points nowhere on this run
+            action = dict(action, target_title=target.title)
+        out.append(action)
+    return out
+
+
+def take_action(instance: WorkflowInstance, stage_number: int, user,
+                action_id: str, note: str | None = None,
+                payload: dict | None = None) -> WorkflowInstance:
+    """Stop the process, or send it back — the decisions beyond «ارسال».
+
+    Neither asks the stage's required fields to be complete: deciding that a
+    well need not be pulled is exactly *not* going on to fill the rest of it.
+    Whatever the person did write is kept on their entry, and the reason is
+    required, because either decision is one somebody will ask about later.
+    """
+    if instance.status != INSTANCE_OPEN:
+        raise WorkflowError("این فرایند بسته شده است.")
+    sync_entries(instance)
+    stage = stage_by_number(instance, stage_number)
+    if stage is None:
+        raise WorkflowError("مرحله‌ی موردنظر در این فرایند پیدا نشد.")
+    if not may_act(user, instance, stage):
+        raise WorkflowError(f"مرحله «{stage.title}» در اختیار شما نیست.")
+    action = next((a for a in actions_for(instance, stage, user)
+                   if a["id"] == action_id), None)
+    if action is None or action["kind"] == ACTION_FORWARD:
+        raise WorkflowError("این اقدام در این مرحله برای شما تعریف نشده است.")
+    reason = (note or "").strip()
+    if not reason:
+        raise WorkflowError("برای «" + action["label"] + "» نوشتن دلیل الزامی است.",
+                            fields={"__note": "دلیل را بنویسید."})
+
+    entry = _ensure_entry(instance, stage)
+    if payload:
+        entry.set_payload({**(entry.payload or {}), **payload})
+        instance.set_payload({**instance.payload, **payload})
+    entry.user_id = user.id
+
+    if action["kind"] == ACTION_STOP:
+        entry.status = ENTRY_SUBMITTED
+        entry.submitted_at = local_now()
+        entry.note = f"{action['label']}: {reason}"
+        for other in instance.entries:
+            if other.status in (ENTRY_PENDING, ENTRY_REJECTED, ENTRY_AWAITING):
+                other.status = ENTRY_SKIPPED
+        instance.status = INSTANCE_STOPPED
+        instance.outcome_note = reason
+        instance.outcome_by = user.id
+        instance.completed_at = local_now()
+        record_audit("update", "workflow", instance.id,
+                     summary=f"توقف فرایند در مرحله {stage.stage_number} "
+                             f"«{stage.title}» توسط «{user.full_name}»: {reason}")
+        db.session.commit()
+        return instance
+
+    # ACTION_RETURN — back to a stage to complete it, or to document it.
+    back = stage_by_number(instance, action["target_stage"])
+    target = _ensure_entry(instance, back)
+    target.status = ENTRY_REJECTED
+    # Back to whoever filled it, or else the stage's own owners.
+    target.referred_to_id = target.user_id or None
+    target.referred_to_ids = str(target.user_id) if target.user_id else None
+    target.refer_all = False
+    target.done_by_ids = None
+    target.referred_by_id = user.id
+    target.referred_at = local_now()
+    target.referral_note = reason
+    target.note = f"درخواست «{stage.title}» ({user.full_name}): {reason}"
+    target.needs_docs = bool(action["needs_docs"])
+    target.docs_requested_at = local_now() if action["needs_docs"] else None
+    # This stage waits for the answer and judges again when it comes back.
+    if entry.status not in (ENTRY_PENDING, ENTRY_REJECTED):
+        entry.status = ENTRY_PENDING
+    record_audit("update", "workflow", instance.id,
+                 summary=f"برگشت از مرحله {stage.stage_number} «{stage.title}» "
+                         f"به «{back.title}»"
+                         + (" با درخواست مستند" if action["needs_docs"] else "")
+                         + f": {reason}")
+    refresh_position(instance)
+    db.session.commit()
+    return instance
+
+
+def docs_owed(instance: WorkflowInstance, stage_number: int):
+    """The open request for documents on this stage, or None once answered."""
+    entry = _entry_for(instance, stage_number)
+    if entry is None or not entry.needs_docs:
+        return None
+    since = entry.docs_requested_at
+    sent = [a for a in instance.attachments
+            if a.stage_number == stage_number
+            and (since is None or a.uploaded_at >= since)]
+    return {"requested_at": since, "note": entry.referral_note,
+            "by": entry.referred_by.full_name if entry.referred_by else None,
+            "sent": len(sent)}
 
 
 # ── referrals ────────────────────────────────────────────────────────────────

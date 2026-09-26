@@ -227,6 +227,9 @@
                 + ' نفر دیگر</span>' : '')
           + (c.route_by_center
               ? '<span class="badge muted">بر اساس مرکز چاه</span>' : '')
+          + (c.powers || []).map(function (p) {
+              return '<span class="badge power">⚖ ' + A.esc(p) + '</span>';
+            }).join('')
           + '<div class="conn-parts">'
           + (c.parts.length
               ? c.parts.map(function (x) {
@@ -379,11 +382,13 @@
     var stages = definition.workflow.stages.filter(function (x) {
       return x.stage_number > 0;
     });
+    var nActs = (s.actions || []).length;
     return '<details class="wf-refer"' + (s.needs_approval
-        || s.referral_mode !== 'next' ? ' open' : '') + '>'
-      + '<summary>🔀 ارجاع و تأیید'
+        || s.referral_mode !== 'next' || nActs ? ' open' : '') + '>'
+      + '<summary>🔀 ارجاع، تأیید و تصمیم'
       + '<span class="wf-refer-tag">' + A.esc(s.referral_mode_label || '')
-      + (s.needs_approval ? ' · تأیید لازم' : '') + '</span></summary>'
+      + (s.needs_approval ? ' · تأیید لازم' : '')
+      + (nActs ? ' · ' + J.toFaDigits(nActs) + ' اقدام' : '') + '</span></summary>'
       + '<div class="wf-stage-row">'
       + '<label>ارجاع به</label>'
       + '<select class="wf-refer-mode">' + referralModeOptions(s.referral_mode)
@@ -443,7 +448,85 @@
       + 'برای تأیید، فهرست مرحله‌های ثبت‌شده به ثبت‌کننده نشان داده می‌شود تا '
       + 'تعیین کند تأییدکننده کدام‌ها را ببیند.</span>'
       + '</div>'
+      + actionsEditor(s)
       + '</details>';
+  }
+
+  /* «اقدام‌های تصمیم‌گیری»: what the person at this stage may decide besides
+     sending the work on. امین checking مرکز آبرسانی's report may stop the
+     process («نیاز به کشیدن ندارد، قابل اصلاح است») or send it back for a
+     photo or a video — and the admin says, per action, who may. */
+  function actionsEditor(s) {
+    return '<div class="wf-actions" data-stage-number="' + s.stage_number + '">'
+      + '<div class="wf-actions-head">⚖ اقدام‌های تصمیم‌گیری در این مرحله'
+      + '<span class="hint">«ارسال به مرحله بعد» همیشه هست؛ اینجا اقدام‌های '
+      + 'دیگر را اضافه کنید و برای هر کدام تعیین کنید چه کسی اجازه دارد.</span>'
+      + '</div>'
+      + '<div class="wf-action-list">' + (s.actions || []).map(function (a) {
+          return actionRow(a, s);
+        }).join('') + '</div>'
+      + '<button type="button" class="btn-ghost btn-sm wf-action-add">'
+      + '➕ افزودن اقدام</button></div>';
+  }
+
+  function actionRow(a, s) {
+    var stages = definition.workflow.stages.filter(function (x) {
+      return x.is_active !== false && x.stage_number !== s.stage_number;
+    });
+    var kinds = (definition.action_kinds || []).map(function (k) {
+      return '<option value="' + k.value + '"' + (k.value === a.kind ? ' selected' : '')
+        + '>' + A.esc(k.label) + '</option>';
+    }).join('');
+    var isReturn = a.kind === 'return';
+    var who = a.user_ids || [];
+    return '<div class="wf-action" data-id="' + A.esc(a.id || '') + '"'
+      + ' data-users="' + who.join(',') + '">'
+      + '<div class="wf-action-top">'
+      + '<select class="act-kind">' + kinds + '</select>'
+      + '<input class="act-label" value="' + A.esc(a.label || '')
+      + '" placeholder="' + (isReturn ? 'مثلاً: نیاز به مستند تصویری'
+                                      : 'مثلاً: نیاز به کشیدن ندارد') + '">'
+      + '<button type="button" class="act-del" title="حذف اقدام">🗑</button></div>'
+      + '<div class="wf-action-return"' + (isReturn ? '' : ' hidden') + '>'
+      + '<label>برگشت به</label><select class="act-target">'
+      + '<option value="">— مرحله —</option>'
+      + stages.map(function (x) {
+          return '<option value="' + x.stage_number + '"'
+            + (x.stage_number === a.target_stage ? ' selected' : '') + '>'
+            + 'مرحله ' + J.toFaDigits(x.stage_number) + ' — ' + A.esc(x.title)
+            + '</option>';
+        }).join('') + '</select>'
+      + '<label class="mini-check"><input type="checkbox" class="act-docs"'
+      + (a.needs_docs ? ' checked' : '') + '> بارگذاری مستند (عکس، فیلم، فایل) '
+      + 'الزامی است</label></div>'
+      + '<div class="wf-action-who"><label>چه کسی اجازه دارد</label>'
+      + '<div class="owner-chips">' + actionWho(who) + '</div>'
+      + '<select class="act-who-add">' + userOptions(null, 'افزودن کاربر…')
+      + '</select></div></div>';
+  }
+
+  function actionWho(ids) {
+    return ids.length
+      ? ids.map(function (id) {
+          var u = userById(id);
+          return '<span class="owner-chip" data-who="' + id + '">'
+            + A.esc(u ? u.full_name : '#' + id)
+            + '<button type="button" class="act-who-off">×</button></span>';
+        }).join('')
+      : '<span class="owner-none">همهٔ متولی‌های این مرحله</span>';
+  }
+
+  function readActions(card) {
+    return A.qsa('.wf-action', card).map(function (row) {
+      return {
+        id: row.dataset.id || '',
+        kind: row.querySelector('.act-kind').value,
+        label: row.querySelector('.act-label').value.trim(),
+        target_stage: row.querySelector('.act-target').value || null,
+        needs_docs: row.querySelector('.act-docs').checked,
+        user_ids: (row.dataset.users || '').split(',').filter(Boolean).map(Number),
+      };
+    });
   }
 
   function referPicker(s) {
@@ -752,6 +835,7 @@
         body.referral_user_id = recipients.length ? recipients[0] : null;
         var all = card.querySelector('.wf-refer-all');
         if (all) body.refer_all = all.checked;
+        if (card.querySelector('.wf-actions')) body.actions = readActions(card);
         body.referral_hint = card.querySelector('.wf-refer-hint').value.trim();
         body.needs_approval = card.querySelector('.wf-needs-approval').checked;
         body.approver_id = card.querySelector('.wf-approver').value || null;
@@ -830,6 +914,10 @@
           + (r.well_pm_code ? '<span class="badge muted">کد PM: '
               + A.esc(r.well_pm_code) + '</span>' : '')
           + '<span class="badge muted">آغاز: ' + A.esc(r.created_at_j || '') + '</span>'
+          /* Stopped on purpose: the reason is the whole point of the entry. */
+          + (r.status === 'stopped' && r.outcome_note
+              ? '<span class="badge warn">⛔ ' + A.esc(r.outcome_note) + '</span>'
+              : '')
           + (r.record_id ? '<a class="badge ok" href="/records">رکورد #'
               + J.toFaDigits(r.record_id) + ' ثبت شد</a>'
               : '<span class="badge warn">هنوز رکورد نشده</span>')
@@ -926,6 +1014,35 @@
       if (drop) { removeStage(drop.closest('.wf-stage')); return; }
       var back = ev.target.closest('.restore-stage');
       if (back) { restoreStage(back.closest('.wf-stage')); return; }
+      var addAct = ev.target.closest('.wf-action-add');
+      if (addAct) {
+        var acard = addAct.closest('.wf-stage');
+        var stageData = definition.workflow.stages.find(function (x) {
+          return String(x.id) === acard.dataset.stage; });
+        var holder = document.createElement('div');
+        holder.innerHTML = actionRow({ kind: 'stop', user_ids: [] }, stageData);
+        acard.querySelector('.wf-action-list').appendChild(holder.firstChild);
+        markDirty(acard);
+        return;
+      }
+      var delAct = ev.target.closest('.act-del');
+      if (delAct) {
+        var dcard = delAct.closest('.wf-stage');
+        delAct.closest('.wf-action').remove();
+        markDirty(dcard);
+        return;
+      }
+      var whoOff = ev.target.closest('.act-who-off');
+      if (whoOff) {
+        var arow = whoOff.closest('.wf-action');
+        var gone = Number(whoOff.closest('.owner-chip').dataset.who);
+        var left = (arow.dataset.users || '').split(',').filter(Boolean)
+          .map(Number).filter(function (x) { return x !== gone; });
+        arow.dataset.users = left.join(',');
+        arow.querySelector('.owner-chips').innerHTML = actionWho(left);
+        markDirty(arow.closest('.wf-stage'));
+        return;
+      }
       var roff = ev.target.closest('.refer-off');
       if (roff) {
         var rchip = roff.closest('.owner-chip');
@@ -969,6 +1086,19 @@
       if (ev.target.classList.contains('wf-approval-blocks')) {
         var row = ev.target.closest('.wf-blocks-row');
         if (row) row.classList.toggle('on', ev.target.checked);
+      }
+      if (ev.target.classList.contains('act-kind')) {
+        var krow = ev.target.closest('.wf-action');
+        krow.querySelector('.wf-action-return').hidden = ev.target.value !== 'return';
+      }
+      if (ev.target.classList.contains('act-who-add') && ev.target.value) {
+        var wrow = ev.target.closest('.wf-action');
+        var cur = (wrow.dataset.users || '').split(',').filter(Boolean).map(Number);
+        var add = Number(ev.target.value);
+        if (cur.indexOf(add) === -1) cur.push(add);
+        wrow.dataset.users = cur.join(',');
+        wrow.querySelector('.owner-chips').innerHTML = actionWho(cur);
+        ev.target.value = '';
       }
       if (ev.target.classList.contains('refer-add') && ev.target.value) {
         var ids = referIds(card);
