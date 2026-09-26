@@ -138,7 +138,16 @@ def get_definition():
               "is_active": u.is_active}
              for u in AppUser.query.filter_by(is_active=True)
              .order_by(AppUser.first_name, AppUser.username).all()]
+    # The questions a decision can be tied to — «نمایش فقط وقتی نتیجه بررسی =
+    # نیاز به کشیدن ندارد» — with the answers each one offers.
+    from .api_formbuilder import _choice_sources, _options_of
+    choice_fields = [{"name": f.field_name, "label": f.label,
+                      "section": f.section.code if f.section else None,
+                      "section_title": f.section.title if f.section else None,
+                      "options": [o["value"] for o in _options_of(f)]}
+                     for f in _choice_sources()]
     return ok({"workflow": workflow.to_dict(),
+               "choice_fields": choice_fields,
                "palette": {"sections": palette_sections, "fields": palette_fields},
                "users": users,
                "applies_to": [{"value": k, "label": v} for k, v in APPLIES_TO.items()],
@@ -524,12 +533,22 @@ def update_stage(stage_id):
             people, error = _people(a.get("user_ids") or [])
             if error:
                 return fail(error, 422)
+            when = (a.get("when") or "").strip()
+            if when:
+                on, _, wanted = when.partition("=")
+                values = [v.strip() for v in wanted.split("|") if v.strip()]
+                if not FormField.query.filter_by(field_name=on.strip()).first() \
+                        or not values:
+                    return fail("برای «نمایش فقط وقتی…»، پرسش و دست‌کم یک پاسخ "
+                                "را انتخاب کنید.", 422)
+                when = on.strip() + "=" + "|".join(values)
             clean.append({
                 "id": str(a.get("id") or f"a{n}"), "kind": kind,
                 "label": normalize_text(a.get("label") or "") or None,
                 "target_stage": target if kind == ACTION_RETURN else None,
                 "needs_docs": bool(a.get("needs_docs")) and kind == ACTION_RETURN,
                 "user_ids": [p.id for p in people],
+                "when": when or None,
             })
         stage.actions_json = json.dumps(clean, ensure_ascii=False) if clean else None
     if "referral_hint" in payload:

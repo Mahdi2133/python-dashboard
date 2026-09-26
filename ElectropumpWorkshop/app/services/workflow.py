@@ -834,6 +834,15 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
             f"مرحله «{hold.title}» در انتظار تأیید «{who}» است و تا زمانی که "
             f"تأیید نشود، مرحله‌های بعدی ثبت نمی‌شوند.")
 
+    # An answer that means «this goes no further» — «نیاز به کشیدن ندارد» —
+    # takes «ارسال» away while a decision tied to it is open to this person.
+    tied = forced_decisions(instance, stage, user, payload)
+    if tied:
+        raise WorkflowError(
+            "با این پاسخ، کار به مرحله‌ی بعد نمی‌رود؛ در «تصمیم شما در این مرحله» "
+            + " یا ".join(f"«{a['label']}»" for a in tied) + " را انتخاب کنید "
+            "و توضیح آن را بنویسید.")
+
     # Sent back «with a photo, a video, any document»: nothing goes on until
     # something has been attached to this stage since the request.
     owed = docs_owed(instance, stage.stage_number)
@@ -1010,6 +1019,34 @@ def actions_for(instance: WorkflowInstance, stage: WorkflowStage, user) -> list:
     return out
 
 
+def action_rule_met(rule: str | None, values: dict) -> bool:
+    """Whether «field=a|b» holds in ``values`` (a multi-choice contains one)."""
+    if not rule:
+        return True
+    on, _, wanted = rule.partition("=")
+    options = {normalize_text(v) for v in wanted.split("|") if v.strip()}
+    have = values.get(on.strip())
+    have = have if isinstance(have, (list, tuple)) else [have]
+    return any(normalize_text(str(h)) in options for h in have if h not in (None, ""))
+
+
+def _answers(instance: WorkflowInstance, payload: dict | None) -> dict:
+    """What the run knows, with what is being submitted right now on top."""
+    return {**(instance.payload or {}), **(payload or {})}
+
+
+def forced_decisions(instance: WorkflowInstance, stage: WorkflowStage, user,
+                     payload: dict | None = None) -> list:
+    """Decisions tied to an answer that has now been given.
+
+    «نتیجه بررسی = نیاز به کشیدن ندارد» means the work does not go on to the
+    workshop: while such a decision is open to this person, «ارسال» is not.
+    """
+    values = _answers(instance, payload)
+    return [a for a in actions_for(instance, stage, user)
+            if a.get("when") and action_rule_met(a["when"], values)]
+
+
 def earlier_stages(instance: WorkflowInstance, stage: WorkflowStage) -> list:
     """The stages before this one that somebody filled on this run.
 
@@ -1024,7 +1061,7 @@ def earlier_stages(instance: WorkflowInstance, stage: WorkflowStage) -> list:
         if start is not None and other.stage_number < start:
             continue                       # closed unused when this run began
         entry = _entry_for(instance, other.stage_number)
-        if entry is None or entry.status not in (ENTRY_SUBMITTED, ENTRY_DONE):
+        if entry is None or entry.status not in ENTRY_DONE + (ENTRY_AWAITING,):
             continue
         out.append({"stage_number": other.stage_number, "title": other.title,
                     "by": entry.user.full_name if entry.user else None})
@@ -1085,6 +1122,10 @@ def take_action(instance: WorkflowInstance, stage_number: int, user,
                    if a["id"] == action_id), None)
     if action is None or action["kind"] == ACTION_FORWARD:
         raise WorkflowError("این اقدام در این مرحله برای شما تعریف نشده است.")
+    if not action_rule_met(action.get("when"), _answers(instance, payload)):
+        on, _, wanted = (action.get("when") or "").partition("=")
+        raise WorkflowError(f"«{action['label']}» فقط وقتی ممکن است که پاسخ "
+                            f"«{wanted.replace('|', '» یا «')}» انتخاب شده باشد.")
     reason = (note or "").strip()
     if not reason:
         raise WorkflowError("برای «" + action["label"] + "» نوشتن دلیل الزامی است.",

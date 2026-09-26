@@ -538,6 +538,7 @@
       + '<label class="mini-check"><input type="checkbox" class="act-docs"'
       + (a.needs_docs ? ' checked' : '') + '> تا عکس، فیلم یا فایلی بارگذاری نشود، '
       + 'ثبت دوباره ممکن نیست</label></div>'
+      + whenControl(a, s)
       + '<div class="wf-action-who act-field">'
       + '<label>این دکمه برای چه کسانی نمایش داده شود؟</label>'
       + '<label class="who-opt"><input type="radio" class="act-who-mode" name="' + group
@@ -550,6 +551,48 @@
       + '<select class="act-who-add">' + userOptions(null, 'افزودن فرد…')
       + '</select></div></div>'
       + '</div></div>';
+  }
+
+  /* «این دکمه کِی نمایش داده شود؟» — always, or only while a question on the
+     form has a given answer: «نتیجه بررسی = نیاز به کشیدن ندارد». Then the
+     decision comes up by itself the moment that answer is picked, and
+     «ارسال به مرحله بعد» steps aside. The questions on this stage come first. */
+  function whenFields(s) {
+    var codes = (s.items || []).map(function (i) { return i.code; });
+    var all = definition.choice_fields || [];
+    var here = all.filter(function (f) {
+      return codes.indexOf(f.section) !== -1 || codes.indexOf(f.name) !== -1;
+    });
+    return here.concat(all.filter(function (f) { return here.indexOf(f) === -1; }));
+  }
+
+  function whenValues(field, picked) {
+    if (!field) return '';
+    return field.options.map(function (v) {
+      return '<label class="mini-check"><input type="checkbox" class="act-when-val" value="'
+        + A.esc(v) + '"' + (picked.indexOf(v) !== -1 ? ' checked' : '') + '> '
+        + A.esc(v) + '</label>';
+    }).join('') || '<span class="hint">این پرسش گزینه‌ای ندارد.</span>';
+  }
+
+  function whenControl(a, s) {
+    var rule = a.when || '';
+    var on = rule.split('=')[0] || '';
+    var picked = rule.indexOf('=') !== -1 ? rule.split('=').slice(1).join('=').split('|') : [];
+    var fields = whenFields(s);
+    var field = fields.find(function (f) { return f.name === on; });
+    return '<div class="act-field act-when">'
+      + '<label>این دکمه کِی نمایش داده شود؟</label>'
+      + '<select class="act-when-on"><option value="">همیشه</option>'
+      + fields.map(function (f) {
+          return '<option value="' + A.esc(f.name) + '"' + (f.name === on ? ' selected' : '')
+            + ' title="' + A.esc(f.section_title || '') + '">فقط وقتی «' + A.esc(f.label)
+            + '» این باشد:</option>';
+        }).join('') + '</select>'
+      + '<div class="act-when-values">' + whenValues(field, picked) + '</div>'
+      + '<span class="hint act-when-hint"' + (on ? '' : ' hidden') + '>با انتخاب این پاسخ، '
+      + 'این تصمیم خودبه‌خود انتخاب می‌شود و «ارسال به مرحله بعد» کنار می‌رود.</span>'
+      + '</div>';
   }
 
   function actionWho(ids) {
@@ -575,7 +618,18 @@
         throw new Error('برای «' + row.querySelector('.act-label').value.trim()
           + '» گزینه‌ی «فقط این افراد» انتخاب شده ولی کسی اضافه نشده است.');
       }
+      var whenOn = row.querySelector('.act-when-on');
+      var when = '';
+      if (whenOn && whenOn.value) {
+        var vals = A.qsa('.act-when-val:checked', row).map(function (b) { return b.value; });
+        if (!vals.length) {
+          throw new Error('برای «' + row.querySelector('.act-label').value.trim()
+            + '» پرسش انتخاب شده ولی هیچ پاسخی تیک نخورده است.');
+        }
+        when = whenOn.value + '=' + vals.join('|');
+      }
       out.push({
+        when: when,
         id: row.dataset.id || '',
         kind: kindSel ? kindSel.value : row.dataset.kind,
         label: row.querySelector('.act-label').value.trim(),
@@ -813,6 +867,14 @@
       var box = el.getBoundingClientRect();
       return y < box.top + box.height / 2;
     });
+  }
+
+  /* The decision switches save themselves. A switch that looks on but is not
+     saved until a button far below is pressed reads as «it does not save». */
+  function autosaveActions(card) {
+    if (!card) return;
+    clearTimeout(card._actSave);
+    card._actSave = setTimeout(function () { saveStage(card); }, 500);
   }
 
   function markDirty(stage) {
@@ -1089,6 +1151,7 @@
         var dcard = delAct.closest('.wf-stage');
         delAct.closest('.wf-action').remove();
         markDirty(dcard);
+        autosaveActions(dcard);
         return;
       }
       var whoOff = ev.target.closest('.act-who-off');
@@ -1100,6 +1163,7 @@
         arow.dataset.users = left.join(',');
         arow.querySelector('.owner-chips').innerHTML = actionWho(left);
         markDirty(arow.closest('.wf-stage'));
+        if (left.length) autosaveActions(arow.closest('.wf-stage'));
         return;
       }
       var roff = ev.target.closest('.refer-off');
@@ -1151,6 +1215,16 @@
         krow.dataset.kind = ev.target.value;
         krow.querySelector('.wf-action-return').hidden = ev.target.value !== 'return';
       }
+      if (ev.target.classList.contains('act-when-on')) {
+        var wrow = ev.target.closest('.wf-action');
+        var st = definition.workflow.stages.find(function (x) {
+          return String(x.id) === card.dataset.stage; });
+        var f = whenFields(st || {}).find(function (x) { return x.name === ev.target.value; });
+        wrow.querySelector('.act-when-values').innerHTML = whenValues(f, []);
+        wrow.querySelector('.act-when-hint').hidden = !ev.target.value;
+        return;                        // saved once an answer is ticked
+      }
+      if (ev.target.closest('.wf-actions')) autosaveActions(card);
       if (ev.target.classList.contains('act-on')) {
         ev.target.closest('.wf-action').querySelector('.wf-action-body').hidden =
           !ev.target.checked;

@@ -310,6 +310,9 @@ class WorkflowStage(db.Model):
                 "needs_docs": bool(a.get("needs_docs")) if kind == ACTION_RETURN
                               else False,
                 "user_ids": _ids(",".join(str(x) for x in (a.get("user_ids") or []))),
+                # «field=a|b»: offer this decision only while that answer is
+                # given — «نتیجه بررسی = نیاز به کشیدن ندارد». Empty: always.
+                "when": (a.get("when") or "").strip() or None,
             })
         return out
 

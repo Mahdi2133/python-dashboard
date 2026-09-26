@@ -1097,3 +1097,17 @@ select.mini { font-size:11px; padding:2px 4px; width:auto; }
 .who-opt { display:flex; align-items:center; gap:6px; cursor:pointer; font-weight:500; }
 .who-opt input { width:auto; }
 .who-some { display:flex; flex-direction:column; gap:6px; padding-inline-start:22px; }
+
+/* The server is running older code than the files on disk. */
+.stale-server { position:sticky; top:0; z-index:9999; background:#fff3cd;
+  color:#6b4e00; border-bottom:2px solid #f0c36d; padding:10px 16px;
+  font-size:13.5px; line-height:1.8; text-align:center; }
+
+.decision-opt[hidden] { display:none; }
+.wf-decision.flash { animation: decisionFlash 1.4s ease-out; }
+@keyframes decisionFlash { 0% { box-shadow:0 0 0 0 rgba(240,160,60,.65); }
+  100% { box-shadow:0 0 0 14px rgba(240,160,60,0); } }
+
+.act-when-values { display:flex; flex-wrap:wrap; gap:4px 12px; }
+.act-when-values:empty { display:none; }
+.act-when-hint[hidden] { display:none; }

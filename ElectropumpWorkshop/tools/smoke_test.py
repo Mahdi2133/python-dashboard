@@ -1345,6 +1345,84 @@ def main():
         _db.session.commit()
     check("و دوباره دادنش هم کار می‌کند", sorted(users) == sorted([bz_id, kh_id]),
           str(users))
+    print("\n— تصمیم وابسته به پاسخ: «نیاز به کشیدن ندارد» → توقف —")
+    with app.app_context():
+        from app.extensions import db as _db
+        from app.models import AppUser
+        from app.models.meta import AppMeta
+        from app.models.workflow import INSTANCE_STOPPED
+        from app.services.seed import seed_review_decision
+        from app.services.workflow import (WorkflowError, active_workflow,
+                                           forced_decisions, stage_by_number,
+                                           start_instance, submit_stage,
+                                           sync_entries, take_action)
+        wf = active_workflow()
+        s2 = next(x for x in wf.stages if x.stage_number == 2)
+        mk = AppUser.query.filter_by(username="markaz").one()
+        bz = AppUser.query.filter_by(username="bozorg").one()
+        AppMeta.set("workflow_review_decision_v1", "")
+        _db.session.commit()
+        seed_review_decision()
+        stop = next((a for a in s2.actions if a["kind"] == "stop"), None)
+        check("مرحله‌ی «نتیجه بررسی» توقفِ وابسته به پاسخ دارد",
+              stop is not None and stop["when"] == "review_decision=نیاز به کشیدن ندارد",
+              str(stop)[:120])
+        check("و «برگشت برای اصلاح» کنارش هست",
+              any(a["kind"] == "return" for a in s2.actions))
+
+        inst = start_instance({"operation_kind": "کشیدن",
+                               "well": "امام رضا 11"}, mk)
+        sync_entries(inst)
+        _db.session.commit()
+        submit_stage(inst, {"op_jdate": "1405/07/05", "failure": ["هوادهی"],
+                            "fail_aeration_p01": ["وضعیت لوله و اتصالات بررسی شده است"],
+                            "fail_aeration_p02": 3, "fail_aeration_p03": 12},
+                     mk, stage_number=1)
+        st2 = stage_by_number(inst, 2)
+        no = {"review_decision": "نیاز به کشیدن ندارد"}
+        yes = {"review_decision": "نیاز به کشیدن دارد"}
+        check("با «ندارد»، تصمیم توقف پیش می‌آید",
+              [a["id"] for a in forced_decisions(inst, st2, bz, no)] == ["stop"])
+        check("با «دارد»، هیچ تصمیمی تحمیل نمی‌شود",
+              forced_decisions(inst, st2, bz, yes) == [])
+        try:
+            submit_stage(inst, no, bz, stage_number=2)
+            blocked = False
+        except WorkflowError as exc:
+            blocked, why = True, str(exc)
+        check("با «ندارد»، «ارسال به مرحله بعد» رد می‌شود", blocked,
+              why[:70] if blocked else "")
+        try:
+            take_action(inst, 2, bz, "stop", note="نیازی نیست", payload=yes)
+            refused = False
+        except WorkflowError:
+            refused = True
+        check("با «دارد»، دکمه‌ی توقف پذیرفته نمی‌شود", refused)
+        take_action(inst, 2, bz, "stop",
+                    note="بررسی نشان داد چاه قابل اصلاح در محل است", payload=no)
+        check("با «ندارد» و توضیح، فرایند متوقف می‌شود",
+              inst.status == INSTANCE_STOPPED, inst.status)
+        check("و پاسخ «ندارد» در پرونده ثبت می‌ماند",
+              inst.payload.get("review_decision") == "نیاز به کشیدن ندارد")
+        s2_id = s2.id
+    r = c.put(f"/api/workflow/stages/{s2_id}", json={"actions": [
+        {"id": "stop", "kind": "stop", "label": "x", "when": "review_decision="}]})
+    check("شرط بدون پاسخ در فرایندساز رد می‌شود", r.status_code == 422)
+    r = c.put(f"/api/workflow/stages/{s2_id}", json={"actions": [
+        {"id": "stop", "kind": "stop", "label": "توقف",
+         "when": "review_decision=نیاز به کشیدن ندارد"}]})
+    check("و شرط درست ذخیره و برگردانده می‌شود",
+          r.status_code == 200
+          and (r.get_json()["data"]["actions"] or [{}])[0].get("when")
+          == "review_decision=نیاز به کشیدن ندارد")
+    d = c.get("/api/workflow/definition").get_json()["data"]
+    rf = next((f for f in d.get("choice_fields", []) if f["name"] == "review_decision"), None)
+    check("پرسش‌های گزینه‌ای با پاسخ‌هایشان به فرایندساز می‌رسند",
+          rf is not None and "نیاز به کشیدن ندارد" in rf["options"], str(rf)[:120])
+    c.put(f"/api/workflow/stages/{s2_id}", json={"actions": []})
+    b = c.get("/api/build").get_json()["data"]
+    check("سرور می‌گوید با کدام نسخه اجرا شده", b["stale"] is False, str(b))
+
     html = c.get("/inbox").get_data(as_text=True)
     check("نشانی فایل‌های ثابت نسخه دارد (کش مرورگر نسخه‌ی قدیم را نگه ندارد)",
           "inbox.js?v=" in html)

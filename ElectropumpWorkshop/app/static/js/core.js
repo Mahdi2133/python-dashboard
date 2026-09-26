@@ -305,9 +305,32 @@
     });
   }
 
+  /* After an update the files on disk are new while the server window may
+     still be running the old code: pages look new, but nothing new works.
+     A server that does not even know /api/build predates this check, so it
+     is old by definition. Say so in one line at the top of every page. */
+  function checkBuild() {
+    if (!window.fetch) return;
+    fetch('/api/build', { credentials: 'same-origin' }).then(function (r) {
+      if (r.status === 404) return { stale: true };
+      return r.ok ? r.json().then(function (j) { return j.data || {}; }) : {};
+    }).then(function (d) {
+      if (!d || !d.stale || document.getElementById('stale-server')) return;
+      var bar = document.createElement('div');
+      bar.id = 'stale-server';
+      bar.className = 'stale-server';
+      bar.innerHTML = '⚠️ برنامه به‌روز شده ولی <b>سرور هنوز نسخه‌ی قبلی را اجرا '
+        + 'می‌کند</b>؛ تا وقتی سرور دوباره راه‌اندازی نشود، تغییرات جدید ذخیره '
+        + 'نمی‌شوند یا نمایش داده نمی‌شوند. پنجره‌ی سرور را ببندید، دوباره اجرا کنید '
+        + 'و صفحه را تازه کنید (Ctrl+F5).';
+      document.body.insertBefore(bar, document.body.firstChild);
+    }).catch(function () {});
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     measureHeader();
     setupNav();
+    checkBuild();
   });
   window.addEventListener('resize', debounce(measureHeader, 120));
   window.addEventListener('load', measureHeader);

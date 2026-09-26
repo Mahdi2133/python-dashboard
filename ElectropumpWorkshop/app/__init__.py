@@ -137,6 +137,37 @@ def create_app(config_overrides: dict | None = None) -> Flask:
         except OSError:
             pass
 
+    # Which code this process is running, against what is on disk now. An
+    # update is copied over the files while the server window may still be
+    # open: the browser then gets the new pages and scripts from disk, but
+    # every request is answered by the old code already loaded — a switch that
+    # «does not save», a button that never appears. The pages ask this, and
+    # say plainly that the server has to be restarted.
+    code_root = os.path.dirname(os.path.abspath(__file__))
+
+    def _code_stamp():
+        newest = 0.0
+        for folder, _dirs, files in os.walk(code_root):
+            if "__pycache__" in folder:
+                continue
+            for name in files:
+                if name.endswith((".py", ".html")):
+                    try:
+                        newest = max(newest, os.stat(os.path.join(folder, name)).st_mtime)
+                    except OSError:
+                        pass
+        return newest
+
+    started_with = _code_stamp()
+
+    @app.get("/api/build")
+    def _build_info():
+        from flask import jsonify
+        on_disk = _code_stamp()
+        return jsonify({"ok": True, "data": {
+            "started_with": int(started_with), "on_disk": int(on_disk),
+            "stale": on_disk > started_with + 1}})
+
     # The migration tooling needs an app whose database has NOT been created
     # yet, so `flask db migrate` can diff the models against an empty schema.
     if os.environ.get("ELECTROPUMP_SKIP_BOOTSTRAP") != "1":

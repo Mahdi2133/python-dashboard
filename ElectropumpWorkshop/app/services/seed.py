@@ -778,6 +778,53 @@ def seed_default_return() -> dict:
     return {"default_returns_added": given} if given else {}
 
 
+_REVIEW_KEY = "workflow_review_decision_v1"
+
+
+def seed_review_decision() -> dict:
+    """«نیاز به کشیدن ندارد» brings up «توقف» by itself, once.
+
+    Wherever the stage that asks «نتیجه بررسی» is, it gets a stop decision
+    tied to that answer, and keeps a «برگشت برای اصلاح» beside it, so the
+    reviewer who finds the well need not be pulled either closes the run or
+    sends it back — «ارسال» to the workshop stops making sense. Ordinary
+    actions the admin can change or delete; this runs only once.
+    """
+    import json
+    from ..models import WorkflowDefinition
+    from ..models.meta import AppMeta
+
+    if AppMeta.get(_REVIEW_KEY):
+        return {}
+    field = FormField.query.filter_by(field_name="review_decision").first()
+    given = 0
+    if field is not None:
+        rule = "review_decision=نیاز به کشیدن ندارد"
+        for workflow in WorkflowDefinition.query.all():
+            for stage in workflow.stages:
+                if not stage.is_active or not any(
+                        i.field_id == field.id or
+                        (i.section_id and i.section_id == field.section_id)
+                        for i in stage.items):
+                    continue
+                acts = stage.actions
+                if not any(a["kind"] == "stop" for a in acts):
+                    acts.insert(0, {"id": "stop", "kind": "stop",
+                                    "label": "نیاز به کشیدن ندارد — توقف فرایند",
+                                    "target_stage": None, "needs_docs": False,
+                                    "user_ids": [], "when": rule})
+                if not any(a["kind"] == "return" for a in acts):
+                    acts.append({"id": "back", "kind": "return",
+                                 "label": "برگشت به مرحله‌ی قبل برای اصلاح",
+                                 "target_stage": None, "needs_docs": False,
+                                 "user_ids": [], "when": None})
+                stage.actions_json = json.dumps(acts, ensure_ascii=False)
+                given += 1
+    AppMeta.set(_REVIEW_KEY, "done")
+    db.session.commit()
+    return {"review_decisions_added": given} if given else {}
+
+
 from .seed_failure import seed_failure_forms
 
 
@@ -798,6 +845,7 @@ def seed_all(force: bool = False) -> dict:
     result.update(backfill_entry_stages())
     result.update(seed_prefill_sources())
     result.update(seed_default_return())
+    result.update(seed_review_decision())
     result["changed"] = any(v for k, v in result.items() if isinstance(v, int))
     if result["changed"]:
         log.info("Seed applied: %s", result)

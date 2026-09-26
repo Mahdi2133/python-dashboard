@@ -415,13 +415,68 @@
         : a.kind === 'stop'
           ? 'فرایند همین‌جا بسته می‌شود و ادامه پیدا نمی‌کند.'
           : 'فرم را کامل کنید تا کار به مرحله‌ی بعد برود.';
-      return '<label class="decision-opt ' + a.kind + '">'
+      return '<label class="decision-opt ' + a.kind + '"'
+        + (a.when ? ' data-when="' + A.esc(a.when) + '"' : '') + '>'
         + '<input type="radio" name="wf_action" value="' + A.esc(a.id) + '"'
         + ' data-kind="' + a.kind + '"' + (i === 0 ? ' checked' : '') + '>'
         + '<span class="d-main">' + icon + ' ' + A.esc(a.label) + '</span>'
         + '<span class="d-sub">' + sub + '</span></label>';
     }).join('');
     A.qs('#wf-decision-note').value = '';
+    decisionTied = false;
+    refreshDecisions();
+  }
+
+  /* A decision tied to an answer — «نمایش فقط وقتی نتیجه بررسی = نیاز به
+     کشیدن ندارد» — comes up the moment that answer is picked: it is selected,
+     its description box opens, and «ارسال به مرحله بعد» steps aside, because
+     that answer means the work does not go on. Take the answer back and it
+     all goes back. The server holds the same rule on submit. */
+  var decisionTied = false;
+
+  function ruleHolds(rule, values) {
+    var at = rule.indexOf('=');
+    if (at < 0) return true;
+    var wanted = rule.slice(at + 1).split('|').map(function (v) { return v.trim(); })
+      .filter(Boolean);
+    var have = values[rule.slice(0, at).trim()];
+    have = Array.isArray(have) ? have : [have];
+    return have.some(function (h) {
+      return h !== null && h !== undefined && wanted.indexOf(String(h).trim()) !== -1;
+    });
+  }
+
+  function refreshDecisions() {
+    var box = A.qs('#wf-decision');
+    if (!box || !current || !current.detail) return;
+    var detail = current.detail;
+    if (!detail.may_act || detail.awaiting_my_decision
+        || (detail.actions || []).length < 2) return;
+    var values = Object.assign({}, detail.payload || {}, form ? form.collect() : {});
+    var opts = A.qsa('#wf-decision-options .decision-opt');
+    var tied = [];
+    opts.forEach(function (opt) {
+      opt._ok = !opt.dataset.when || ruleHolds(opt.dataset.when, values);
+      if (opt.dataset.when && opt._ok) tied.push(opt);
+    });
+    var others = 0;
+    opts.forEach(function (opt) {
+      var show = opt.classList.contains('forward') ? !tied.length : opt._ok;
+      opt.hidden = !show;
+      if (show && !opt.classList.contains('forward')) others += 1;
+    });
+    box.classList.toggle('hidden', !others);
+    var checked = A.qs('input[name="wf_action"]:checked');
+    var lost = !checked || checked.closest('.decision-opt').hidden;
+    if ((tied.length && !decisionTied) || lost) {
+      var pick = tied[0] || opts.find(function (o) { return !o.hidden; });
+      if (pick) pick.querySelector('input[type=radio]').checked = true;
+    }
+    if (tied.length && !decisionTied) {
+      box.classList.remove('flash'); void box.offsetWidth; box.classList.add('flash');
+      if (box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    decisionTied = !!tied.length;
     decisionChanged();
   }
 
@@ -665,6 +720,7 @@
         if (name === 'required_action' || name === 'pump_type_now') {
           refreshStageForm();
         }
+        refreshDecisions();
       },
     });
     form.render();
@@ -697,6 +753,7 @@
        «اطلاعات چاه و نصب» appears only once «اقدام مورد نیاز» is answered —
        and its «تاریخ نصب قبلی» has to be filled like everything else was. */
     if (current.detail.well) fillPrevious(current.detail.well);
+    refreshDecisions();
   }, 250);
 
   /* The «…قبلی» fields are read off the well's last operation. Whether that
@@ -758,7 +815,7 @@
           return;
         }
         if (!why) {
-          err.textContent = 'دلیل را بنویسید.'; err.classList.remove('hidden');
+          err.textContent = 'توضیح این تصمیم را بنویسید.'; err.classList.remove('hidden');
           A.qs('#wf-decision-note').focus();
           button.disabled = false;
           return;
