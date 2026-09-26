@@ -11,9 +11,10 @@
   var data = null, links = {};          // cause value → [form code]
 
   function formTitle(code) {
-    var f = (data.forms || []).concat(data.others || [])
+    var f = (data.forms || []).concat(data.others || [], data.field_links || [],
+                                      data.field_others || [])
       .find(function (x) { return x.code === code; });
-    return f ? f.title : code;
+    return f ? (code.indexOf('field:') === 0 ? '◽ ' : '') + f.title : code;
   }
 
   function render() {
@@ -34,6 +35,13 @@
       return '<option value="' + A.esc(f.code) + '" data-plain="'
         + (f.has_rule ? '0' : '1') + '">' + A.esc(f.title) + '</option>';
     }).join('');
+    var fieldChoices = (data.field_links || []).concat(data.field_others || [])
+      .map(function (f) {
+        return '<option value="' + A.esc(f.code) + '" data-plain="'
+          + (f.causes || f.has_rule ? '0' : '1') + '" data-field="1">◽ '
+          + A.esc(f.title) + (f.section_title ? ' — ' + A.esc(f.section_title) : '')
+          + '</option>';
+      }).join('');
 
     box.innerHTML = (data.causes || []).map(function (c) {
       var mine = links[c.value] || [];
@@ -54,6 +62,8 @@
         + (choices ? '<optgroup label="فرم‌های علت">' + choices + '</optgroup>' : '')
         + (otherChoices ? '<optgroup label="بخش‌های دیگر فرم">' + otherChoices
             + '</optgroup>' : '')
+        + (fieldChoices ? '<optgroup label="یک فیلد تکی">' + fieldChoices
+            + '</optgroup>' : '')
         + '</select>'
         + '<button type="button" class="btn-ghost btn-sm cl-new" '
         + 'title="یک فرم خالی تازه برای همین علت بسازید">➕ فرم تازه</button>'
@@ -71,17 +81,29 @@
     sel.innerHTML = (data.sources || []).map(function (s) {
       return '<option value="' + A.esc(s.name) + '"'
         + (s.name === data.field.name ? ' selected' : '') + '>'
-        + A.esc(s.label) + '</option>';
+        + A.esc(s.label) + (s.section_title ? ' — ' + A.esc(s.section_title) : '')
+        + '</option>';
     }).join('');
     render();
   }
+
+  /* Anything created or renamed in the form builder shows up here at once,
+     rather than after the whole page is reloaded. */
+  window.CauseLinksReload = function () {
+    if (!A.qs('#cause-links') || !data) return Promise.resolve();
+    if (A.qs('#cl-state').textContent === 'تغییرات ذخیره نشده است') {
+      return Promise.resolve();     // do not throw away unsaved links
+    }
+    return load(data.field.name).catch(function () {});
+  };
 
   /* Links are kept per cause while editing, and turned around into per-form
      lists on save — every form that was or now is involved gets its full list,
      so unlinking the last cause closes the form instead of opening it for all. */
   async function save() {
     var perForm = {};
-    (data.forms || []).forEach(function (f) { perForm[f.code] = []; });
+    (data.forms || []).concat(data.field_links || [])
+      .forEach(function (f) { perForm[f.code] = []; });
     Object.keys(links).forEach(function (cause) {
       links[cause].forEach(function (code) {
         (perForm[code] = perForm[code] || []).push(cause);
@@ -131,12 +153,21 @@
       var opt = ev.target.selectedOptions[0];
       if (opt && opt.dataset.plain === '1') {
         var go = await A.confirmDialog({
-          title: 'وصل کردن یک بخش معمولی',
-          message: 'بخش «' + formTitle(code) + '» الان برای همه نمایش داده '
+          title: 'وصل کردن یک بخش یا فیلد معمولی',
+          message: '«' + formTitle(code) + '» الان برای همه نمایش داده '
             + 'می‌شود. اگر آن را به این علت وصل کنید، از این به بعد فقط با '
             + 'انتخاب این علت (یا علت‌های دیگری که به آن وصل کنید) باز می‌شود. '
             + 'ادامه می‌دهید؟', confirmText: 'وصل کن' });
         if (!go) { ev.target.value = ''; return; }
+      }
+      if (opt && opt.dataset.field === '1') {
+        // a single field linked from now on
+        var fmoved = (data.field_others || []).find(function (x) { return x.code === code; });
+        if (fmoved) {
+          data.field_others = data.field_others.filter(function (x) { return x.code !== code; });
+          data.field_links.push(Object.assign({ causes: [] }, fmoved));
+        }
+      } else if (opt && opt.dataset.plain === '1') {
         // it becomes a cause form from now on
         var moved = data.others.find(function (x) { return x.code === code; });
         data.others = data.others.filter(function (x) { return x.code !== code; });

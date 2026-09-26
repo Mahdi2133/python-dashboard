@@ -778,16 +778,19 @@
         return Object.prototype.hasOwnProperty.call(values, n);
       });
       if (!filled.length) {
-        fill('#wf-prev-note', '<div class="alert warn">ℹ برای چاه «'
-          + A.esc(wellName) + '» عملیات قبلی‌ای در سامانه ثبت نشده است، '
-          + 'بنابراین فیلدهای «قبلی» خالی‌اند و باید دستی وارد شوند.</div>');
+        fill('#wf-prev-note', '<div class="alert warn">ℹ ' + (data.has_history
+          ? 'در سوابق چاه «' + A.esc(wellName) + '» برای فیلدهای «قبلی» این فرم '
+            + 'مقداری ثبت نشده است؛ آن‌ها را دستی وارد کنید.'
+          : 'برای چاه «' + A.esc(wellName) + '» عملیات قبلی‌ای در سامانه ثبت نشده '
+            + 'است، بنابراین فیلدهای «قبلی» خالی‌اند و باید دستی وارد شوند.')
+          + '</div>');
         return;
       }
       /* Filled in, never locked: the operator can overwrite any of it. */
       form.setValues(values, { onlyEmpty: true, flash: true });
       var src = data.source || {};
-      fill('#wf-prev-note', '<div class="alert info">✓ مقادیر «قبلی» از آخرین '
-        + 'عملیات این چاه'
+      fill('#wf-prev-note', '<div class="alert info">✓ مقادیر «قبلی» از سوابق '
+        + 'این چاه'
         + (src.date ? ' (<b>' + A.esc(src.date) + '</b>'
             + (src.operation ? ' — ' + A.esc(src.operation) : '') + ')' : '')
         + ' پر شد: <b>' + filled.length + ' فیلد</b>. '

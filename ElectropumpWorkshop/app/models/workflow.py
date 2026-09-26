@@ -387,10 +387,18 @@ class WorkflowStageItem(db.Model):
     # is how a checklist filled in one stage is carried, read-only, into the
     # stages after it — and the admin decides, item by item, which it is.
     is_read_only = db.Column(db.Boolean, nullable=False, default=False)
+    # Fields of this section that are shown here but not editable — the rest
+    # of the section is filled as usual. «تیپ پمپ قبلی» read off the well's
+    # history, visible to کارگاه but not theirs to change.
+    locked_fields = db.Column(db.Text)
 
     stage = db.relationship("WorkflowStage", back_populates="items")
     section = db.relationship("FormSection")
     field = db.relationship("FormField")
+
+    @property
+    def locked_names(self) -> list:
+        return [n.strip() for n in (self.locked_fields or "").split(",") if n.strip()]
 
     @property
     def kind(self):
@@ -409,6 +417,7 @@ class WorkflowStageItem(db.Model):
             "applies_to_label": APPLIES_TO.get(self.applies_to, self.applies_to),
             "is_optional": self.is_optional,
             "is_read_only": self.is_read_only,
+            "locked_fields": self.locked_names,
         }
 
 

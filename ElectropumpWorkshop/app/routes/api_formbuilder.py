@@ -88,11 +88,13 @@ def get_schema():
                 on, _, value = rule.partition("=")
                 conditional.append({"field": field["field_name"],
                                     "on": on.strip(), "value": value.strip()})
-    from ..services.workflow import PREFILL_WHEN
+    from ..services.workflow import PREFILL_WELL_ATTRS, PREFILL_WHEN
     return ok({"sections": sections, "lookups": lookups,
                "conditional": conditional,
                "prefill_when": [{"value": k, "label": v}
                                 for k, v in PREFILL_WHEN.items()],
+               "prefill_well": [{"value": "@well:" + k, "label": v}
+                                for k, v in PREFILL_WELL_ATTRS.items()],
                "field_types": list(FIELD_TYPES)})
 
 
@@ -214,6 +216,9 @@ def create_field():
         table_order=int(payload.get("table_order") or 0),
         export_header=payload.get("export_header") or label,
         visible_when=normalize_text(payload.get("visible_when")) or None,
+        # «برداشت از سوابق» chosen while creating the field was dropped here,
+        # so a new field never filled from the well's history until edited.
+        prefill_from=normalize_text(payload.get("prefill_from")) or None,
     )
     db.session.add(field)
     db.session.flush()
@@ -436,12 +441,84 @@ def set_field_options(field_id):
 @permission_required("form.manage")
 def reorder_fields():
     payload = body()
+    # A field dragged into another section moves there: the page sends where
+    # each field now sits, not only in what order. Before, only the order was
+    # saved and a moved field sprang back to its old section on reload.
+    sections = {s.id for s in FormSection.query.all()}
+    moved = []
+    for position, row in enumerate(payload.get("placement") or []):
+        field = db.session.get(FormField, int(row.get("id") or 0))
+        target = int(row.get("section_id") or 0)
+        if field is None or target not in sections:
+            continue
+        if field.section_id != target:
+            moved.append(field.label)
+            field.section_id = target
+        field.sort_order = position
+    if moved:
+        record_audit("update", "form_field", None,
+                     summary="انتقال فیلد به بخش دیگر: " + "، ".join(moved))
     for position, field_id in enumerate(payload.get("fields") or []):
         FormField.query.filter_by(id=int(field_id)).update({"sort_order": position})
     for position, section_id in enumerate(payload.get("sections") or []):
         FormSection.query.filter_by(id=int(section_id)).update({"sort_order": position})
     db.session.commit()
     return ok(message="ترتیب ذخیره شد.")
+
+
+def _free_name(base: str) -> str:
+    """``base_2``, ``base_3``… — the first field name nobody has."""
+    base = base[:70]
+    n = 2
+    while FormField.query.filter_by(field_name=f"{base}_{n}").first():
+        n += 1
+    return f"{base}_{n}"
+
+
+@bp.post("/fields/<int:field_id>/copy")
+@permission_required("form.manage")
+def copy_field(field_id):
+    """A second field built like this one, in the section asked for.
+
+    A copy is its own field with its own answers — «قطر لوله» in «مشخصات
+    پمپ» and again in «جدار چاه». Its settings, options and «برداشت از
+    سوابق» come along; a built-in field's copy stores its answers as a form-
+    builder value, since the record column belongs to the original.
+    """
+    source = db.session.get(FormField, field_id)
+    if source is None:
+        return fail("فیلد یافت نشد.", 404)
+    payload = body()
+    section = db.session.get(FormSection, int(payload.get("section_id") or 0))
+    if section is None:
+        return fail("بخش مقصد را انتخاب کنید.", 422)
+    copy = FormField(
+        section_id=section.id, field_name=_free_name(source.field_name),
+        label=normalize_text(payload.get("label")) or source.label,
+        field_type=source.field_type, model_attr=None,
+        lookup_category=source.lookup_category,
+        placeholder=source.placeholder, help_text=source.help_text,
+        default_value=source.default_value, is_required=source.is_required,
+        is_active=True, is_builtin=False, allow_other=source.allow_other,
+        sort_order=max([f.sort_order for f in section.fields], default=0) + 1,
+        col_span=source.col_span, min_value=source.min_value,
+        max_value=source.max_value, max_length=source.max_length, step=source.step,
+        visible_when=source.visible_when, prefill_from=source.prefill_from,
+        show_in_table=False, table_order=0,
+        export_header=(source.export_header or source.label) + f" ({section.title})",
+    )
+    db.session.add(copy)
+    db.session.flush()
+    for opt in source.options:
+        db.session.add(FormFieldOption(field_id=copy.id, value=opt.value,
+                                       label=opt.label, icon=opt.icon,
+                                       sort_order=opt.sort_order,
+                                       is_active=opt.is_active))
+    record_audit("create", "form_field", copy.id,
+                 summary=f"کپی فیلد «{source.label}» در بخش «{section.title}»")
+    db.session.commit()
+    return ok(copy.to_dict(active_only=False),
+              message=f"کپی «{source.label}» در بخش «{section.title}» ساخته شد.")
 
 
 # ── which choice opens which form ────────────────────────────────────────────
@@ -458,7 +535,8 @@ def _choice_sources():
     for f in (FormField.query.filter(FormField.is_active.is_(True))
               .order_by(FormField.sort_order).all()):
         if f.field_type in ("checkbox", "multiselect", "radio", "select",
-                            "checklist") and (f.lookup_category or f.options):
+                            "checklist", "autocomplete") \
+                and (f.lookup_category or f.options) and f.field_name != "well":
             out.append(f)
     return out
 
@@ -506,13 +584,34 @@ def cause_links():
         else:
             row["causes"] = links
             forms.append(row)
+    # Single fields can be opened by a choice too — «قطر لوله» only when
+    # «جنس جدار = فولادی». Keyed «field:<name>» so they sit beside the forms.
+    field_links, field_others = [], []
+    for f in (FormField.query.filter(FormField.is_active.is_(True))
+              .order_by(FormField.section_id, FormField.sort_order).all()):
+        if f.id == field.id:
+            continue
+        row = {"code": "field:" + f.field_name, "title": f.label,
+               "section_title": f.section.title if f.section else None}
+        rule = (f.visible_when or "").strip()
+        on, _, values = rule.partition("=")
+        if rule and on.strip() == name:
+            row["causes"] = [v for v in values.split("|") if v.strip()]
+            field_links.append(row)
+        else:
+            row["has_rule"] = bool(rule)
+            field_others.append(row)
     for opt in options:
-        opt["forms"] = [f["code"] for f in forms if opt["value"] in f["causes"]]
+        opt["forms"] = ([f["code"] for f in forms if opt["value"] in f["causes"]]
+                        + [f["code"] for f in field_links
+                           if opt["value"] in f["causes"]])
     return ok({
         "field": {"name": field.field_name, "label": field.label},
-        "sources": [{"name": f.field_name, "label": f.label}
+        "sources": [{"name": f.field_name, "label": f.label,
+                     "section_title": f.section.title if f.section else None}
                     for f in _choice_sources()],
         "causes": options, "forms": forms, "others": others,
+        "field_links": field_links, "field_others": field_others,
     })
 
 
@@ -530,6 +629,19 @@ def save_cause_links():
         return fail("ساختار اتصال‌ها نامعتبر است.", 422)
     changed = 0
     for code, values in links.items():
+        if code.startswith("field:"):
+            target = FormField.query.filter_by(field_name=code[6:]).first()
+            if target is None:
+                return fail(f"فیلد «{code[6:]}» یافت نشد.", 404)
+            if target.id == field.id:
+                return fail("یک فیلد نمی‌تواند به خودش وصل شود.", 422)
+            picked = [v for v in dict.fromkeys(values or []) if v in allowed]
+            # A field with no choice left becomes an ordinary field again.
+            rule = (f"{name}=" + "|".join(picked)) if picked else None
+            if target.visible_when != rule:
+                target.visible_when = rule
+                changed += 1
+            continue
         section = FormSection.query.filter_by(code=code).first()
         if section is None:
             return fail(f"فرم «{code}» یافت نشد.", 404)

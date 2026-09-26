@@ -1111,3 +1111,23 @@ select.mini { font-size:11px; padding:2px 4px; width:auto; }
 .act-when-values { display:flex; flex-wrap:wrap; gap:4px 12px; }
 .act-when-values:empty { display:none; }
 .act-when-hint[hidden] { display:none; }
+
+/* فرم‌ساز: bring a field from another section. */
+.bring-row { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.bring-row select { flex:1 1 220px; }
+.sortable-list { min-height:34px; }
+
+/* فرایندساز: which fields of a form this stage may fill. */
+.wf-drop-item { flex-wrap:wrap; }
+.lock-toggle { font-size:11px; }
+.wf-lock-panel { flex:1 1 100%; margin-top:6px; padding:8px; border:1px dashed
+  var(--border,#dfe6ea); border-radius:8px; background:#fff; display:flex;
+  flex-direction:column; gap:4px; }
+.wf-lock-panel[hidden] { display:none; }
+.lock-row { display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:4px 6px; border-radius:6px; font-size:12px; cursor:pointer; }
+.lock-row.on { background:#fdf3e1; }
+.lock-row i { font-style:normal; font-size:10.5px; color:var(--text-muted,#6c8592); }
+.lock-choice { display:flex; align-items:center; gap:4px; white-space:nowrap; }
+.lock-choice input { width:auto; }
+.lock-actions { display:flex; gap:6px; margin-top:4px; }

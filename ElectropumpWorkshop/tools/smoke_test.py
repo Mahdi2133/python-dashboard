@@ -1423,6 +1423,141 @@ def main():
     b = c.get("/api/build").get_json()["data"]
     check("سرور می‌گوید با کدام نسخه اجرا شده", b["stale"] is False, str(b))
 
+    print("\n— فرم‌ساز: انتقال و کپی فیلد بین بخش‌ها —")
+    fb = c.get("/api/form-builder?all=1").get_json()["data"]
+    sec_a, sec_b = fb["sections"][0], fb["sections"][1]
+    r = c.post("/api/form-builder/fields", json={
+        "field_name": "pipe_dia_test", "label": "قطر لوله آبده (آزمایشی)",
+        "field_type": "select", "section_id": sec_a["id"], "prefill_from": "@self",
+        "options": [{"value": "۴ اینچ", "label": "۴ اینچ"},
+                    {"value": "۶ اینچ", "label": "۶ اینچ"}]})
+    new_id = (r.get_json() or {}).get("data", {}).get("id")
+    check("فیلد تازه با «برداشت از سوابق» ساخته می‌شود و آن را نگه می‌دارد",
+          r.status_code == 200 and r.get_json()["data"].get("prefill_from") == "@self",
+          str((r.get_json() or {}).get("message"))[:80])
+    order = [{"id": f["id"], "section_id": sec_b["id"]} for f in sec_b["fields"]]
+    order.insert(0, {"id": new_id, "section_id": sec_b["id"]})
+    r = c.post("/api/form-builder/reorder", json={"placement": order})
+    fb2 = c.get("/api/form-builder?all=1").get_json()["data"]
+    moved_to = next(s["code"] for s in fb2["sections"]
+                    if any(f["id"] == new_id for f in s["fields"]))
+    check("کشیدن فیلد به بخش دیگر ذخیره می‌شود (دیگر برنمی‌گردد)",
+          r.status_code == 200 and moved_to == sec_b["code"], moved_to)
+    r = c.post(f"/api/form-builder/fields/{new_id}/copy",
+               json={"section_id": sec_a["id"]})
+    cp = (r.get_json() or {}).get("data") or {}
+    check("کپی فیلد در بخش دیگر ساخته می‌شود",
+          r.status_code == 200 and cp.get("section_id") == sec_a["id"]
+          and cp.get("field_name") == "pipe_dia_test_2", str(cp.get("field_name")))
+    check("و گزینه‌ها و «برداشت از سوابق» هم کپی می‌شوند",
+          len(cp.get("own_options") or []) == 2 and cp.get("prefill_from") == "@self")
+
+    print("\n— برداشت از سوابق: عقب‌تر از آخرین عملیات —")
+    r1 = c.post("/api/records", json={
+        "op_jdate": "1404/02/10", "well": "امام رضا 11", "center": "سوران",
+        "operation": "نصب", "motor_curr": "18.5", "pump_curr": "233",
+        "pipe_dia_test": "۶ اینچ"})
+    r2 = c.post("/api/records", json={
+        "op_jdate": "1405/07/08", "well": "امام رضا 11", "center": "سوران",
+        "operation": "نصب", "motor_curr": "18.5", "pump_curr": "233"})
+    check("دو عملیات آزمایشی ثبت شد", r1.status_code == 200 and r2.status_code == 200,
+          str((r1.get_json() or {}).get("fields") or (r2.get_json() or {}).get("fields"))[:120])
+    prev = c.get("/api/workflow/previous?well=" + "امام رضا 11").get_json()["data"]
+    check("مقدار از آخرین عملیاتی که آن را دارد خوانده می‌شود",
+          prev["values"].get("pipe_dia_test") == "۶ اینچ", str(prev["values"])[:160])
+    with app.app_context():
+        from app.extensions import db as _db
+        from app.models import FormField, Well
+        w = Well.query.filter_by(name="امام رضا 11").first()
+        depth_field = FormField.query.get(cp["id"])
+        depth_field.prefill_from = "@well:pm_code"
+        _db.session.commit()
+        want_pm = w.pm_code
+    prev = c.get("/api/workflow/previous?well=" + "امام رضا 11").get_json()["data"]
+    check("مشخصات ثبت‌شده‌ی خود چاه هم منبع است (کد PM)",
+          not want_pm or prev["values"].get("pipe_dia_test_2") == want_pm,
+          f"{want_pm} / {prev['values'].get('pipe_dia_test_2')}")
+
+    print("\n— اتصال‌ها: فیلدهای تازه دیده می‌شوند و به فیلد هم وصل می‌شوند —")
+    cl = c.get("/api/form-builder/cause-links?field=pipe_dia_test").get_json()
+    check("فیلد گزینه‌ای تازه در فهرست «فیلد مبنا» هست",
+          any(s["name"] == "pipe_dia_test" for s in cl["data"]["sources"]))
+    check("و فیلدها هم برای اتصال پیشنهاد می‌شوند",
+          any(f["code"] == "field:pipe_dia_test_2" for f in cl["data"]["field_others"]))
+    r = c.put("/api/form-builder/cause-links", json={
+        "field": "pipe_dia_test", "links": {"field:pipe_dia_test_2": ["۴ اینچ"]}})
+    with app.app_context():
+        rule = FormField.query.filter_by(field_name="pipe_dia_test_2").one().visible_when
+    check("اتصال یک گزینه به یک فیلد ذخیره می‌شود",
+          r.status_code == 200 and rule == "pipe_dia_test=۴ اینچ", str(rule))
+    c.put("/api/form-builder/cause-links", json={
+        "field": "pipe_dia_test", "links": {"field:pipe_dia_test_2": []}})
+    with app.app_context():
+        rule = FormField.query.filter_by(field_name="pipe_dia_test_2").one().visible_when
+    check("برداشتن همه‌ی گزینه‌ها فیلد را دوباره معمولی می‌کند", rule is None, str(rule))
+
+    print("\n— فرایندساز: فیلدهای قابل ویرایش و قفل در هر مرحله —")
+    with app.app_context():
+        from app.models import AppUser, FormField, FormSection
+        from app.services.workflow import (active_workflow, stage_by_number,
+                                           stage_form, start_instance,
+                                           submit_stage, sync_entries)
+        wf = active_workflow()
+        s1 = next(x for x in wf.stages if x.stage_number == 1)
+        mk = AppUser.query.filter_by(username="markaz").one()
+        sec = FormSection.query.get(sec_b["id"])
+        s1_id, sec_code = s1.id, sec.code
+        before = [i.to_dict() for i in s1.items]
+    items = [{"kind": i["kind"], "id": i["section_id"] or i["field_id"],
+              "applies_to": i["applies_to"], "is_optional": i["is_optional"],
+              "is_read_only": i["is_read_only"],
+              "locked_fields": i.get("locked_fields") or []} for i in before]
+    mine = next((i for i in items if i["kind"] == "section" and i["id"] == sec_b["id"]),
+                None)
+    added = mine is None
+    if added:
+        mine = {"kind": "section", "id": sec_b["id"], "applies_to": "both",
+                "is_optional": True, "is_read_only": False, "locked_fields": []}
+        items.append(mine)
+    kept_locks = list(mine["locked_fields"])
+    mine["locked_fields"] = ["pipe_dia_test", "no_such_field"]
+    r = c.put(f"/api/workflow/stages/{s1_id}/items", json={"items": items})
+    saved = next((i for i in r.get_json()["data"]["items"]
+                  if i["section_id"] == sec_b["id"]), {})
+    check("قفل فیلدها برای یک فرم در مرحله ذخیره می‌شود (فقط فیلدهای همان فرم)",
+          saved.get("locked_fields") == ["pipe_dia_test"], str(saved.get("locked_fields")))
+    with app.app_context():
+        inst = start_instance({"operation_kind": "کشیدن", "well": "امام رضا 11"},
+                              AppUser.query.filter_by(username="markaz").one())
+        sync_entries(inst)
+        _db.session.commit()
+        st1 = stage_by_number(inst, 1)
+        block = next(b for b in stage_form(inst, st1)["sections"] if b["code"] == sec_code)
+        fdict = {f["field_name"]: f for f in block["fields"]}
+        check("فیلد قفل‌شده در کارتابل فقط‌خواندنی است",
+              fdict["pipe_dia_test"].get("read_only") is True)
+        check("و مقدارش از سوابق چاه نشان داده می‌شود",
+              fdict["pipe_dia_test"].get("read_only_value") == "۶ اینچ",
+              str(fdict["pipe_dia_test"].get("read_only_value")))
+        others_open = [n for n, f in fdict.items()
+                       if n != "pipe_dia_test" and not f.get("read_only")]
+        check("بقیه‌ی فیلدهای همان فرم قابل ویرایش‌اند", bool(others_open) or len(fdict) == 1)
+        submit_stage(inst, {"op_jdate": "1405/07/09", "failure": ["هوادهی"],
+                            "fail_aeration_p01": ["وضعیت لوله و اتصالات بررسی شده است"],
+                            "fail_aeration_p02": 3, "fail_aeration_p03": 12,
+                            "pipe_dia_test": "۴ اینچ"},
+                     AppUser.query.filter_by(username="markaz").one(), stage_number=1)
+        check("مقدار دست‌کاری‌شده برای فیلد قفل پذیرفته نمی‌شود؛ مقدار سوابق ثبت می‌شود",
+              inst.payload.get("pipe_dia_test") == "۶ اینچ",
+              str(inst.payload.get("pipe_dia_test")))
+    if added:
+        items.remove(mine)
+    else:
+        mine["locked_fields"] = kept_locks
+    c.put(f"/api/workflow/stages/{s1_id}/items", json={"items": items})
+    for fid in (cp.get("id"), new_id):
+        c.delete(f"/api/form-builder/fields/{fid}")
+
     html = c.get("/inbox").get_data(as_text=True)
     check("نشانی فایل‌های ثابت نسخه دارد (کش مرورگر نسخه‌ی قدیم را نگه ندارد)",
           "inbox.js?v=" in html)

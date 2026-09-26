@@ -15,6 +15,7 @@
     var res = await A.api.get('/api/form-builder?all=1');
     schema = res.data;
     render();
+    if (window.CauseLinksReload) window.CauseLinksReload();
   }
 
   function render() {
@@ -52,6 +53,8 @@
           ? '<span class="badge">' + A.esc(field.lookup_category) + '</span>' : '')
       + (field.is_active ? '' : '<span class="badge muted">پنهان</span>')
       + '<span class="spacer"></span>'
+      + '<button class="btn-sm btn-edit" data-move-field="' + field.id
+      + '" title="انتقال یا کپی به بخش دیگر">📦 انتقال / کپی</button>'
       + '<button class="btn-sm btn-edit" data-edit-field="' + field.id + '">ویرایش</button>'
       + '</div>';
   }
@@ -212,7 +215,15 @@
           return '<option value="' + A.esc(w.value) + '"'
             + (w.value === current ? ' selected' : '') + '>'
             + A.esc(w.label) + '</option>';
-        }).join('') + '</optgroup><optgroup label="مقدار یک فیلد در آخرین عملیات">';
+        }).join('') + '</optgroup><optgroup label="مشخصات ثبت‌شده‌ی خود چاه">'
+      + (schema.prefill_well || []).map(function (w) {
+          return '<option value="' + A.esc(w.value) + '"'
+            + (w.value === current ? ' selected' : '') + '>'
+            + A.esc(w.label) + '</option>';
+        }).join('')
+      + '</optgroup><optgroup label="مقدار یک فیلد در سوابق چاه (آخرین عملیاتی که آن را دارد)">'
+      + '<option value="@self"' + (current === '@self' ? ' selected' : '') + '>'
+      + '★ همین فیلد — مقداری که آخرین بار برای این چاه ثبت شده</option>';
     (schema.sections || []).forEach(function (sec) {
       (sec.fields || []).forEach(function (f) {
         if (field && f.field_name === field.field_name) return;
@@ -381,6 +392,7 @@
     A.qs('#sb-full').value = section && section.full_width ? '1' : '0';
     A.qs('#sb-active').value = section && !section.is_active ? '0' : '1';
     fillWhen(section && section.visible_when);
+    fillBring(section);
     A.qs('#sb-delete').classList.toggle('hidden', !section);
     A.openModal('section-modal');
   }
@@ -404,6 +416,67 @@
       A.closeModal('section-modal');
       await load();
     } catch (err) { A.toast(err.message, 'error'); }
+  }
+
+  /* ── moving and copying fields between sections ─────────────────────── */
+  /* The fields of every other section, to bring into this one. */
+  function fillBring(section) {
+    var box = A.qs('#sb-bring-box');
+    if (!box) return;
+    box.classList.toggle('hidden', !section);
+    if (!section) return;
+    A.qs('#sb-bring-field').innerHTML = '<option value="">— فیلدی را انتخاب کنید —</option>'
+      + schema.sections.filter(function (s) { return s.id !== section.id; })
+          .map(function (s) {
+            return '<optgroup label="' + A.esc(s.title) + '">'
+              + s.fields.map(function (f) {
+                  return '<option value="' + f.id + '">' + A.esc(f.label)
+                    + ' (' + A.esc(f.field_name) + ')</option>';
+                }).join('') + '</optgroup>';
+          }).join('');
+  }
+
+  async function moveField(fieldId, sectionId) {
+    var field = findField(fieldId);
+    var res = await A.api.put('/api/form-builder/fields/' + fieldId,
+                              { section_id: sectionId, sort_order: 9999 });
+    A.toast('«' + (field ? field.label : '') + '» به بخش جدید منتقل شد.');
+    return res;
+  }
+
+  async function copyField(fieldId, sectionId, label) {
+    var res = await A.api.post('/api/form-builder/fields/' + fieldId + '/copy',
+                               { section_id: sectionId, label: label || null });
+    A.toast(res.message);
+    return res;
+  }
+
+  async function bring(mode) {
+    var id = A.qs('#sb-bring-field').value;
+    if (!id || !editingSection) { A.toast('ابتدا فیلد را انتخاب کنید.', 'error'); return; }
+    try {
+      if (mode === 'move') await moveField(id, editingSection.id);
+      else await copyField(id, editingSection.id);
+      await load();
+      editingSection = schema.sections.find(function (s) { return s.id === editingSection.id; });
+      fillBring(editingSection);
+    } catch (err) { A.toast(err.message, 'error'); }
+  }
+
+  var moving = null;
+  function openMove(field) {
+    moving = field;
+    A.qs('#copy-modal-title').textContent = 'انتقال یا کپی «' + field.label + '»';
+    A.qs('#cp-section').innerHTML = schema.sections.map(function (s) {
+      return '<option value="' + s.id + '"' + (s.id === field.section_id ? ' disabled' : '')
+        + '>' + A.esc(s.title) + (s.id === field.section_id ? ' (بخش فعلی)' : '') + '</option>';
+    }).join('');
+    var first = schema.sections.find(function (s) { return s.id !== field.section_id; });
+    if (first) A.qs('#cp-section').value = first.id;
+    A.qs('input[name="cp-mode"][value="move"]').checked = true;
+    A.qs('#cp-label').value = field.label;
+    A.qs('#cp-label-row').classList.add('hidden');
+    A.openModal('copy-modal');
   }
 
   window.FormBuilderReload = function () { return load(); };
@@ -545,8 +618,30 @@
       } catch (err) { A.toast(err.message, 'error'); }
     });
 
+    A.qs('#sb-bring-move').addEventListener('click', function () { bring('move'); });
+    A.qs('#sb-bring-copy').addEventListener('click', function () { bring('copy'); });
+    A.qsa('input[name="cp-mode"]').forEach(function (r) {
+      r.addEventListener('change', function () {
+        A.qs('#cp-label-row').classList.toggle('hidden',
+          A.qs('input[name="cp-mode"]:checked').value !== 'copy');
+      });
+    });
+    A.qs('#cp-go').addEventListener('click', async function () {
+      if (!moving) return;
+      var target = Number(A.qs('#cp-section').value);
+      var mode = A.qs('input[name="cp-mode"]:checked').value;
+      try {
+        if (mode === 'move') await moveField(moving.id, target);
+        else await copyField(moving.id, target, A.qs('#cp-label').value.trim());
+        A.closeModal('copy-modal');
+        await load();
+      } catch (err) { A.toast(err.message, 'error'); }
+    });
+
     var container = A.qs('#sections-container');
     container.addEventListener('click', function (ev) {
+      var mv = ev.target.closest('[data-move-field]');
+      if (mv) { openMove(findField(mv.dataset.moveField)); return; }
       var field = ev.target.closest('[data-edit-field]');
       if (field) { openFieldEditor(findField(field.dataset.editField)); return; }
       var section = ev.target.closest('[data-edit-section]');
@@ -565,20 +660,36 @@
       if (!dragged) return;
       dragged.classList.remove('dragging');
       dragged = null;
-      var order = A.qsa('[data-field-id]', container)
-        .map(function (row) { return row.dataset.fieldId; });
+      /* Where each field now sits — its section as well as its place. */
+      var placement = A.qsa('[data-field-id]', container).map(function (row) {
+        return { id: Number(row.dataset.fieldId),
+                 section_id: Number(row.closest('[data-fields]').dataset.fields) };
+      });
       try {
-        await A.api.post('/api/form-builder/reorder', { fields: order });
-        A.toast('ترتیب فیلدها ذخیره شد.');
-      } catch (err) { A.toast(err.message, 'error'); }
+        await A.api.post('/api/form-builder/reorder', { placement: placement });
+        A.toast('جای فیلدها ذخیره شد.');
+        await load();
+      } catch (err) { A.toast(err.message, 'error'); await load(); }
     });
     container.addEventListener('dragover', function (ev) {
+      if (!dragged) return;
       ev.preventDefault();
       var over = ev.target.closest('[data-field-id]');
-      if (!over || !dragged || over === dragged) return;
-      var rect = over.getBoundingClientRect();
-      over.parentNode.insertBefore(dragged,
-        (ev.clientY - rect.top) > rect.height / 2 ? over.nextSibling : over);
+      if (over && over !== dragged) {
+        var rect = over.getBoundingClientRect();
+        over.parentNode.insertBefore(dragged,
+          (ev.clientY - rect.top) > rect.height / 2 ? over.nextSibling : over);
+        return;
+      }
+      /* An empty section, or the space under a section's last field. */
+      if (over) return;
+      var section = ev.target.closest('[data-section]');
+      var list = section && section.querySelector('[data-fields]');
+      if (list && dragged.parentNode !== list) {
+        var empty = list.querySelector('.muted.small');
+        if (empty) empty.remove();
+        list.appendChild(dragged);
+      }
     });
   });
 })();

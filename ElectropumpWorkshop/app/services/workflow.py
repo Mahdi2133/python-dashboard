@@ -316,6 +316,14 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
         return kept
 
     settled = _settled_values(instance, stage.stage_number)
+    history = {}
+
+    def from_history(name):
+        """A locked field with «برداشت از سوابق» shows the well's value."""
+        if "values" not in history:
+            history["values"] = ((previous_values_for(instance.well_id) or {})
+                                 .get("values") or {}) if instance.well_id else {}
+        return history["values"].get(name)
 
     def locked(fields):
         """Show what an earlier stage put here, and refuse the pen.
@@ -329,14 +337,18 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
             field = dict(field)
             field["read_only"] = True
             value = settled.get(field.get("field_name"))
+            if value in (None, "", [], {}) and field.get("prefill_from"):
+                value = from_history(field.get("field_name"))
+            field["is_required"] = False       # not this stage's to answer
             if value not in (None, "", [], {}):
                 field["read_only_value"] = (
                     "، ".join(str(v) for v in value if v not in (None, ""))
                     if isinstance(value, list) else value)
+                field["help_text"] = (field.get("help_text")
+                                      or "در مرحله‌ی پیشین یا سوابق چاه ثبت شده است.")
             else:
                 field["read_only_value"] = "—"
-            field["help_text"] = (field.get("help_text")
-                                  or "در مرحله‌ی پیشین ثبت شده است.")
+                field["help_text"] = "این فیلد در این مرحله قفل است و قابل ویرایش نیست."
             out.append(field)
         return out
 
@@ -348,6 +360,13 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
             if item.is_read_only:
                 block["fields"] = locked(block["fields"])
                 block["is_locked"] = True
+            elif item.locked_names:
+                # Only the fields the admin locked for this stage; the rest of
+                # the section is this stage's to fill.
+                shut = set(item.locked_names)
+                block["fields"] = [locked([f])[0] if f.get("field_name") in shut
+                                   else f for f in block["fields"]]
+                block["locked_fields"] = sorted(shut)
             if not block["fields"]:
                 continue
             block["is_optional"] = item.is_optional
@@ -851,6 +870,28 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
             "برای این مرحله درخواست مستند شده است"
             + (f" ({owed['by']}: {owed['note']})" if owed.get("note") else "")
             + "؛ پیش از ثبت دوباره، دست‌کم یک عکس، فیلم یا فایل بارگذاری کنید.")
+
+    # A locked field is not this stage's to write, whatever the browser sends:
+    # its answer is the one an earlier stage gave, or the well's history.
+    payload = dict(payload or {})
+    history = None
+    for block in stage_form(instance, stage, payload)["sections"]:
+        if block.get("is_locked"):
+            shut = [f.get("field_name") for f in block.get("fields") or []]
+        else:
+            shut = block.get("locked_fields") or []
+        for name in shut:
+            payload.pop(name, None)
+        for f in block.get("fields") or []:
+            name = f.get("field_name")
+            if (name not in shut or not f.get("prefill_from")
+                    or instance.payload.get(name) not in (None, "", [], {})):
+                continue
+            if history is None:
+                history = ((previous_values_for(instance.well_id) or {})
+                           .get("values") or {}) if instance.well_id else {}
+            if history.get(name) not in (None, "", [], {}):
+                payload[name] = history[name]
 
     # When several people share one stage, what an earlier one of them wrote
     # counts — the second is confirming the form, not typing it again.
@@ -1447,6 +1488,15 @@ PREVIOUS_SOURCES = {
 }
 
 # What «when it happened» can be read as, for the form builder's list.
+# Attributes of the well itself, from the register, a field can start from.
+PREFILL_WELL_ATTRS = {
+    "depth": "عمق چاه",
+    "pm_code": "کد PM",
+    "well_class": "کلاس چاه",
+    "code": "کد چاه",
+    "address": "آدرس چاه",
+}
+
 PREFILL_WHEN = {
     "@op_date": "تاریخ آخرین عملیات روی چاه",
     "@j_year": "سال آخرین عملیات",
@@ -1476,42 +1526,63 @@ def _value_from(previous, source: str, fields_by_name: dict):
 
 
 def previous_values_for(well_id, before_record_id=None) -> dict:
-    """The «…قبلی» answers, read off this well's last operation.
+    """The «…قبلی» answers, read off this well's history.
 
-    Returned as suggestions, never as settled facts: the form fills them in and
-    leaves them editable, because the register is not always right and the
-    person standing at the well is.
+    Each field the admin pointed at the history takes its value from the most
+    recent operation that actually recorded it — not just from the very last
+    one, which often left «قطر لوله جدار» blank because nobody measured it
+    that day. Well attributes from the register («@well:depth») come straight
+    from the well. Returned as suggestions, never as settled facts: the form
+    fills them in and leaves them editable, because the register is not
+    always right and the person standing at the well is.
     """
     if not well_id:
         return {}
     from .records import _label
+    from ..models import Well
 
+    fields = [f for f in FormField.query.filter(FormField.is_active.is_(True)).all()
+              if (f.prefill_from or "").strip()]
+    well = db.session.get(Well, int(well_id))
     query = (Record.query.filter(Record.well_id == well_id,
                                  Record.is_active.is_(True))
              .order_by(Record.op_date.desc().nullslast(), Record.id.desc()))
     if before_record_id:
         query = query.filter(Record.id != before_record_id)
-    previous = query.first()
-    if previous is None:
+    history = query.limit(60).all()
+    if not history and not any(f.prefill_from.startswith("@well:") for f in fields):
         return {}
 
-    # Every field the admin pointed at the well's history, whatever it is.
-    fields = FormField.query.filter(FormField.is_active.is_(True)).all()
-    by_name = {f.field_name: f for f in fields}
-    values = {}
+    by_name = {f.field_name: f for f in
+               FormField.query.filter(FormField.is_active.is_(True)).all()}
+    values, used = {}, []
     for field in fields:
-        source = (field.prefill_from or "").strip()
-        if not source:
+        source = field.prefill_from.strip()
+        if source == "@self":
+            source = field.field_name     # this same field, as last recorded
+        if source.startswith("@well:"):
+            attr = source[len("@well:"):]
+            value = (getattr(well, attr, None)
+                     if well is not None and attr in PREFILL_WELL_ATTRS else None)
+            if value not in (None, ""):
+                values[field.field_name] = value
             continue
-        value = _value_from(previous, source, by_name)
-        if value not in (None, "", [], {}):
-            values[field.field_name] = value
+        for previous in history:            # newest first
+            value = _value_from(previous, source, by_name)
+            if value not in (None, "", [], {}):
+                values[field.field_name] = value
+                if previous not in used:
+                    used.append(previous)
+                break
+    newest = used[0] if used else (history[0] if history else None)
     return {
         "values": values,
-        "source": {
-            "record_id": previous.id,
-            "date": (f"{previous.j_year}/{previous.j_month:02d}/"
-                     f"{previous.j_day:02d}" if previous.j_year else None),
-            "operation": _label(previous.operation_id),
-        },
+        "source": ({
+            "record_id": newest.id,
+            "date": (f"{newest.j_year}/{newest.j_month:02d}/"
+                     f"{newest.j_day:02d}" if newest.j_year else None),
+            "operation": _label(newest.operation_id),
+            "records_read": len(used),
+        } if newest is not None else None),
+        "has_history": bool(history),
     }

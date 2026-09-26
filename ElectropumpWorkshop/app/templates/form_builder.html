@@ -113,6 +113,16 @@
         <select id="sb-full"><option value="0">خیر</option><option value="1">بله</option></select></div>
       <div class="field"><label>وضعیت</label>
         <select id="sb-active"><option value="1">فعال</option><option value="0">غیرفعال</option></select></div>
+      <div class="field span-2 hidden" id="sb-bring-box"><label>افزودن فیلد از بخش‌های دیگر</label>
+        <div class="bring-row">
+          <select id="sb-bring-field"><option value="">— فیلدی را انتخاب کنید —</option></select>
+          <button type="button" class="btn-ghost btn-sm" id="sb-bring-move">📦 انتقال به این بخش</button>
+          <button type="button" class="btn-ghost btn-sm" id="sb-bring-copy">📋 کپی در این بخش</button>
+        </div>
+        <span class="hint"><b>انتقال</b>: همان فیلد (با همه‌ی داده‌های ثبت‌شده‌اش) به این بخش
+          می‌آید و از بخش قبلی می‌رود. <b>کپی</b>: یک فیلد تازه با همان تنظیمات و
+          گزینه‌ها در این بخش ساخته می‌شود و فیلد اصلی سر جایش می‌ماند.</span>
+      </div>
       <div class="field span-2"><label>نمایش فقط وقتی…</label>
         <div class="when-row">
           <select id="sb-when-field"><option value="">— همیشه نشان داده شود —</option></select>
@@ -128,6 +138,27 @@
       <button class="btn-primary" id="sb-save" type="button">ذخیره</button>
       <button class="btn-danger hidden" id="sb-delete" type="button">حذف / غیرفعال</button>
       <button class="btn-secondary" type="button" onclick="App.closeModal('section-modal')">انصراف</button>
+    </div>
+  </div>
+</div>
+<!-- Move or copy one field to another section. -->
+<div class="modal-overlay" id="copy-modal">
+  <div class="modal">
+    <h3 id="copy-modal-title">انتقال یا کپی فیلد</h3>
+    <div class="field-group cols-2">
+      <div class="field span-2"><label>بخش مقصد</label><select id="cp-section"></select></div>
+      <div class="field span-2"><label>چه کنم؟</label>
+        <label class="mini-check"><input type="radio" name="cp-mode" value="move" checked>
+          📦 انتقال — همین فیلد با داده‌هایش به بخش مقصد برود</label>
+        <label class="mini-check"><input type="radio" name="cp-mode" value="copy">
+          📋 کپی — یک فیلد تازه با همین تنظیمات در بخش مقصد ساخته شود</label>
+      </div>
+      <div class="field span-2 hidden" id="cp-label-row"><label>برچسب کپی</label>
+        <input type="text" id="cp-label"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" id="cp-go" type="button">انجام</button>
+      <button class="btn-secondary" type="button" data-close>انصراف</button>
     </div>
   </div>
 </div>

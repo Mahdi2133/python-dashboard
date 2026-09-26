@@ -370,8 +370,56 @@
       + 'داده می‌شود ولی اینجا قابل تغییر نیست">'
       + '<input type="checkbox" class="readonly"' + (item.is_read_only ? ' checked' : '')
       + '> 🔒 فقط نمایش</label>'
+      + (item.kind === 'section'
+          ? '<button class="btn-sm lock-toggle" type="button" title="کدام فیلدهای این فرم '
+            + 'در این مرحله قابل ویرایش‌اند و کدام قفل">' + lockLabel(item.locked_fields)
+            + '</button>' : '')
       + '<button class="btn-sm btn-del remove" type="button" title="حذف">×</button>'
+      + (item.kind === 'section' ? lockPanel(item) : '')
       + '</li>';
+  }
+
+  /* Per field, per stage: which of a form's fields this stage fills and which
+     it only sees. A locked field shows what an earlier stage recorded — or,
+     with «برداشت از سوابق», the well's history — and cannot be changed here;
+     the server holds to the same list whatever the browser sends. */
+  function sectionFields(code) {
+    return ((definition.palette || {}).fields || []).filter(function (f) {
+      return f.section === code;
+    });
+  }
+
+  function lockLabel(locked) {
+    var n = (locked || []).length;
+    return n ? '🔐 ' + J.toFaDigits(n) + ' فیلد قفل' : '🔐 فیلدها';
+  }
+
+  function lockPanel(item) {
+    var locked = item.locked_fields || [];
+    var fields = sectionFields(item.code);
+    return '<div class="wf-lock-panel" hidden data-locked="' + A.esc(locked.join(',')) + '">'
+      + '<div class="hint">تیک «قفل» یعنی کاربر این مرحله آن فیلد را می‌بیند ولی نمی‌تواند '
+      + 'تغییرش دهد. بقیه‌ی فیلدها را خودش پر می‌کند.</div>'
+      + (fields.length ? fields.map(function (f) {
+          var on = locked.indexOf(f.code) !== -1;
+          return '<label class="lock-row' + (on ? ' on' : '') + '">'
+            + '<span>' + A.esc(f.title) + ' <i class="mono">' + A.esc(f.code) + '</i></span>'
+            + '<span class="lock-choice"><input type="checkbox" class="lock-field" value="'
+            + A.esc(f.code) + '"' + (on ? ' checked' : '') + '> 🔒 قفل</span></label>';
+        }).join('') : '<div class="hint">این فرم فیلدی ندارد.</div>')
+      + '<div class="lock-actions"><button type="button" class="btn-ghost btn-sm lock-all">'
+      + 'قفل همه</button><button type="button" class="btn-ghost btn-sm lock-none">'
+      + 'همه قابل ویرایش</button></div></div>';
+  }
+
+  function syncLocks(li) {
+    var panel = li.querySelector('.wf-lock-panel');
+    var names = A.qsa('.lock-field:checked', panel).map(function (b) { return b.value; });
+    panel.dataset.locked = names.join(',');
+    A.qsa('.lock-row', panel).forEach(function (row) {
+      row.classList.toggle('on', row.querySelector('.lock-field').checked);
+    });
+    li.querySelector('.lock-toggle').textContent = lockLabel(names);
   }
 
   /* Where a stage's work goes when it is finished, and who signs it off.
@@ -983,6 +1031,8 @@
           applies_to: applies ? applies.value : (li.dataset.applies || 'both'),
           is_optional: flag(li, '.optional', 'optional'),
           is_read_only: flag(li, '.readonly', 'readonly'),
+          locked_fields: ((li.querySelector('.wf-lock-panel') || { dataset: {} })
+            .dataset.locked || '').split(',').filter(Boolean),
         };
       });
       await A.api.put('/api/workflow/stages/' + id + '/items', { items: items });
@@ -1134,6 +1184,22 @@
       if (drop) { removeStage(drop.closest('.wf-stage')); return; }
       var back = ev.target.closest('.restore-stage');
       if (back) { restoreStage(back.closest('.wf-stage')); return; }
+      var lockBtn = ev.target.closest('.lock-toggle');
+      if (lockBtn) {
+        var lp = lockBtn.closest('.wf-drop-item').querySelector('.wf-lock-panel');
+        lp.hidden = !lp.hidden;
+        return;
+      }
+      var lockAll = ev.target.closest('.lock-all, .lock-none');
+      if (lockAll) {
+        var li = lockAll.closest('.wf-drop-item');
+        A.qsa('.lock-field', li).forEach(function (b) {
+          b.checked = lockAll.classList.contains('lock-all');
+        });
+        syncLocks(li);
+        markDirty(li.closest('.wf-stage'));
+        return;
+      }
       var addAct = ev.target.closest('.wf-action-add');
       if (addAct) {
         var acard = addAct.closest('.wf-stage');
@@ -1214,6 +1280,10 @@
         var krow = ev.target.closest('.wf-action');
         krow.dataset.kind = ev.target.value;
         krow.querySelector('.wf-action-return').hidden = ev.target.value !== 'return';
+      }
+      if (ev.target.classList.contains('lock-field')) {
+        syncLocks(ev.target.closest('.wf-drop-item'));
+        return;
       }
       if (ev.target.classList.contains('act-when-on')) {
         var wrow = ev.target.closest('.wf-action');

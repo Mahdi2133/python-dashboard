@@ -620,10 +620,14 @@ def set_stage_items(stage_id):
             target = db.session.get(FormSection, int(raw.get("id") or 0))
             if target is None:
                 return fail("بخش انتخاب‌شده یافت نشد.", 422)
+            names = {f.field_name for f in target.fields}
+            locks = [n for n in dict.fromkeys(raw.get("locked_fields") or [])
+                     if n in names]
             cleaned.append(WorkflowStageItem(
                 stage_id=stage.id, section_id=target.id, sort_order=order,
                 applies_to=applies, is_optional=bool(raw.get("is_optional")),
-                is_read_only=bool(raw.get("is_read_only"))))
+                is_read_only=bool(raw.get("is_read_only")),
+                locked_fields=",".join(locks) or None))
         elif kind == "field":
             target = db.session.get(FormField, int(raw.get("id") or 0))
             if target is None:
