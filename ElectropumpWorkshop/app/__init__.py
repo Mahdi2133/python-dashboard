@@ -175,6 +175,13 @@ def create_app(config_overrides: dict | None = None) -> Flask:
         with app.app_context():
             ensure_database(app)
 
+    # Reports read live data through a cache keyed on a data version; any
+    # write to reported-on tables bumps it. Scheduled reports run on a worker.
+    from .analytics.catalogue import install_change_listener
+    from .analytics.jobs import start_worker
+    install_change_listener()
+    start_worker(app)
+
     _register_error_handlers(app)
     _register_cli(app)
 

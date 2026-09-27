@@ -252,9 +252,17 @@
 
   async function removeStage(card) {
     var title = card.querySelector('.wf-stage-title').value;
+    // reports that read this stage (its timing or its data) would break
+    var used = [];
+    try {
+      used = (await A.api.get('/api/analytics/dependencies?kind=stage&ref=' + card.dataset.stage)).data || [];
+    } catch (err) { used = []; }
     var okToGo = await A.confirmDialog({
       title: 'حذف مرحله',
-      message: 'مرحله «' + title + '» حذف شود؟',
+      message: 'مرحله «' + title + '» حذف شود؟'
+        + (used.length ? ' — توجه: ' + used.length + ' گزارش از این مرحله استفاده می‌کند ('
+          + used.map(function (r) { return '«' + r.name + '»'; }).join('، ')
+          + ') و پس از حذف، آن بخش‌ها خطا خواهند داد.' : ''),
     });
     if (!okToGo) return;
     try {
@@ -864,6 +872,11 @@
         + '<label>شامل</label>'
         + '<select class="wf-applies">' + appliesOptions(s.applies_to) + '</select>'
         + '</div>'
+        + '<div class="wf-stage-row" title="برای گزارش تأخیر: اگر این مرحله بیش از این مدت طول بکشد تأخیردار شمرده می‌شود. خالی یعنی مهلت ندارد.">'
+        + '<label>مهلت (ساعت)</label>'
+        + '<input type="number" min="0" step="0.5" class="wf-sla" placeholder="اختیاری" value="'
+        + (s.sla_hours === null || s.sla_hours === undefined ? '' : A.esc(s.sla_hours)) + '">'
+        + '</div>'
         + startRow(s)
         + (s.description ? '<div class="hint wf-stage-desc">'
             + A.esc(s.description) + '</div>' : '')
@@ -1090,6 +1103,8 @@
         owner_ids: ownerIds(card),
         applies_to: card.querySelector('.wf-applies').value,
       };
+      var sla = card.querySelector('.wf-sla');
+      if (sla) body.sla_hours = sla.value === '' ? null : Number(sla.value);
       var starts = card.querySelector('.wf-can-start');
       if (starts) body.can_start = starts.checked;
       var startKind = card.querySelector('.wf-start-kind');

@@ -97,9 +97,16 @@ def reports():
 
 
 @bp.get("/report-builder")
-@permission_required("report.build")
+@permission_required("report.manage")
 def report_builder():
     return render_template("report_builder.html", active="builder")
+
+
+@bp.get("/report-builder/legacy")
+@permission_required("report.build")
+def report_builder_legacy():
+    # the earlier builder: per-stage Excel export and the quick column report
+    return render_template("report_builder_legacy.html", active="builder")
 
 
 @bp.get("/form-builder")

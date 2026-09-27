@@ -6,6 +6,7 @@ before a release without touching instance/wells.db.
 """
 import json
 import os
+import io
 import shutil
 import sys
 import tempfile
@@ -2110,6 +2111,96 @@ def main():
               people[0].id not in owners_of(inst, stage))
         people[0].is_active = True
         _db.session.commit()
+
+
+    print("\n— گزارش‌ساز و خروجی گزارش —")
+    import json as _json
+    import zipfile as _zip
+    A = "/api/analytics"
+    meta = c.get(A + "/meta").get_json()["data"]
+    check("متای گزارش‌ساز: منابع، نمودارها، توابع", len(meta["sources"]) >= 7
+          and len(meta["chart_types"]) >= 20 and len(meta["functions"]) > 20)
+    rec_fields = c.get(A + "/sources/records/fields").get_json()["data"]["fields"]
+    check("فیلدهای منبع رکوردها از فرم‌ساز", any(f["key"] == "center" for f in rec_fields)
+          and any(f["key"] == "_date" for f in rec_fields))
+    cat = c.get(A + "/catalog").get_json()["data"]["reports"]
+    check("الگوهای گزارش‌های ثابت منتشر شده‌اند", len(cat) >= 15, str(len(cat)))
+    rb_def = {"source": "records",
+              "calcs": [{"key": "c_head", "label": "اختلاف سطح", "formula": "[dynamic_level] - [static_level]"}],
+              "groups": [{"field": "center"}],
+              "measures": [{"key": "n", "field": "*", "agg": "count", "label": "تعداد"},
+                           {"key": "h", "calc": "c_head", "agg": "avg"}],
+              "kpis": [{"id": "k1", "title": "کل", "value": {"agg": "count", "field": "*"}, "target": 1}],
+              "charts": [{"id": "ch1", "type": "bar", "x": {"field": "center"}, "measures": ["n"]}],
+              "tables": [{"id": "t1", "kind": "grouped"}],
+              "interactive_filters": [{"id": "f1", "field": "center", "kind": "select"}],
+              "drill": {"enabled": True, "path": ["center"]}}
+    r = c.post(A + "/reports", json={"name": "گزارش آزمون", "definition": rb_def})
+    check("ساخت گزارش", r.status_code == 200)
+    rid = r.get_json()["data"]["id"]
+    r = c.post(A + "/preview", json={"definition": rb_def}).get_json()
+    check("پیش‌نمایش گزارش", r.get("ok") and r["data"]["kpis"][0]["value"] >= 1
+          and r["data"]["charts"][0].get("categories") is not None)
+    fv = c.post(A + "/formula/validate", json={"source": "records", "formula": "SUM([well]"}).get_json()["data"]
+    check("فرمول نادرست رد می‌شود", fv["valid"] is False)
+    fv = c.post(A + "/formula/validate", json={"source": "records",
+                                               "formula": "ROUND(COUNT() / 2, 1)"}).get_json()["data"]
+    check("فرمول تجمیعی معتبر", fv["valid"] and fv["kind"] == "group")
+    check("انتشار بدون دسترسی رد می‌شود", c.post(A + f"/reports/{rid}/publish").status_code == 422)
+    c.put(A + f"/reports/{rid}/permissions", json={"permissions": [
+        {"principal_kind": "role", "principal": "operator", "access": ["view_dashboard", "run", "filter", "export_xlsx"]}]})
+    r = c.post(A + f"/reports/{rid}/publish")
+    check("انتشار گزارش پس از بررسی", r.status_code == 200
+          and r.get_json()["data"]["status"] == "published")
+    # an operator: granted dashboard + Excel, not PDF; data gate: operator lacks record.view
+    r = c.post("/api/users", json={"username": "rb_op", "password": "pass1234", "first_name": "گزارش",
+                                   "last_name": "خوان", "personnel_code": "RB-1", "role": "operator"})
+    op_id = r.get_json()["data"]["id"]
+    op = app.test_client()
+    op.post("/api/login", json={"username": "rb_op", "password": "pass1234"})
+    r = op.get(A + f"/reports/{rid}/view")
+    check("دسترسی گزارش داده‌ای را که کاربر نمی‌بیند باز نمی‌کند", r.status_code == 403)
+    c.put(f"/api/users/{op_id}", json={"permissions": ["record.create", "well.view", "report.view",
+                                                       "workflow.act", "record.view"]})
+    r = op.get(A + f"/reports/{rid}/view")
+    check("کاربر مجاز گزارش را می‌بیند", r.status_code == 200, r.get_data(as_text=True)[:200])
+    r = op.post(A + f"/reports/{rid}/run", json={"filters": {"f1": "سوران"}})
+    check("اجرای گزارش با فیلتر تعاملی", r.status_code == 200)
+    check("خروجی Excel مجاز است",
+          op.post(A + f"/reports/{rid}/export/xlsx", json={}).status_code == 200)
+    check("خروجی PDF بدون مجوز رد می‌شود",
+          op.post(A + f"/reports/{rid}/export/pdf", json={}).status_code == 403)
+    check("داده‌ی خام بدون مجوز رد می‌شود",
+          op.post(A + f"/reports/{rid}/raw", json={}).status_code == 403)
+    check("کاربر عادی به گزارش‌ساز دسترسی ندارد", op.get(A + "/reports").status_code == 403)
+    for fmt_ in ("xlsx", "pdf", "docx", "csv", "json", "print"):
+        rr = c.post(A + f"/reports/{rid}/export/{fmt_}", json={"include_raw": True})
+        check(f"خروجی {fmt_}", rr.status_code == 200 and len(rr.data) > 200)
+        if fmt_ == "docx":
+            z = _zip.ZipFile(io.BytesIO(rr.data))
+            check("Word راست‌به‌چپ و معتبر", "word/document.xml" in z.namelist()
+                  and "w:bidi" in z.read("word/document.xml").decode("utf-8"))
+    # versions: editing a published report makes a new working version
+    r = c.put(A + f"/reports/{rid}", json={"definition": dict(rb_def, charts=[])}).get_json()["data"]
+    check("ویرایش گزارش منتشرشده نسخه‌ی تازه می‌سازد",
+          r["latest_version"] == 2 and r["published_version"] == 1)
+    check("کاربران همچنان نسخه‌ی منتشرشده را می‌بینند",
+          len(op.post(A + f"/reports/{rid}/run", json={}).get_json()["data"]["charts"]) == 1)
+    snap = op.post(A + f"/reports/{rid}/snapshots", json={"title": "snap"}).get_json()
+    check("ذخیره‌ی Snapshot", snap.get("ok"))
+    check("بازکردن Snapshot", op.get(A + f"/snapshots/{snap['data']['id']}").status_code == 200)
+    deps = c.get(A + "/dependencies?kind=field&ref=center").get_json()["data"]
+    check("وابستگی گزارش به فیلد ثبت می‌شود", any(d["id"] == rid for d in deps))
+    g = c.post(A + "/groups", json={"name": "گروه آزمون", "member_ids": [op_id]}).get_json()
+    check("ساخت گروه کاربری", g.get("ok"))
+    ap = c.get(A + f"/access/principal?kind=user&principal={op_id}").get_json()["data"]
+    check("دسترسی نهایی کاربر محاسبه می‌شود", "export_xlsx" in (ap["effective"].get(str(rid))
+                                                                 or ap["effective"].get(rid) or []))
+    check("صفحه‌ی گزارش‌ساز", c.get("/report-builder").status_code == 200)
+    check("صفحه‌ی خروجی گزارش", c.get("/reports").status_code == 200)
+    sch = c.post(A + f"/reports/{rid}/schedules", json={"frequency": "monthly", "hour": 7}).get_json()
+    run_now = c.post(A + f"/schedules/{sch['data']['id']}/run").get_json()
+    check("اجرای زمان‌بندی‌شده Snapshot می‌سازد", run_now.get("ok") and "اجرا شد" in run_now["data"]["message"])
 
     print("\n— ترتیب تب‌ها —")
     check("صفحه اصلی، ثبت اطلاعات است",

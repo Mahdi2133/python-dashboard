@@ -580,6 +580,14 @@ def update_stage(stage_id):
         if payload["start_kind"] not in APPLIES_TO:
             return fail("مقدار «شروع برای عملیات» نامعتبر است.", 422)
         stage.start_kind = payload["start_kind"]
+    if "sla_hours" in payload:
+        raw = payload["sla_hours"]
+        try:
+            stage.sla_hours = float(raw) if raw not in (None, "") else None
+        except (TypeError, ValueError):
+            return fail("مهلت مرحله باید عدد (ساعت) باشد.", 422)
+        if stage.sla_hours is not None and stage.sla_hours < 0:
+            return fail("مهلت مرحله نمی‌تواند منفی باشد.", 422)
     if "route_by_center" in payload:
         stage.route_by_center = payload["route_by_center"] in (True, "true", "1", 1)
     # The متولی list. One stage can belong to all eight مراکز آبرسانی, so this

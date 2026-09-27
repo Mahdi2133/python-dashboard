@@ -30,6 +30,7 @@ PERMISSIONS = [
     ("dashboard.view", "مشاهده داشبورد",               "گزارش‌ها"),
     ("report.view",    "مشاهده گزارش‌ها",              "گزارش‌ها"),
     ("report.build",   "گزارش‌ساز پویا",               "گزارش‌ها"),
+    ("report.manage",  "طراحی، انتشار و دسترسی گزارش‌ها", "گزارش‌ها"),
     ("workflow.act",   "شرکت در فرایند (کارتابل)",     "فرایند"),
     ("workflow.view",  "مشاهده مسیر فرایندها",         "فرایند"),
     ("workflow.manage", "فرایندساز و تعریف مراحل",      "فرایند"),
@@ -53,7 +54,7 @@ ROLES = {
         "description": "ثبت و ویرایش داده، همه گزارش‌ها؛ بدون مدیریت کاربران و سیستم.",
         "permissions": ["record.view", "record.create", "record.edit", "record.export",
                         "well.view", "well.manage", "dashboard.view", "report.view",
-                        "report.build", "data.import", "audit.view",
+                        "data.import", "audit.view",
                         "workflow.act", "workflow.view"],
     },
     "operator": {
@@ -86,7 +87,8 @@ PAGE_PERMISSION = {
     "records": "record.view",
     "wells": "well.view",
     "reports": "report.view",
-    "builder": "report.build",
+    # Designing, publishing and granting reports is the system admin's alone.
+    "builder": "report.manage",
     "inbox": "workflow.act",
     "documents": "workflow.act",
     "workflow": "workflow.manage",

@@ -13,6 +13,9 @@
 <div class="tabs">
   <button class="tab active" data-tab="list">👥 کاربران</button>
   <button class="tab" data-tab="sessions">🕘 ورود و خروج</button>
+  {% if CURRENT_USER and (CURRENT_USER.role == 'admin' or CURRENT_USER.can('report.manage')) %}
+  <button class="tab" data-tab="report-access" id="tab-report-access">📊 دسترسی گزارش‌ها</button>
+  {% endif %}
 </div>
 
 <div class="tab-panel" data-panel="list">
@@ -36,6 +39,34 @@
     <div class="pagination" id="u-pagination"></div>
   </div>
 </div>
+
+{% if CURRENT_USER and (CURRENT_USER.role == 'admin' or CURRENT_USER.can('report.manage')) %}
+<div class="tab-panel hidden" data-panel="report-access">
+  <div class="grid-2 ra-grid">
+    <div class="card">
+      <div class="section-title">🔐 دسترسی به گزارش‌ها</div>
+      <div class="hint">یک کاربر، نقش، مرکز یا گروه را انتخاب کنید و برای هر گزارش سطح دسترسی‌اش را تیک بزنید.
+        سطوحی که از چند مسیر (نقش، مرکز، گروه) می‌رسند جمع می‌شوند؛ برای یک کاربر، ستون «نتیجه‌ی نهایی» همه را با هم نشان می‌دهد.
+        دسترسی به گزارش هیچ‌وقت داده‌ای را که کاربر اجازه‌ی دیدنش را ندارد باز نمی‌کند.</div>
+      <div class="rb-inline">
+        <select id="ra-kind"></select>
+        <select id="ra-who"></select>
+        <button class="btn-primary btn-sm" id="ra-save" type="button">💾 ذخیره</button>
+      </div>
+      <div class="table-scroll"><table class="rb-perm-table" id="ra-table"></table></div>
+    </div>
+    <div class="card">
+      <div class="section-title">👥 گروه‌های کاربری</div>
+      <div class="hint">برای دادن یک گزارش به چند نفر با هم (مثلاً «مدیران مراکز» یا «کارشناسان فنی»).</div>
+      <div id="ra-groups"></div>
+      <div class="rb-inline">
+        <input type="text" id="ra-group-name" placeholder="نام گروه جدید">
+        <button class="btn-primary btn-sm" id="ra-group-add" type="button">＋ گروه</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <div class="tab-panel hidden" data-panel="sessions">
   <div class="table-wrapper">
@@ -171,4 +202,5 @@
   </div>
 </div>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='js/users.js') }}"></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/users.js') }}"></script>
+<script src="{{ url_for('static', filename='js/report_access.js') }}"></script>{% endblock %}

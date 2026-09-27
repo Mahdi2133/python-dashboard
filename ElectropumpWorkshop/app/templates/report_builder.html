@@ -3,143 +3,98 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h2>🧩 گزارش‌ساز پویا</h2>
-    <div class="sub">مجموعه‌داده ← فیلد ← فیلتر ← گروه‌بندی ← مرتب‌سازی ← تجمیع</div>
+    <h2>🧩 گزارش‌ساز</h2>
+    <div class="sub">طراحی، آزمایش و انتشار گزارش‌ها و داشبوردها — داده همیشه زنده از فرم‌ها و فرایندها خوانده می‌شود.</div>
   </div>
-  {% if 'reports' in ALLOWED_PAGES %}
-  <a class="btn-ghost" href="/reports">📈 گزارش‌های آماده</a>
-  {% endif %}
-</div>
-
-<!-- ── a report of one stage of one process ─────────────────────────────
-     Its own panel rather than another dataset: what a stage records is not a
-     fixed list of columns, it is whatever the admin dropped on that stage, so
-     the columns have to be fetched once a stage is picked. -->
-<details class="card stage-report" id="stage-report">
-  <summary><b>📋 گزارش مرحله‌ای فرایند</b>
-    <span class="hint">خروجی اکسل از آیتم‌هایی که در یک مرحله ثبت می‌شوند</span>
-  </summary>
-  <div class="field-group cols-3">
-    <div class="field"><label>فرایند</label>
-      <select id="sr-process"></select></div>
-    <div class="field"><label>مرحله</label>
-      <select id="sr-stage"></select></div>
-    <div class="field"><label>وضعیت فرایند</label>
-      <select id="sr-status">
-        <option value="">همه</option>
-        <option value="open">در جریان</option>
-        <option value="completed">تکمیل شده</option>
-        <option value="cancelled">لغو شده</option>
-      </select></div>
-  </div>
-  <div class="field">
-    <label>ستون‌های خروجی <span class="hint">(هر کدام را می‌خواهید بزنید)</span></label>
-    <div class="sr-cols" id="sr-base"></div>
-    <div class="pal-group-title">آیتم‌های ثبت‌شده در این مرحله</div>
-    <div class="sr-cols" id="sr-fields"></div>
-    <div class="sr-quick">
-      <button class="btn-sm btn-ghost" id="sr-all" type="button">انتخاب همه</button>
-      <button class="btn-sm btn-ghost" id="sr-none" type="button">هیچ‌کدام</button>
-    </div>
-  </div>
-  <label class="mini-check"><input type="checkbox" id="sr-done" checked>
-    فقط مرحله‌های ثبت‌شده</label>
-  <div class="form-actions">
-    <button class="btn-primary" id="sr-run" type="button">▶ نمایش</button>
-    <button class="export-btn export-xlsx" id="sr-xlsx" type="button">📊 اکسل</button>
-    <button class="export-btn export-csv" id="sr-csv" type="button">📄 CSV</button>
-  </div>
-  <div id="sr-result"></div>
-</details>
-
-<div class="grid-2">
-  <div class="card">
-    <div class="section-title">۱. مجموعه‌داده و فیلترهای پایه</div>
-    <div class="field-group cols-2">
-      <div class="field"><label>مجموعه‌داده</label>
-        <select id="b-dataset"></select></div>
-      <div class="field"><label>سقف سطرها</label>
-        <select id="b-limit">
-          <option value="200">۲۰۰</option><option value="1000" selected>۱۰۰۰</option>
-          <option value="5000">۵۰۰۰</option><option value="20000">۲۰۰۰۰</option>
-        </select></div>
-      <div class="field"><label>از تاریخ</label>
-        <input type="text" id="b-date-from" class="jdate"></div>
-      <div class="field"><label>تا تاریخ</label>
-        <input type="text" id="b-date-to" class="jdate"></div>
-      <div class="field"><label>سال شمسی</label>
-        <select id="b-year"><option value="">همه</option></select></div>
-      <div class="field"><label>مرکز</label>
-        <select id="b-center"><option value="">همه</option></select></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="section-title">۲. گروه‌بندی <span class="count">Group By</span></div>
-    <div class="field">
-      <label>فیلدهای گروه‌بندی (چند انتخابی)</label>
-      <div class="btn-group compact" id="b-groups"></div>
-      <span class="hint">اگر هیچ فیلدی انتخاب نشود، گزارش به‌صورت فهرست یا مجموع کل تولید می‌شود.</span>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="section-title">۳. تجمیع <span class="count">Aggregation</span></div>
-    <div id="b-aggs"></div>
-    <button class="btn-ghost mt-1" id="b-add-agg" type="button">➕ افزودن تجمیع</button>
-  </div>
-
-  <div class="card">
-    <div class="section-title">۳.۵ ستون‌های محاسباتی
-      <span class="count">Calculated columns</span></div>
-    <span class="hint">یک ستون تازه بسازید که از روی فیلدهای عددی محاسبه شود —
-      مثلاً «درصد تغییرات جریان» از روی جریان نرمال و جریان فعلی. ستون در
-      فهرست و در خروجی اکسل می‌آید. (روی گزارش‌های گروه‌بندی‌شده اعمال
-      نمی‌شود.)</span>
-    <div id="b-calcs" class="mt-1"></div>
-    <button class="btn-ghost mt-1" id="b-add-calc" type="button">➕ افزودن ستون محاسباتی</button>
-  </div>
-
-  <div class="card">
-    <div class="section-title">۴. فیلترهای پیشرفته</div>
-    <div id="b-filters"></div>
-    <button class="btn-ghost mt-1" id="b-add-filter" type="button">➕ افزودن فیلتر</button>
-  </div>
-
-  <div class="card">
-    <div class="section-title">۵. فیلدهای فهرست (بدون گروه‌بندی)</div>
-    <div class="field">
-      <label>ستون‌های خروجی</label>
-      <div class="btn-group compact" id="b-fields"></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="section-title">۶. مرتب‌سازی</div>
-    <div class="field-group cols-2">
-      <div class="field"><label>بر اساس</label><select id="b-sort"></select></div>
-      <div class="field"><label>جهت</label>
-        <select id="b-dir"><option value="desc">نزولی</option><option value="asc">صعودی</option></select></div>
-    </div>
+  <div class="toolbar-actions">
+    <a class="btn-ghost" href="/reports">📈 خروجی گزارش</a>
+    <a class="btn-ghost" href="/report-builder/legacy" title="گزارش مرحله‌ای فرایند و گزارش‌ساز قبلی">🗂 ابزار قدیمی</a>
   </div>
 </div>
 
-<div class="form-actions">
-  <button class="btn-primary" id="b-run" type="button">▶ اجرای گزارش</button>
-  <button class="export-btn export-xlsx" data-fmt="xlsx" type="button">📊 اکسل</button>
-  <button class="export-btn export-csv"  data-fmt="csv"  type="button">📄 CSV</button>
-  <button class="export-btn export-json" data-fmt="json" type="button">🗂 JSON</button>
-  <button class="export-btn export-pdf"  data-fmt="pdf"  type="button">📕 PDF</button>
-  <button class="btn-secondary" id="b-reset" type="button">پاک کردن</button>
+<div class="rb-shell">
+  <!-- ── the reports ── -->
+  <aside class="card rb-list">
+    <div class="rb-list-head">
+      <button class="btn-primary btn-sm" id="rb-new" type="button">＋ گزارش جدید</button>
+      <button class="btn-ghost btn-sm" id="rb-cats" type="button" title="دسته‌های گزارش">🏷 دسته‌ها</button>
+    </div>
+    <input type="search" id="rb-search" placeholder="جستجوی گزارش…">
+    <select id="rb-status-filter">
+      <option value="">همه‌ی وضعیت‌ها</option>
+    </select>
+    <div id="rb-reports" class="rb-reports"></div>
+  </aside>
+
+  <!-- ── the workspace ── -->
+  <section class="rb-work">
+    <div class="card rb-empty" id="rb-empty">
+      <h3>گزارشی انتخاب نشده</h3>
+      <p class="muted">از فهرست کنار یک گزارش را باز کنید یا «گزارش جدید» بسازید.
+        مراحل ساخت به ترتیب: مشخصات ← منبع داده ← فیلدها ← فیلترها ← محاسبات ← گروه‌بندی و سنجه‌ها
+        ← KPI ← نمودار ← جدول ← قالب‌بندی شرطی ← چیدمان و تعامل ← دسترسی ← بررسی و انتشار.</p>
+    </div>
+
+    <div class="rb-editor hidden" id="rb-editor">
+      <div class="card rb-topbar">
+        <div class="rb-title">
+          <b id="rb-name-view"></b>
+          <span class="badge" id="rb-status"></span>
+          <span class="muted small" id="rb-version"></span>
+          <span class="save-state" id="rb-dirty"></span>
+        </div>
+        <div class="toolbar-actions">
+          <button class="btn-primary btn-sm" id="rb-save" type="button">💾 ذخیره</button>
+          <button class="btn-ghost btn-sm" id="rb-preview-btn" type="button">🔄 پیش‌نمایش</button>
+          <button class="btn-ghost btn-sm" id="rb-dup" type="button">⧉ کپی</button>
+          <button class="btn-ghost btn-sm" id="rb-open" type="button">👁 باز کردن در خروجی</button>
+          <button class="btn-danger btn-sm" id="rb-del" type="button">🗑 حذف</button>
+        </div>
+      </div>
+
+      <div class="rb-body">
+        <nav class="rb-steps" id="rb-steps"></nav>
+        <div class="card rb-panel" id="rb-panel"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── live preview ── -->
+  <section class="card rb-preview hidden" id="rb-preview-pane">
+    <div class="rb-preview-head">
+      <b>پیش‌نمایش زنده</b>
+      <span class="muted small" id="rb-preview-meta"></span>
+      <label class="mini-check"><input type="checkbox" id="rb-auto" checked> خودکار</label>
+    </div>
+    <div id="rb-preview-msg"></div>
+    <div id="rb-preview"></div>
+  </section>
 </div>
 
-<div class="card hidden" id="b-result">
-  <div class="section-title">نتیجه <span class="count" id="b-count"></span></div>
-  <div class="chart-card mb-2 hidden" id="b-chart-card"><h3>نمودار</h3>
-    <div class="bar-chart" id="b-chart"></div></div>
-  <div class="table-scroll">
-    <table><thead><tr id="b-head"></tr></thead><tbody id="b-body"></tbody></table>
+<!-- categories -->
+<div class="modal-overlay" id="rb-cat-modal">
+  <div class="modal">
+    <h3>🏷 دسته‌های گزارش</h3>
+    <div id="rb-cat-list" class="rb-cat-list"></div>
+    <div class="rb-inline">
+      <input type="text" id="rb-cat-name" placeholder="نام دسته‌ی جدید">
+      <button class="btn-primary btn-sm" id="rb-cat-add" type="button">افزودن</button>
+    </div>
+    <div class="modal-actions"><button class="btn-secondary" data-close="rb-cat-modal" type="button">بستن</button></div>
+  </div>
+</div>
+
+<!-- formula help -->
+<div class="modal-overlay" id="rb-fn-modal">
+  <div class="modal modal-wide">
+    <h3>📐 راهنمای توابع فرمول</h3>
+    <div id="rb-fn-list" class="rb-fn-list"></div>
+    <div class="modal-actions"><button class="btn-secondary" data-close="rb-fn-modal" type="button">بستن</button></div>
   </div>
 </div>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='js/report_builder.js') }}"></script>{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/echarts.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/report_view.js') }}"></script>
+<script src="{{ url_for('static', filename='js/report_builder.js') }}"></script>
+{% endblock %}

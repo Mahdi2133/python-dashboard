@@ -173,8 +173,20 @@
      off their کارتابل, so say whose work changes before anything is removed. */
   async function usageNote(kind, code) {
     if (!code) return '';
+    var text = '';
+    try { text = await usageText(kind, code); } catch (err) { text = ''; }
+    return text + await reportNote(kind === 'section' ? 'form' : 'field', code);
+  }
+
+  /* Which reports read this field or form — so removing it is not a surprise. */
+  async function reportNote(kind, code) {
     try {
-      return await usageText(kind, code);
+      var res = await A.api.get('/api/analytics/dependencies?kind=' + kind + '&ref=' + encodeURIComponent(code));
+      var list = res.data || [];
+      if (!list.length) return '';
+      return '\n\n⚠ ' + J.toFaDigits(list.length) + ' گزارش از این مورد استفاده می‌کند: '
+        + list.map(function (r) { return '«' + r.name + '»'; }).join('، ')
+        + '. پس از حذف یا تغییر نوع، آن بخش‌های گزارش خطا می‌دهند تا در گزارش‌ساز اصلاح شوند.';
     } catch (err) { return ''; }
   }
 
@@ -298,6 +310,11 @@
     var options = payload.options;
     /* A lookup-backed field keeps its options in the shared category, so they
        are saved through the options endpoint rather than with the field. */
+    if (editingField && payload.field_type !== editingField.field_type) {
+      var note = await reportNote('field', editingField.field_name);
+      if (note && !(await A.confirmDialog({ title: 'تغییر نوع فیلد',
+        message: 'نوع فیلد عوض می‌شود.' + note, confirmText: 'تغییر بده', danger: false }))) return;
+    }
     var optionsAreShared = editingField && optionState.source === 'lookup';
     if (optionsAreShared || optionState.readonly) delete payload.options;
 

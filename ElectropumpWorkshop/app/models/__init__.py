@@ -5,6 +5,9 @@ from .formbuilder import FormField, FormFieldOption, FormSection, RecordDynamicV
 from .lookup import LookupAlias, LookupCategory, LookupItem
 from .meta import AppMeta
 from .record import Record, RecordTag
+from .report import (Report, ReportCategory, ReportDependency, ReportExportJob,
+                     ReportFavorite, ReportPermission, ReportSchedule,
+                     ReportSnapshot, ReportVersion, UserGroup, user_group_members)
 from .well import PumpCurvePoint, Well, WellAlias
 from .workflow import (WorkflowAttachment, WorkflowDefinition,
                        WorkflowInstance, WorkflowStage,
@@ -18,6 +21,9 @@ __all__ = [
     "LookupAlias", "LookupCategory", "LookupItem",
     "AppMeta",
     "Record", "RecordTag",
+    "Report", "ReportCategory", "ReportDependency", "ReportExportJob",
+    "ReportFavorite", "ReportPermission", "ReportSchedule", "ReportSnapshot",
+    "ReportVersion", "UserGroup", "user_group_members",
     "PumpCurvePoint", "Well", "WellAlias",
     "WorkflowAttachment", "WorkflowDefinition", "WorkflowInstance",
     "WorkflowStage", "WorkflowStageEntry", "WorkflowStageItem",

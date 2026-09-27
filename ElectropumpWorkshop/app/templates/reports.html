@@ -1,16 +1,131 @@
 {% extends "base.html" %}
-{% block title %}گزارش‌ها — {{ APP_TITLE }}{% endblock %}
+{% block title %}خروجی گزارش — {{ APP_TITLE }}{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <h2>📈 گزارش‌ها</h2>
-    <div class="sub">هر گزارش مستقیماً از پایگاه داده کوئری می‌شود و خروجی اکسل، CSV، JSON، PDF و چاپ دارد.</div>
+    <h2>📈 خروجی گزارش</h2>
+    <div class="sub">داشبوردها و گزارش‌های منتشرشده برای شما — داده‌ی زنده، فیلتر، کاوش و خروجی Excel، PDF، Word، CSV و چاپ.</div>
   </div>
   {% if 'builder' in ALLOWED_PAGES %}
-  <a class="btn-ghost" href="/report-builder">🧩 گزارش‌ساز پویا</a>
+  <a class="btn-ghost" href="/report-builder">🧩 گزارش‌ساز</a>
   {% endif %}
 </div>
 
+<div class="tabs" id="rp-main-tabs">
+  <button class="tab active" data-main="dynamic" type="button">📊 گزارش‌ها و داشبوردها</button>
+  <button class="tab" data-main="legacy" type="button">🗂 گزارش‌های ثابت (قبلی)</button>
+</div>
+
+<div id="rp-dynamic">
+  <div class="rp-shell">
+    <aside class="card rp-catalog">
+      <input type="search" id="rp-search" placeholder="جستجوی گزارش…">
+      <div class="rp-cat-row">
+        <select id="rp-category"><option value="">همه‌ی دسته‌ها</option></select>
+        <label class="mini-check"><input type="checkbox" id="rp-fav-only"> ★ علاقه‌مندی‌ها</label>
+      </div>
+      <div id="rp-list" class="rp-list"><div class="loading">در حال بارگذاری</div></div>
+      <div id="rp-jobs" class="rp-jobs"></div>
+    </aside>
+
+    <section class="rp-view">
+      <div class="card rp-empty" id="rp-empty">
+        <h3>یک گزارش انتخاب کنید</h3>
+        <p class="muted">گزارش‌هایی که مدیر سیستم برای شما منتشر کرده در فهرست کنار آمده‌اند. با ★ گزارش‌های پرکاربرد را بالای فهرست نگه دارید.</p>
+      </div>
+
+      <div class="hidden" id="rp-report">
+        <div class="card rp-head">
+          <div class="rp-head-main">
+            <button class="rp-fav" id="rp-fav" type="button" title="علاقه‌مندی">☆</button>
+            <div>
+              <h2 id="rp-name"></h2>
+              <div class="sub" id="rp-desc"></div>
+              <div class="rp-badges" id="rp-badges"></div>
+            </div>
+          </div>
+          <div class="toolbar-actions rp-actions">
+            <button class="btn-ghost btn-sm" id="rp-info-btn" type="button" title="این عددها از کجا آمده‌اند؟">ℹ منبع اعداد</button>
+            <button class="btn-ghost btn-sm" id="rp-snap-btn" type="button" title="نگه‌داشتن نتیجه‌ی فعلی">📸 Snapshot</button>
+            <span class="rp-exports" id="rp-exports"></span>
+          </div>
+        </div>
+        <div class="alert warn hidden" id="rp-banner"></div>
+
+        <div class="card rp-filters hidden" id="rp-filters">
+          <div class="rp-filter-controls" id="rp-filter-controls"></div>
+          <div class="rp-filter-actions">
+            <button class="btn-primary btn-sm" id="rp-apply" type="button">اعمال فیلتر</button>
+            <button class="btn-ghost btn-sm" id="rp-reset" type="button">پاک کردن</button>
+          </div>
+        </div>
+
+        <div class="tabs" id="rp-tabs">
+          <button class="tab active" data-tab="dashboard" type="button">📊 داشبورد</button>
+          <button class="tab" data-tab="analysis" type="button">🔬 تحلیل تخصصی</button>
+          <button class="tab" data-tab="drill" type="button">🧭 Drill-down</button>
+          <button class="tab" data-tab="raw" type="button">🧾 داده‌ی خام</button>
+          <button class="tab" data-tab="snapshots" type="button">📸 Snapshotها</button>
+        </div>
+
+        <div class="rp-panel" data-panel="dashboard">
+          <div class="muted small rp-meta" id="rp-meta"></div>
+          <div id="rp-dashboard"></div>
+        </div>
+        <div class="rp-panel hidden" data-panel="analysis">
+          <div class="card">
+            <div class="section-title">جدول جزئیات</div>
+            <div class="rb-inline">
+              <input type="search" id="an-search" placeholder="جستجو…">
+              <details class="rp-cols"><summary>ستون‌ها</summary><div id="an-cols"></div></details>
+              <span class="muted small" id="an-count"></span>
+            </div>
+            <div class="table-scroll"><table class="rv-grid" id="an-table"></table></div>
+            <div class="rv-pager" id="an-pager"></div>
+          </div>
+          <div class="card" id="an-xtab-card">
+            <div class="section-title">جدول متقاطع (Crosstab)</div>
+            <div class="rb-inline">
+              <select id="xt-row"></select><span>×</span><select id="xt-col"></select>
+              <select id="xt-agg"></select><select id="xt-field"></select>
+              <button class="btn-primary btn-sm" id="xt-run" type="button">محاسبه</button>
+            </div>
+            <div class="table-scroll" id="xt-out"></div>
+          </div>
+          <div class="card" id="an-stats-card">
+            <div class="section-title">آمار توصیفی</div>
+            <button class="btn-primary btn-sm" id="st-run" type="button">محاسبه برای فیلدهای عددی</button>
+            <div class="table-scroll" id="st-out"></div>
+          </div>
+        </div>
+        <div class="rp-panel hidden" data-panel="drill">
+          <div class="card">
+            <div class="rp-crumbs" id="dr-crumbs"></div>
+            <div id="dr-chart" class="rv-canvas"></div>
+            <div id="dr-out"></div>
+          </div>
+        </div>
+        <div class="rp-panel hidden" data-panel="raw">
+          <div class="card">
+            <div class="section-title">داده‌ی خام (همه‌ی فیلدهای منبع، پس از فیلترها)</div>
+            <div class="muted small" id="raw-count"></div>
+            <div class="table-scroll"><table class="rv-grid" id="raw-table"></table></div>
+            <div class="rv-pager" id="raw-pager"></div>
+          </div>
+        </div>
+        <div class="rp-panel hidden" data-panel="snapshots">
+          <div class="card">
+            <div class="section-title">Snapshotها — نتیجه‌های نگه‌داشته‌شده</div>
+            <div class="hint">هر Snapshot نتیجه‌ی یک اجرا را با فیلترها و نسخه‌ی گزارش ثابت نگه می‌دارد؛ حتی اگر داده بعداً تغییر کند.</div>
+            <div id="snap-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div id="rp-legacy" class="hidden">
 <div class="card">
   <div class="section-title">🔎 فیلترهای مشترک همه گزارش‌ها</div>
   <div class="field-group cols-3">
@@ -62,5 +177,30 @@
     <table><thead><tr id="report-head"></tr></thead><tbody id="report-body"></tbody></table>
   </div>
 </div>
+</div>
+
+<div class="modal-overlay" id="rp-info-modal">
+  <div class="modal modal-wide">
+    <h3>ℹ این عددها از کجا آمده‌اند؟</h3>
+    <div id="rp-info"></div>
+    <div class="modal-actions"><button class="btn-secondary" data-close="rp-info-modal" type="button">بستن</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="rp-export-modal">
+  <div class="modal">
+    <h3 id="rp-export-title">خروجی</h3>
+    <div id="rp-export-opts"></div>
+    <div class="modal-actions">
+      <button class="btn-primary" id="rp-export-go" type="button">ساخت خروجی</button>
+      <button class="btn-secondary" data-close="rp-export-modal" type="button">انصراف</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='js/reports.js') }}"></script>{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/echarts.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/report_view.js') }}"></script>
+<script src="{{ url_for('static', filename='js/reports_legacy.js') }}"></script>
+<script src="{{ url_for('static', filename='js/reports.js') }}"></script>
+{% endblock %}

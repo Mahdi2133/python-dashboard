@@ -327,6 +327,14 @@ def ensure_database(app) -> dict:
     status["seeded"] = bool(seeded.get("changed"))
     status["seed"] = seeded
 
+    # The earlier fixed reports, as ordinary editable report definitions.
+    try:
+        from ..analytics.templates import seed_templates
+        status["report_templates"] = seed_templates()
+    except Exception:  # noqa: BLE001 — a template must never stop the app starting
+        db.session.rollback()
+        log.exception("Seeding report templates failed")
+
     with db.engine.connect() as conn:
         status["journal_mode"] = conn.execute(text("PRAGMA journal_mode")).scalar()
         status["foreign_keys"] = bool(conn.execute(text("PRAGMA foreign_keys")).scalar())

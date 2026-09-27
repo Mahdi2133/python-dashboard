@@ -30,6 +30,11 @@ hiddenimports = [
     'reportlab.pdfbase._fontdata_widths_helvetica',
     'arabic_reshaper', 'bidi', 'bidi.algorithm',
     'app.models', 'app.routes', 'app.services', 'app.reports',
+    'app.analytics', 'app.analytics.catalogue', 'app.analytics.engine', 'app.analytics.formula',
+    'app.analytics.access', 'app.analytics.lifecycle', 'app.analytics.exports',
+    'app.analytics.docx_writer', 'app.analytics.jobs', 'app.analytics.templates',
+    'openpyxl.chart', 'reportlab.graphics.charts.barcharts', 'reportlab.graphics.charts.linecharts',
+    'reportlab.graphics.charts.piecharts',
     'email.mime.text',
 ]
 

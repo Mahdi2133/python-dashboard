@@ -246,6 +246,8 @@ class WorkflowStage(db.Model):
     # مرکز آبرسانی's report and may stop it, or send it back for a video» is
     # this list, and «who may» is per action, per stage.
     actions_json = db.Column(db.Text)
+    # «مهلت مرحله» in hours — optional; reports measure delay against it.
+    sla_hours = db.Column(db.Float)
 
     # ── the approval: whether somebody has to sign this stage off ───────────
     needs_approval = db.Column(db.Boolean, nullable=False, default=False)
@@ -359,6 +361,7 @@ class WorkflowStage(db.Model):
             "referral_user_ids": self.referral_ids,
             "refer_all": self.refer_all,
             "actions": self.actions,
+            "sla_hours": self.sla_hours,
             "needs_approval": self.needs_approval,
             "approval_blocks": self.approval_blocks,
             "approval_sees": self.approval_sees,
