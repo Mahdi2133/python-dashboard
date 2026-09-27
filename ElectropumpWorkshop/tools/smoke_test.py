@@ -2202,6 +2202,174 @@ def main():
     run_now = c.post(A + f"/schedules/{sch['data']['id']}/run").get_json()
     check("اجرای زمان‌بندی‌شده Snapshot می‌سازد", run_now.get("ok") and "اجرا شد" in run_now["data"]["message"])
 
+
+    print("\n— فیلد مستند، فیلد محاسباتی، فیلد مشترک و ارجاع برای تأیید —")
+    from app.extensions import db as _db2
+    from app.models import FormSection as _FS, LookupCategory as _LC, Well as _W
+    r = c.post("/api/form-builder/sections", json={"code": "t_rq", "title": "فرم آزمون تأیید",
+                                                   "show_on_entry": False})
+    check("ساخت فرم فقط-فرایندی", r.status_code == 200, str(r.get_json().get("error")))
+    with app.app_context():
+        sec_id = _FS.query.filter_by(code="t_rq").first().id
+    for payload in (
+            {"field_name": "t_a", "label": "عدد الف", "field_type": "number", "is_required": True},
+            {"field_name": "t_b", "label": "عدد ب", "field_type": "number", "is_required": True},
+            {"field_name": "t_sum", "label": "حاصل", "field_type": "formula",
+             "formula": "[t_a] * [t_b] * 0.001", "step": "4"},
+            {"field_name": "t_doc", "label": "عکس پلاک", "field_type": "file", "is_required": True,
+             "file_accept": "image/*,.pdf", "file_multiple": False},
+            {"field_name": "t_mw", "label": "وضعیت چاه (مشترک)", "field_type": "mirror",
+             "mirror_of": "ps_well_cementing"}):
+        rr = c.post("/api/form-builder/fields", json=dict(payload, section_id=sec_id))
+        check(f"ساخت فیلد {payload['field_type']}", rr.status_code == 200,
+              str(rr.get_json().get("error")))
+    rr = c.post("/api/form-builder/fields", json={"field_name": "t_bad", "label": "بد",
+                                                  "field_type": "formula", "section_id": sec_id,
+                                                  "formula": "[nope] + 1"})
+    check("فرمول با فیلد ناموجود رد می‌شود", rr.status_code == 422)
+    rr = c.post("/api/form-builder/fields", json={"field_name": "t_loop", "label": "حلقه",
+                                                  "field_type": "mirror", "section_id": sec_id,
+                                                  "mirror_of": "t_loop"})
+    check("فیلد مشترکِ خودارجاع رد می‌شود", rr.status_code == 422)
+    entry_schema = c.get("/api/form-builder?for=entry").get_json()["data"]
+    check("فرم فقط-فرایندی در صفحه‌ی ثبت اطلاعات نیست",
+          all(sec["code"] != "t_rq" for sec in entry_schema["sections"]))
+    check("فرم‌های انتخاب پمپ ساخته شده‌اند",
+          len([sec for sec in c.get("/api/form-builder").get_json()["data"]["sections"]
+               if sec["code"].startswith("ps_")]) == 9)
+
+    wfd = c.get("/api/workflow/definition").get_json()["data"]
+    st1 = [x for x in wfd["workflow"]["stages"] if x["stage_number"] == 1][0]
+    c.put(f"/api/workflow/stages/{st1['id']}", json={
+        "owner_ids": [owners["markaz"]], "approval_request_enabled": True,
+        "approval_request_user_ids": [owners["bozorg"]]})
+    items = [{"kind": i["kind"], "id": i["section_id"] or i["field_id"], "applies_to": i["applies_to"],
+              "is_optional": i["is_optional"], "is_read_only": i["is_read_only"]}
+             for i in st1["items"]]
+    items.append({"kind": "section", "id": sec_id, "applies_to": "both",
+                  "approval_user_id": owners["bozorg"]})
+    rr = c.put(f"/api/workflow/stages/{st1['id']}/items", json={"items": items})
+    check("تأیید اجباری روی فرم مرحله", rr.status_code == 200
+          and any(i.get("approval_user_id") == owners["bozorg"] for i in rr.get_json()["data"]["items"]))
+    with app.app_context():
+        cat = _LC.query.filter_by(code="failure_reason").first()
+        linked = set()
+        for sec in _FS.query.filter(_FS.visible_when.isnot(None)).all():
+            if (sec.visible_when or "").startswith("failure="):
+                linked |= set(sec.visible_when.split("=", 1)[1].split("|"))
+        plain_cause = next(i.value for i in cat.items if i.is_active and i.value not in linked)
+        well_name = _W.query.filter(_W.is_active.is_(True)).order_by(_W.id.desc()).first().name
+    rr = markaz.post("/api/workflow/instances", json={"operation_kind": "کشیدن", "well": well_name})
+    check("شروع فرایند آزمون تأیید", rr.status_code == 200, str(rr.get_json().get("error")))
+    pid2 = rr.get_json()["data"]["id"]
+    det = markaz.get(f"/api/workflow/instances/{pid2}?stage=1").get_json()["data"]
+    tsec = [x for x in det["form"]["sections"] if x["code"] == "t_rq"]
+    tf = {f["field_name"]: f for f in (tsec[0]["fields"] if tsec else [])}
+    check("فرم آزمون در مرحله ۱", bool(tsec), str([x["code"] for x in det["form"]["sections"]][:6]))
+    check("فیلد مشترک، فیلد مبدأ را با برچسب خودش نشان می‌دهد",
+          tf.get("ps_well_cementing", {}).get("label") == "وضعیت چاه (مشترک)"
+          and tf["ps_well_cementing"].get("field_type") == "radio",
+          str({k: (v.get("label"), v.get("field_type")) for k, v in tf.items()}))
+    check("فیلد محاسباتی و مستند در فرم مرحله", "t_sum" in tf and tf.get("t_doc", {}).get("field_type") == "file")
+    check("پنل ارجاع برای تأیید", det["approval_requests"] and det["approval_requests"]["enabled"]
+          and det["approval_requests"]["required"][0]["state"] == "not_sent")
+    data = {"failure": [plain_cause], "t_a": "20", "t_b": "3", "op_jdate": "1405/07/01",
+            "center": "سوران", "ps_well_cementing": "سیمانته"}
+    rr = markaz.post(f"/api/workflow/instances/{pid2}/submit", json={"stage_number": 1, "data": data})
+    check("بدون مستند الزامی ثبت نمی‌شود", rr.status_code == 422
+          and "t_doc" in (rr.get_json().get("fields") or {}), str(rr.get_json())[:160])
+    up = markaz.post(f"/api/workflow/instances/{pid2}/attachments",
+                     data={"file": (io.BytesIO(b"x" * 10), "note.txt"), "stage_number": "1",
+                           "field_name": "t_doc"}, content_type="multipart/form-data")
+    check("نوع فایل غیرمجاز برای مستند رد می‌شود", up.status_code == 415)
+    big = io.BytesIO(b"%PDF" + b"0" * (70 * 1024 * 1024))
+    up = markaz.post(f"/api/workflow/instances/{pid2}/attachments",
+                     data={"file": (big, "plaque.pdf"), "stage_number": "1", "field_name": "t_doc"},
+                     content_type="multipart/form-data")
+    check("مستند بزرگ‌تر از ۶۴ مگابایت هم پذیرفته می‌شود", up.status_code == 200,
+          str(up.get_json().get("error") if up.is_json else up.status_code))
+    rr = markaz.post(f"/api/workflow/instances/{pid2}/submit", json={"stage_number": 1, "data": data})
+    check("بدون تأیید اجباری مرحله نهایی نمی‌شود", rr.status_code == 422
+          and "تأیید" in rr.get_json().get("error", ""), str(rr.get_json())[:300])
+    blocks = markaz.post(f"/api/workflow/instances/{pid2}/approval-blocks",
+                         json={"stage_number": 1, "draft": data}).get_json()["data"]
+    check("فهرست فرم‌های قابل ضمیمه", any(b["key"] == "1:t_rq" for b in blocks))
+    rule_id = det["approval_requests"]["required"][0]["item_id"]
+    rr = markaz.post(f"/api/workflow/instances/{pid2}/approval-requests",
+                     json={"stage_number": 1, "keys": ["1:t_rq"], "note": "لطفاً بررسی شود",
+                           "draft": data, "rule_item_id": rule_id})
+    check("ارسال درخواست تأیید", rr.status_code == 200, str(rr.get_json().get("error")))
+    req = rr.get_json()["data"]
+    snap_vals = {v["label"]: v["value"] for v in req["snapshot"][0]["values"]}
+    check("خلاصه‌ی فرم ضمیمه با مقدار محاسباتی", snap_vals.get("عدد الف") == "20",
+          str(snap_vals))
+    markaz.post(f"/api/workflow/instances/{pid2}/attachments",
+                data={"file": (io.BytesIO(b"doc"), "extra.pdf"), "stage_number": "1",
+                      "approval_request_id": str(req["id"])}, content_type="multipart/form-data")
+    rr = markaz.post(f"/api/workflow/instances/{pid2}/submit", json={"stage_number": 1, "data": data})
+    check("تا پاسخ تأییدکننده، ثبت نهایی ممکن نیست", rr.status_code == 422
+          and "انتظار" in rr.get_json().get("error", ""))
+    inbox_b = bozorg.get("/api/workflow/inbox").get_json()
+    check("درخواست در کارتابل تأییدکننده", any(x["id"] == req["id"] for x in inbox_b["approval_requests"]))
+    view = bozorg.get(f"/api/workflow/approval-requests/{req['id']}").get_json()["data"]
+    check("تأییدکننده فرم‌ها، توضیح و مستند را می‌بیند",
+          view["note"] == "لطفاً بررسی شود" and len(view["attachments"]) == 1 and view["snapshot"])
+    check("دیگران درخواست را نمی‌بینند",
+          kahani.get(f"/api/workflow/approval-requests/{req['id']}").status_code == 403)
+    rr = bozorg.post(f"/api/workflow/approval-requests/{req['id']}/decide", json={"approved": True, "note": "مورد تأیید"})
+    check("تأیید درخواست", rr.status_code == 200)
+    inbox_m = markaz.get("/api/workflow/inbox").get_json()
+    check("پاسخ به کارتابل ارجاع‌دهنده برگشت",
+          any(x["id"] == req["id"] and x["status"] == "approved" for x in inbox_m["approval_results"]))
+    det = markaz.get(f"/api/workflow/instances/{pid2}?stage=1").get_json()["data"]
+    check("پیش‌نویس فرم پس از بازگشت حفظ شده", (det.get("draft") or {}).get("t_a") == "20")
+    changed = dict(data, t_a="21")
+    rr = markaz.post(f"/api/workflow/instances/{pid2}/submit", json={"stage_number": 1, "data": changed})
+    check("تغییر پس از تأیید، تأیید دوباره می‌خواهد", rr.status_code == 422
+          and "تغییر" in rr.get_json().get("error", ""), str(rr.get_json().get("error"))[:100])
+    rr = markaz.post(f"/api/workflow/instances/{pid2}/submit", json={"stage_number": 1, "data": data})
+    check("پس از تأیید، مرحله ثبت می‌شود", rr.status_code == 200, str(rr.get_json().get("error")))
+    with app.app_context():
+        from app.models import WorkflowInstance as _WI
+        pay = _db2.session.get(_WI, pid2).payload
+    check("مقدار محاسباتی روی سرور حساب شد", pay.get("t_sum") == 0.06, str(pay.get("t_sum")))
+    check("مستند در پاسخ فیلد ثبت شد", isinstance(pay.get("t_doc"), list) and len(pay["t_doc"]) == 1)
+
+    print("\n— مرتب‌سازی رکوردها و به‌روز بودن گزارش‌ها —")
+    for key in ("center_id", "well", "well_pm_code", "op_date", "pump_curr_id", "total_head"):
+        for d in ("asc", "desc"):
+            rr = c.get(f"/api/records?sort={key}&dir={d}&page_size=5")
+            check(f"مرتب‌سازی {key} {d}", rr.status_code == 200 and rr.get_json().get("ok"))
+    a = c.get("/api/records?sort=total_head&dir=asc&page_size=500").get_json()["data"]
+    vals = [x.get("total_head") for x in a if x.get("total_head") is not None]
+    check("مرتب‌سازی عددی صعودی درست است", vals == sorted(vals), str(vals[:5]))
+    d_ = c.get("/api/records?sort=total_head&dir=desc&page_size=500").get_json()["data"]
+    vals = [x.get("total_head") for x in d_ if x.get("total_head") is not None]
+    check("مرتب‌سازی عددی نزولی درست است", vals == sorted(vals, reverse=True))
+    from app.services.persian_sort import fa_key
+    words = ["گلستان", "مهر", "پارس", "چمران", "بهار", "آبی", "ژاله", "یاس", "كوثر", "زرین", "امید"]
+    check("ترتیب الفبای فارسی (پ چ ژ گ ک)", sorted(words, key=fa_key)
+          == ["امید", "آبی", "بهار", "پارس", "چمران", "زرین", "ژاله", "كوثر", "گلستان", "مهر", "یاس"])
+    check("اعداد داخل متن عددی مقایسه می‌شوند", fa_key("چاه ۲") < fa_key("چاه 10"))
+    with app.app_context():
+        from app.extensions import db as _db
+        got = [r[0] for r in _db.session.execute(_db.text(
+            "SELECT v FROM (SELECT 'گل' v UNION ALL SELECT 'پارس' UNION ALL SELECT 'مهر' "
+            "UNION ALL SELECT 'بهار') ORDER BY v COLLATE fa"))]
+    check("مرتب‌سازی فارسی در پایگاه داده", got == ["بهار", "پارس", "گل", "مهر"], str(got))
+    rep_def = {"source": "records", "kpis": [{"id": "k", "title": "جمع هد",
+                                              "value": {"agg": "sum", "field": "total_head"}}]}
+    before = c.post("/api/analytics/preview", json={"definition": rep_def}).get_json()["data"]["kpis"][0]["value"]
+    rec = next(x for x in c.get("/api/records?page_size=200&sort=op_date&dir=asc").get_json()["data"]
+               if x.get("motor_curr") and x.get("center"))
+    old = rec.get("total_head") or 0
+    pr = c.put(f"/api/records/{rec['id']}", json={"total_head": old + 1000})
+    check("ویرایش رکورد", pr.status_code == 200, str(pr.get_json())[:300])
+    after = c.post("/api/analytics/preview", json={"definition": rep_def}).get_json()["data"]["kpis"][0]["value"]
+    check("ویرایش رکورد بلافاصله در گزارش‌ها دیده می‌شود", round((after or 0) - (before or 0)) == 1000,
+          f"{before} → {after}")
+    c.put(f"/api/records/{rec['id']}", json={"total_head": old or None})
+
     print("\n— ترتیب تب‌ها —")
     check("صفحه اصلی، ثبت اطلاعات است",
           b"page-mode" in c.get("/", follow_redirects=True).data)

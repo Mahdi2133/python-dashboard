@@ -480,6 +480,13 @@
       + '<input type="checkbox" class="readonly"' + (item.is_read_only ? ' checked' : '')
       + '> 🔒 فقط نمایش</label>'
       + (item.kind === 'section'
+          ? '<select class="mini item-approver" title="تأیید اجباری: پس از پر شدن این فرم، تا این شخص تأیید نکند مرحله نهایی نمی‌شود">'
+            + '<option value="">✅ تأیید: —</option>'
+            + definition.users.map(function (u) {
+                return '<option value="' + u.id + '"' + (u.id === item.approval_user_id ? ' selected' : '') + '>✅ '
+                  + A.esc(u.full_name) + '</option>';
+              }).join('') + '</select>' : '')
+      + (item.kind === 'section'
           ? '<button class="btn-sm lock-toggle" type="button" title="کدام فیلدهای این فرم '
             + 'در این مرحله قابل ویرایش‌اند و کدام قفل">' + lockLabel(item.locked_fields)
             + '</button>' : '')
@@ -602,6 +609,23 @@
       + '<span class="hint">اگر «ثبت‌کننده انتخاب می‌کند» باشد، هنگام ارسال '
       + 'برای تأیید، فهرست مرحله‌های ثبت‌شده به ثبت‌کننده نشان داده می‌شود تا '
       + 'تعیین کند تأییدکننده کدام‌ها را ببیند.</span>'
+      + '</div>'
+      /* «ارجاع برای تأیید»: the person here sends chosen forms, a note and
+         documents to someone; the answer comes back to them and they go on. */
+      + '<label class="mini-check wf-areq-toggle">'
+      + '<input type="checkbox" class="wf-areq-enabled"' + (s.approval_request_enabled ? ' checked' : '')
+      + '> 📝 امکان «ارجاع برای تأیید» (ضمیمه‌ی فرم‌های پرشده، توضیحات و مستندات؛ پاسخ به همین مرحله برمی‌گردد)</label>'
+      + '<div class="wf-areq-box"' + (s.approval_request_enabled ? '' : ' hidden') + '>'
+      + '<div class="wf-stage-row"><label>تأییدکننده‌های مجاز</label>'
+      + '<select class="wf-areq-users" multiple size="4">'
+      + definition.users.map(function (u) {
+          return '<option value="' + u.id + '"'
+            + ((s.approval_request_user_ids || []).indexOf(u.id) >= 0 ? ' selected' : '') + '>'
+            + A.esc(u.full_name) + '</option>';
+        }).join('')
+      + '</select></div>'
+      + '<span class="hint">هیچ‌کدام انتخاب نشود یعنی همه‌ی کاربران فعال. برای «تأیید اجباری» یک فرم مشخص، '
+      + 'روی همان فرم در این مرحله «✅ تأیید» را تنظیم کنید.</span>'
       + '</div>'
       + '</details>';
   }
@@ -1127,6 +1151,12 @@
         if (blocks) body.approval_blocks = blocks.checked;
         var sees = card.querySelector('.wf-approval-sees');
         if (sees) body.approval_sees = sees.value;
+        var areq = card.querySelector('.wf-areq-enabled');
+        if (areq) {
+          body.approval_request_enabled = areq.checked;
+          body.approval_request_user_ids = Array.prototype.slice.call(
+            card.querySelector('.wf-areq-users').selectedOptions).map(function (o) { return Number(o.value); });
+        }
       }
       if (card.querySelector('.wf-actions')) body.actions = readActions(card);
       await A.api.put('/api/workflow/stages/' + id, body);
@@ -1149,6 +1179,7 @@
           is_read_only: flag(li, '.readonly', 'readonly'),
           locked_fields: ((li.querySelector('.wf-lock-panel') || { dataset: {} })
             .dataset.locked || '').split(',').filter(Boolean),
+          approval_user_id: (li.querySelector('.item-approver') || {}).value || null,
         };
       });
       await A.api.put('/api/workflow/stages/' + id + '/items', { items: items });
@@ -1395,6 +1426,10 @@
         card.querySelector('.wf-refer-hint-row').hidden = mode !== 'choose';
         card.querySelector('.wf-refer-user').querySelector('label').textContent =
           mode === 'choose' ? 'پیش‌فرض' : 'کاربر';
+      }
+      if (ev.target.classList.contains('wf-areq-enabled')) {
+        var abox = ev.target.closest('.wf-stage').querySelector('.wf-areq-box');
+        if (abox) abox.hidden = !ev.target.checked;
       }
       if (ev.target.classList.contains('wf-needs-approval')) {
         card.querySelector('.wf-approve-box').hidden = !ev.target.checked;

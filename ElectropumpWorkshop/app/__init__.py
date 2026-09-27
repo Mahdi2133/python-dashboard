@@ -47,6 +47,9 @@ def _sqlite_pragmas(dbapi_connection, connection_record):
             log.warning("Could not switch journal_mode to WAL: %s", exc)
         cur.execute("PRAGMA foreign_keys=ON")
         cur.execute("PRAGMA synchronous=NORMAL")
+        # Persian alphabetical order for sorted lists (پ چ ژ گ in place)
+        from .services.persian_sort import COLLATION, fa_collate
+        dbapi_connection.create_collation(COLLATION, fa_collate)
     finally:
         cur.close()
 
@@ -76,7 +79,9 @@ def create_app(config_overrides: dict | None = None) -> Flask:
             "pool_pre_ping": True,
         },
         JSON_AS_ASCII=False,
-        MAX_CONTENT_LENGTH=64 * 1024 * 1024,
+        # No upload cap: documents (videos of a pull, scanned dossiers) can be
+        # any size; the disk is the only limit.
+        MAX_CONTENT_LENGTH=None,
         WTF_CSRF_TIME_LIMIT=None,
         PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
         SESSION_COOKIE_HTTPONLY=True,

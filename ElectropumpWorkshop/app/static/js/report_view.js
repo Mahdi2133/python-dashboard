@@ -294,6 +294,43 @@
     }[type];
   }
 
+  /* Zoom in / out (wheel, pinch, the slider), and «select a range inside the
+     chart» with the toolbox's area-zoom — on every chart with an axis. */
+  function addZoom(option, type, opts) {
+    var axisCharts = ['bar', 'column', 'comparison', 'hbar', 'ranking', 'line', 'area', 'trend_day',
+      'trend_week', 'trend_month', 'trend_year', 'stacked_bar', 'stacked_column', 'pareto',
+      'histogram', 'box', 'scatter', 'bubble', 'heatmap'];
+    if (axisCharts.indexOf(type) < 0) {
+      option.toolbox = { right: 8, top: 0, feature: { saveAsImage: { title: 'ذخیره‌ی تصویر' } } };
+      return;
+    }
+    var horizontal = ['hbar', 'ranking', 'stacked_bar'].indexOf(type) >= 0;
+    var both = type === 'scatter' || type === 'bubble';
+    var z = [];
+    if (both) {
+      z = [{ type: 'inside', xAxisIndex: 0 }, { type: 'inside', yAxisIndex: 0 },
+           { type: 'slider', xAxisIndex: 0, height: 16, bottom: 4 }];
+    } else if (horizontal) {
+      z = [{ type: 'inside', yAxisIndex: 0 }, { type: 'slider', yAxisIndex: 0, width: 14, right: 4 }];
+    } else if (type !== 'heatmap') {
+      z = [{ type: 'inside', xAxisIndex: 0 }, { type: 'slider', xAxisIndex: 0, height: 16, bottom: 4 }];
+    }
+    option.dataZoom = z;
+    if (option.grid && !horizontal && !both) option.grid.bottom = Math.max(option.grid.bottom || 8, 30);
+    if (option.grid && horizontal) option.grid.right = Math.max(option.grid.right || 12, 30);
+    option.toolbox = {
+      right: 8, top: 0, itemSize: 15,
+      feature: {
+        dataZoom: { title: { zoom: 'انتخاب بازه (بکشید)', back: 'برگشت' },
+                    xAxisIndex: horizontal ? false : 0, yAxisIndex: horizontal || both ? 0 : false },
+        restore: { title: 'حالت اولیه' },
+        saveAsImage: { title: 'ذخیره‌ی تصویر' }
+      }
+    };
+    if (option.grid) option.grid.top = Math.max(option.grid.top || 18, 34);
+    if (option.legend && option.legend.show !== false) { option.legend.top = 4; option.legend.left = 8; option.legend.right = 150; }
+  }
+
   function chartEmpty(d) {
     if (d.points) return !d.points.length;
     if (d.bins) return !d.bins.length;
@@ -340,6 +377,7 @@
     }
     setTimeout(function () {
       var option = build(d, def);
+      addZoom(option, d.type, opts || {});
       option.textStyle = BASE_TEXT;
       option.color = def.colors && def.colors.length ? def.colors : PALETTE;
       option.animationDuration = 400;
@@ -513,7 +551,11 @@
       }
       if (!node) return;
       used[item.ref] = true;
-      var cell = A.el('div', { class: 'rv-cell', style: 'grid-column: span ' + Math.max(1, Math.min(12, item.w || 6)) });
+      var w = item.w || 6;
+      // the output page draws every chart the full width and tall
+      if (opts.fullWidthCharts && kind === 'chart') w = 12;
+      var cell = A.el('div', { class: 'rv-cell' + (opts.fullWidthCharts && kind === 'chart' ? ' rv-cell-tall' : ''),
+                               style: 'grid-column: span ' + Math.max(1, Math.min(12, w)) });
       cell.appendChild(node);
       grid.appendChild(cell);
     }

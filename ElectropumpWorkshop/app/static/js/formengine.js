@@ -147,6 +147,231 @@
             : '');
     }
 
+
+    /* ── «محاسباتی»: a small, safe evaluator for the form's formulas ──────
+       Same language the server uses: [field] references (by name or label),
+       numbers, + − × ÷ ^, parentheses, comparisons, and ROUND, ABS, MIN, MAX,
+       SQRT, IF. Nothing is ever passed to eval. The server recomputes on save;
+       this only shows the result as the inputs are typed. */
+    var labelToName = null;
+    function refName(ref) {
+      if (!labelToName) {
+        labelToName = {};
+        (schema.sections || []).forEach(function (sec) {
+          (sec.fields || []).forEach(function (f) { labelToName[f.label] = f.field_name; });
+        });
+      }
+      return labelToName[ref] || ref;
+    }
+    function toNum(v) {
+      if (v === null || v === undefined || v === '') return null;
+      if (typeof v === 'number') return v;
+      var t = String(v).replace(/[۰-۹]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d); })
+        .replace('٫', '.').replace(/,/g, '');
+      var n = Number(t);
+      return isNaN(n) ? null : n;
+    }
+    function evalFormula(text, lookup) {
+      var toks = [], i = 0, src = String(text || '');
+      while (i < src.length) {
+        var c = src[i];
+        if (/\s/.test(c)) { i++; continue; }
+        if (c === '[' || c === '{') {
+          var close = c === '[' ? ']' : '}', j = src.indexOf(close, i);
+          if (j < 0) throw 'bad';
+          toks.push({ t: 'ref', v: src.slice(i + 1, j).trim() }); i = j + 1; continue;
+        }
+        var m = /^[0-9۰-۹]+([.٫][0-9۰-۹]+)?/.exec(src.slice(i));
+        if (m) { toks.push({ t: 'num', v: toNum(m[0]) }); i += m[0].length; continue; }
+        m = /^[A-Za-z_]+/.exec(src.slice(i));
+        if (m) { toks.push({ t: 'fn', v: m[0].toUpperCase() }); i += m[0].length; continue; }
+        m = /^(>=|<=|!=|<>|==|[-+*\/^()<>=,×÷])/.exec(src.slice(i));
+        if (m) { toks.push({ t: 'op', v: m[0] === '×' ? '*' : m[0] === '÷' ? '/' : m[0] }); i += m[0].length; continue; }
+        throw 'bad';
+      }
+      var p = 0;
+      function peek(v) { return toks[p] && toks[p].t === 'op' && toks[p].v === v; }
+      function cmp() {
+        var a = add();
+        while (toks[p] && toks[p].t === 'op' && ['>', '<', '>=', '<=', '=', '==', '!=', '<>'].indexOf(toks[p].v) >= 0) {
+          var op = toks[p++].v, b = add();
+          if (a === null || b === null) { a = null; continue; }
+          a = { '>': a > b, '<': a < b, '>=': a >= b, '<=': a <= b, '=': a === b, '==': a === b, '!=': a !== b, '<>': a !== b }[op] ? 1 : 0;
+        }
+        return a;
+      }
+      function add() {
+        var a = mul();
+        while (peek('+') || peek('-')) {
+          var op = toks[p++].v, b = mul();
+          a = (a === null || b === null) ? null : (op === '+' ? a + b : a - b);
+        }
+        return a;
+      }
+      function mul() {
+        var a = pow();
+        while (peek('*') || peek('/')) {
+          var op = toks[p++].v, b = pow();
+          if (a === null || b === null) a = null;
+          else if (op === '/') a = b === 0 ? null : a / b;
+          else a = a * b;
+        }
+        return a;
+      }
+      function pow() {
+        var a = unary();
+        if (peek('^')) { p++; var b = pow(); a = (a === null || b === null) ? null : Math.pow(a, b); }
+        return a;
+      }
+      function unary() {
+        if (peek('-')) { p++; var v = unary(); return v === null ? null : -v; }
+        if (peek('+')) { p++; return unary(); }
+        return atom();
+      }
+      function atom() {
+        var tk = toks[p++];
+        if (!tk) throw 'bad';
+        if (tk.t === 'num') return tk.v;
+        if (tk.t === 'ref') return toNum(lookup(refName(tk.v)));
+        if (tk.t === 'op' && tk.v === '(') { var v = cmp(); if (!peek(')')) throw 'bad'; p++; return v; }
+        if (tk.t === 'fn') {
+          if (!peek('(')) throw 'bad';
+          p++;
+          var args = [];
+          if (!peek(')')) { args.push(cmp()); while (peek(',')) { p++; args.push(cmp()); } }
+          if (!peek(')')) throw 'bad';
+          p++;
+          var nums = args.filter(function (x) { return x !== null; });
+          switch (tk.v) {
+            case 'ROUND': return args[0] === null ? null
+              : Math.round(args[0] * Math.pow(10, args[1] || 0)) / Math.pow(10, args[1] || 0);
+            case 'ABS': return args[0] === null ? null : Math.abs(args[0]);
+            case 'SQRT': return args[0] === null || args[0] < 0 ? null : Math.sqrt(args[0]);
+            case 'MIN': return nums.length ? Math.min.apply(null, nums) : null;
+            case 'MAX': return nums.length ? Math.max.apply(null, nums) : null;
+            case 'IF': return args[0] ? (args[1] === undefined ? null : args[1]) : (args[2] === undefined ? null : args[2]);
+            case 'COALESCE': return nums.length ? nums[0] : null;
+            default: throw 'bad';
+          }
+        }
+        throw 'bad';
+      }
+      var out = cmp();
+      if (p < toks.length) throw 'bad';
+      return out;
+    }
+    self.evalFormula = evalFormula;
+
+    function contextValue(name) {
+      var wrap = qs('[data-wrap="' + name + '"]');
+      if (wrap) {
+        var fd = fieldByName(name);
+        if (fd && fd.read_only) return fd.read_only_value;
+        if (fd && fd.field_type === 'formula') {
+          var out = qs('#fld-' + name);
+          return out ? out.value : null;
+        }
+        return currentValueOf(name);
+      }
+      return (options.context || {})[name];
+    }
+    var byName = null;
+    function fieldByName(name) {
+      if (!byName) {
+        byName = {};
+        (schema.sections || []).forEach(function (sec) {
+          (sec.fields || []).forEach(function (f) { byName[f.field_name] = f; });
+        });
+      }
+      return byName[name];
+    }
+
+    function recomputeFormulas() {
+      for (var pass = 0; pass < 3; pass++) {
+        qsa('[data-formula]').forEach(function (out) {
+          var fd = fieldByName(out.dataset.formula);
+          if (!fd) return;
+          var v = null;
+          try { v = evalFormula(fd.formula, contextValue); } catch (e) { v = null; }
+          var dec = /^\d+$/.test(String(fd.step || '')) ? Number(fd.step) : 4;
+          out.value = (v === null || v === undefined || isNaN(v)) ? ''
+            : String(Math.round(v * Math.pow(10, dec)) / Math.pow(10, dec));
+        });
+      }
+    }
+    self.recomputeFormulas = recomputeFormulas;
+
+    function renderFormula(field) {
+      return '<input type="text" class="calc-output" id="fld-' + A.esc(field.field_name) + '"'
+        + ' name="' + A.esc(field.field_name) + '" data-formula="' + A.esc(field.field_name) + '"'
+        + ' readonly tabindex="-1" placeholder="خودکار محاسبه می‌شود">'
+        + '<span class="hint calc-formula" dir="ltr">= ' + A.esc(field.formula || '') + '</span>';
+    }
+
+    /* ── «مستند»: upload into a named slot ─────────────────────────────── */
+    function fileRow(a, removable) {
+      return '<div class="file-row" data-att="' + a.id + '">'
+        + '<a href="' + A.esc(a.url) + '" target="_blank">📄 ' + A.esc(a.filename) + '</a>'
+        + '<span class="hint">' + A.esc(a.size_label || '') + (a.uploaded_by_name ? ' · ' + A.esc(a.uploaded_by_name) : '')
+        + (a.uploaded_at_j ? ' · ' + A.esc(a.uploaded_at_j) : '') + '</span>'
+        + (removable ? '<button type="button" class="btn-sm btn-del file-del" data-att="' + a.id + '" title="حذف">🗑</button>' : '')
+        + '</div>';
+    }
+    function renderFile(field, locked) {
+      var files = field.files || [];
+      var list = '<div class="file-list" data-files="' + A.esc(field.field_name) + '">'
+        + (files.length ? files.map(function (a) { return fileRow(a, !locked); }).join('')
+          : '<div class="hint">' + (locked ? 'مستندی بارگذاری نشده است.' : 'هنوز فایلی بارگذاری نشده.') + '</div>')
+        + '</div>';
+      if (locked) return list;
+      if (!options.upload) {
+        return list + '<div class="hint">بارگذاری این مستند در کارتابل فرایند انجام می‌شود.</div>';
+      }
+      return list + '<label class="file-pick btn-ghost btn-sm">📎 انتخاب فایل'
+        + '<input type="file" class="file-input" data-file-for="' + A.esc(field.field_name) + '"'
+        + (field.file_accept ? ' accept="' + A.esc(field.file_accept) + '"' : '')
+        + (field.file_multiple !== false ? ' multiple' : '') + ' hidden></label>'
+        + '<span class="file-status hint" data-status="' + A.esc(field.field_name) + '"></span>'
+        + (field.file_accept ? '<span class="hint"> — نوع مجاز: ' + A.esc(field.file_accept) + '</span>' : '');
+    }
+    function redrawFiles(field) {
+      var box = qs('[data-files="' + field.field_name + '"]');
+      if (!box) return;
+      var files = field.files || [];
+      box.innerHTML = files.length ? files.map(function (a) { return fileRow(a, true); }).join('')
+        : '<div class="hint">هنوز فایلی بارگذاری نشده.</div>';
+    }
+    root.addEventListener('change', async function (ev) {
+      var input = ev.target.closest && ev.target.closest('.file-input');
+      if (!input || !options.upload) return;
+      var field = fieldByName(input.dataset.fileFor);
+      if (!field || !input.files.length) return;
+      var status = qs('[data-status="' + field.field_name + '"]');
+      if (status) status.textContent = 'در حال بارگذاری…';
+      try {
+        var added = await options.upload(field, Array.prototype.slice.call(input.files));
+        field.files = field.file_multiple === false ? added.slice(-1) : (field.files || []).concat(added);
+        redrawFiles(field);
+        if (status) status.textContent = '✓ بارگذاری شد';
+      } catch (err) {
+        if (status) status.textContent = '✕ ' + (err.message || 'خطا');
+      }
+      input.value = '';
+    });
+    root.addEventListener('click', async function (ev) {
+      var del = ev.target.closest && ev.target.closest('.file-del');
+      if (!del || !options.removeFile) return;
+      var wrap = del.closest('[data-wrap]');
+      var field = wrap && fieldByName(wrap.dataset.wrap);
+      if (!field) return;
+      if (!(await A.confirmDialog({ message: 'این فایل حذف شود؟' }))) return;
+      try {
+        await options.removeFile(Number(del.dataset.att));
+        field.files = (field.files || []).filter(function (a) { return String(a.id) !== del.dataset.att; });
+        redrawFiles(field);
+      } catch (err) { A.toast(err.message, 'error'); }
+    });
+
     function renderField(field) {
       var body;
       if (field.field_type === 'radio') body = renderChoice(field, false);
@@ -159,13 +384,15 @@
       } else if (field.field_type === 'multiselect') body = renderChoice(field, true);
       else if (field.field_type === 'checklist') body = renderChecklist(field);
       else if (field.field_type === 'select') body = renderSelect(field);
+      else if (field.field_type === 'file') body = renderFile(field, !!field.read_only);
+      else if (field.field_type === 'formula') body = renderFormula(field);
       else body = renderInput(field);
 
       /* Settled upstream: shown and filled so the stage can see it, but not
          editable here — the well is chosen once, at step zero, and a checklist
          somebody already ticked is carried forward as a record of what they
          ticked rather than as a form to fill again. */
-      if (field.read_only) {
+      if (field.read_only && field.field_type !== 'file') {
         body = field.field_type === 'checklist'
           ? renderChecklist(field, true)
           : '<input type="text" id="fld-' + A.esc(field.field_name) + '"'
@@ -178,7 +405,7 @@
          buttons into a 180px column is what made the form look ragged. */
       var count = optionsFor(field).length;
       var wide = '';
-      if (field.field_type === 'textarea') wide = ' span-full';
+      if (field.field_type === 'textarea' || field.field_type === 'file') wide = ' span-full';
       else if (['checkbox', 'multiselect'].includes(field.field_type) && count > 4) {
         wide = ' span-full';
       } else if (field.field_type === 'radio' && count > 7) {
@@ -215,6 +442,9 @@
       applyDefaults();
       self.applyConditional();
       updateChoiceCounts();
+      root.addEventListener('input', recomputeFormulas);
+      root.addEventListener('change', recomputeFormulas);
+      recomputeFormulas();
       return self;
     };
 
@@ -544,6 +774,9 @@
 
     function readField(field) {
       var name = field.field_name;
+      if (field.field_type === 'file') {
+        return (field.files || []).map(function (a) { return a.id; });
+      }
       if (field.field_type === 'radio') {
         var value = checkedValues(name)[0] || '';
         var other = otherValue(name);
@@ -612,6 +845,8 @@
 
     self.setFieldValue = function (field, value) {
       var name = field.field_name;
+      if (field.field_type === 'file') return;          // the upload list is the value
+      if (field.field_type === 'formula') { recomputeFormulas(); return; }
       if (field.field_type === 'radio') {
         var radio = qs('input[name="' + name + '"][value="'
                        + CSS.escape(String(value == null ? '' : value)) + '"]');
@@ -658,6 +893,7 @@
       });
       self.applyConditional();
       updateChoiceCounts();
+      recomputeFormulas();
     };
 
     self.clearErrors = function () {

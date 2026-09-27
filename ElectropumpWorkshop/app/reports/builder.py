@@ -111,7 +111,8 @@ def dynamic_fields() -> list:
     from ..models import FormField
     out = []
     for f in (FormField.query.filter(FormField.is_active.is_(True),
-                                     FormField.model_attr.is_(None))
+                                     FormField.model_attr.is_(None),
+                                     FormField.field_type != "mirror")
               .order_by(FormField.sort_order).all()):
         out.append({
             "key": f"dyn.{f.field_name}", "label": f.label, "kind": "dynamic",

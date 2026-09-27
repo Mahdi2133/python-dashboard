@@ -124,7 +124,7 @@
 
   document.addEventListener('DOMContentLoaded', async function () {
     try {
-      var res = await A.api.get('/api/form-builder');
+      var res = await A.api.get('/api/form-builder?for=entry');
       schema = res.data;
       form = window.FormEngine({
         root: A.qs('#form-grid'),

@@ -89,6 +89,38 @@
         <select id="fb-other"><option value="0">خیر</option><option value="1">بله</option></select></div>
       <div class="field span-2"><label>سرستون خروجی اکسل</label>
         <input type="text" id="fb-export"></div>
+      <!-- «مستند» -->
+      <div class="field span-full hidden fb-special" data-for="file">
+        <label>📎 تنظیمات مستند</label>
+        <div class="field-group cols-2">
+          <div class="field"><label>نوع فایل‌های مجاز <span class="hint">(خالی = همه)</span></label>
+            <input type="text" id="fb-accept" dir="ltr" placeholder="image/*,.pdf,.docx"></div>
+          <div class="field"><label>تعداد فایل</label>
+            <select id="fb-multiple"><option value="1">چند فایل</option><option value="0">یک فایل (جایگزین می‌شود)</option></select></div>
+        </div>
+        <div class="hint">برچسب فیلد همان «عنوان مستند» است (مثلاً «عکس پلاک موتور» یا «فرم دبی‌سنجی»)؛
+          با «الزامی / اختیاری» مشخص کنید که بدون آن مرحله ثبت می‌شود یا نه. بارگذاری در کارتابل فرایند انجام می‌شود و محدودیت حجم ندارد.</div>
+      </div>
+      <!-- «محاسباتی» -->
+      <div class="field span-full hidden fb-special" data-for="formula">
+        <label>🧮 فرمول</label>
+        <textarea id="fb-formula" dir="ltr" class="mono" rows="2" placeholder="[design_flow] * 0.001 / [dynamic_level]"></textarea>
+        <div class="rb-inline">
+          <select id="fb-formula-field"><option value="">＋ درج فیلد…</option></select>
+          <button class="btn-ghost btn-sm" id="fb-formula-check" type="button">✔ بررسی فرمول</button>
+          <span id="fb-formula-status" class="hint"></span>
+        </div>
+        <div class="hint">فیلدها داخل کروشه با نام فنی یا برچسب؛ عملگرها + − * / ^ و توابع ROUND، ABS، MIN، MAX، SQRT، IF.
+          تعداد رقم اعشار را در «گام (step)» بنویسید (مثلاً 4). مقدار همیشه خودکار محاسبه و ذخیره می‌شود و کاربر آن را تایپ نمی‌کند.</div>
+      </div>
+      <!-- «فیلد مشترک» -->
+      <div class="field span-full hidden fb-special" data-for="mirror">
+        <label>🔗 فیلد مبدأ</label>
+        <select id="fb-mirror"><option value="">— انتخاب فیلد —</option></select>
+        <div class="hint">این فرم همان فیلد را (با همین برچسب، جای خودش در این فرم و شرط نمایشش) نشان می‌دهد و پاسخ
+          در همان فیلد مبدأ ذخیره می‌شود؛ یعنی یک داده در دو فرم، بدون دوباره‌کاری و بدون دو مقدار متفاوت.
+          گزینه‌ها، نوع و الزامی بودن از فیلد مبدأ می‌آید.</div>
+      </div>
       <div class="field span-full hidden" id="fb-options-wrap">
         <label>گزینه‌های این فیلد <span id="fb-options-count" class="badge muted"></span></label>
         <div id="fb-options-note"></div>
@@ -123,6 +155,8 @@
         <select id="sb-full"><option value="0">خیر</option><option value="1">بله</option></select></div>
       <div class="field"><label>وضعیت</label>
         <select id="sb-active"><option value="1">فعال</option><option value="0">غیرفعال</option></select></div>
+      <div class="field"><label>نمایش در صفحه‌ی «ثبت اطلاعات»</label>
+        <select id="sb-entry"><option value="1">بله</option><option value="0">خیر — فقط در مرحله‌های فرایند</option></select></div>
       <div class="field span-2 hidden" id="sb-bring-box"><label>افزودن فیلد از بخش‌های دیگر</label>
         <div class="bring-row">
           <select id="sb-bring-field"><option value="">— فیلدی را انتخاب کنید —</option></select>

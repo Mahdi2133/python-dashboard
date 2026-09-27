@@ -23,6 +23,16 @@ FIELD_TYPES = (
     # wants to *show* the list somebody else ticked, and «چندانتخابی» laid out
     # as a row of buttons is unreadable once there are a dozen of them.
     "checklist",
+    # «مستند»: a slot where a named document is uploaded — «عکس پلاک موتور»,
+    # «فرم دبی‌سنجی» — optional or required like any other field.
+    "file",
+    # «محاسباتی»: filled by a formula over other fields of the form, e.g.
+    # Sp.Cap = دبی × 0.001 ÷ سطح دینامیک; shown, never typed.
+    "formula",
+    # «فیلد مشترک»: the same answer shown in a second form. It stores nothing
+    # of its own — it draws and writes the field it points at, so «تیپ پمپ
+    # قبلی» in «فرم انتخاب پمپ» and in «مشخصات پمپ» is one value, not two.
+    "mirror",
 )
 
 
@@ -43,6 +53,9 @@ class FormSection(db.Model):
     # parameters of one علت خرابی belong together: tick «سوختن الکتروپمپ» and
     # its dozen readings appear as one block, not one field at a time.
     visible_when = db.Column(db.String(1000))
+    # Drawn on the standalone «ثبت اطلاعات» page too, or only inside process
+    # stages (the pump-selection forms belong to the کارتابل).
+    show_on_entry = db.Column(db.Boolean, nullable=False, default=True)
 
     fields = db.relationship("FormField", back_populates="section",
                              cascade="all, delete-orphan", order_by="FormField.sort_order")
@@ -54,10 +67,16 @@ class FormSection(db.Model):
             "columns": self.columns, "is_active": self.is_active,
             "description": self.description,
             "visible_when": self.visible_when,
+            "show_on_entry": self.show_on_entry is not False,
         }
         if include_fields:
             fields = [f for f in self.fields if f.is_active or not active_only]
-            data["fields"] = [f.to_dict(active_only=active_only) for f in fields]
+            if active_only:
+                # drawn for a form: a «فیلد مشترک» becomes the field it shows
+                drawn = [f.render_dict(active_only=True) for f in fields]
+                data["fields"] = [d for d in drawn if d is not None]
+            else:
+                data["fields"] = [f.to_dict(active_only=False) for f in fields]
         return data
 
 
@@ -99,6 +118,13 @@ class FormField(db.Model):
     # as it was the last time this well was worked on — the admin says so in
     # the form builder instead of the code knowing it.
     prefill_from = db.Column(db.String(80))
+    # «فیلد مشترک»: field_name of the field this one shows and writes.
+    mirror_of = db.Column(db.String(80))
+    # «محاسباتی»: the formula, over fields as [field_name] or [label].
+    formula = db.Column(db.Text)
+    # «مستند»: accepted file types (e.g. «image/*,.pdf») and one or many files.
+    file_accept = db.Column(db.String(200))
+    file_multiple = db.Column(db.Boolean, nullable=False, default=True)
     show_in_table = db.Column(db.Boolean, nullable=False, default=False)
     table_order = db.Column(db.Integer, nullable=False, default=0)
     export_header = db.Column(db.String(200))
@@ -154,7 +180,47 @@ class FormField(db.Model):
             "own_options": [o.to_dict() for o in opts],
             "is_choice": self.is_choice,
             "options_source": self.options_source,
+            "mirror_of": self.mirror_of, "formula": self.formula,
+            "file_accept": self.file_accept, "file_multiple": self.file_multiple,
         }
+
+    def mirror_source(self, _seen=None):
+        """The field a «فیلد مشترک» finally draws, following chains."""
+        if self.field_type != "mirror" or not self.mirror_of:
+            return self
+        seen = _seen or set()
+        if self.id in seen:
+            return None
+        seen.add(self.id)
+        target = FormField.query.filter_by(field_name=self.mirror_of).first()
+        if target is None:
+            return None
+        return target.mirror_source(seen)
+
+    def render_dict(self, active_only=True):
+        """What a form draws for this field.
+
+        An ordinary field is itself. A «فیلد مشترک» is drawn as the field it
+        points at — its type, options and field_name, so the answer lands in
+        one place — but with this form's label, position and rule.
+        """
+        if self.field_type != "mirror":
+            return self.to_dict(active_only=active_only)
+        source = self.mirror_source()
+        if source is None or not source.is_active:
+            return None
+        data = source.to_dict(active_only=active_only)
+        data.update({
+            "section_id": self.section_id,
+            "section": self.section.code if self.section else None,
+            "label": self.label or source.label,
+            "sort_order": self.sort_order, "col_span": self.col_span,
+            "help_text": self.help_text or source.help_text,
+            "visible_when": self.visible_when or source.visible_when,
+            "mirror_id": self.id, "mirror_name": self.field_name,
+            "mirrored": True,
+        })
+        return data
 
 
 class FormFieldOption(db.Model):

@@ -846,6 +846,8 @@ def seed_all(force: bool = False) -> dict:
     result.update(seed_prefill_sources())
     result.update(seed_default_return())
     result.update(seed_review_decision())
+    from .seed_pump_selection import seed_pump_selection_forms
+    result.update(seed_pump_selection_forms())
     result["changed"] = any(v for k, v in result.items() if isinstance(v, int))
     if result["changed"]:
         log.info("Seed applied: %s", result)

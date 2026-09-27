@@ -368,6 +368,18 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
 
     settled = _settled_values(instance, stage.stage_number)
     history = {}
+    from .formfields import files_by_field
+    files = files_by_field(instance)
+
+    def with_files(fields):
+        """A «مستند» field carries the documents already uploaded into it."""
+        out = []
+        for field in fields:
+            if field.get("field_type") == "file":
+                field = dict(field)
+                field["files"] = files.get(field.get("field_name"), [])
+            out.append(field)
+        return out
 
     def from_history(name):
         """A locked field with «برداشت از سوابق» shows the well's value."""
@@ -391,6 +403,10 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
             if value in (None, "", [], {}) and field.get("prefill_from"):
                 value = from_history(field.get("field_name"))
             field["is_required"] = False       # not this stage's to answer
+            if field.get("field_type") == "file":
+                got = files.get(field.get("field_name"), [])
+                field["files"] = got
+                value = [a["filename"] for a in got]
             if field.get("lookup_category") == "__months__" \
                     and str(value or "").isdigit() and 1 <= int(value) <= 12:
                 from .jalali import MONTHS_FA
@@ -411,7 +427,7 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
     for item in stage_items(instance, stage, draft):
         if item.section:
             block = item.section.to_dict(include_fields=True, active_only=True)
-            block["fields"] = usable(block.get("fields") or [])
+            block["fields"] = with_files(usable(block.get("fields") or []))
             if item.is_read_only:
                 block["fields"] = locked(block["fields"])
                 block["is_locked"] = True
@@ -427,7 +443,10 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
             block["is_optional"] = item.is_optional
             blocks.append(block)
         elif item.field:
-            fields = usable([item.field.to_dict()])
+            drawn = item.field.render_dict()
+            if drawn is None:
+                continue
+            fields = with_files(usable([drawn]))
             if item.is_read_only:
                 fields = locked(fields)
             if not fields:
@@ -441,7 +460,9 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
                 "description": None,
                 "fields": fields,
             })
-    blocks += _dependent_sections(blocks, usable, settled)
+    blocks += _dependent_sections(blocks, lambda fs: with_files(usable(fs)), settled)
+    blocks = _settle_offpage_rules(_dedupe_fields(blocks),
+                                   {**instance.payload, **(draft or {})})
     return {
         "stage": stage.to_dict(),
         "sections": blocks,
@@ -450,6 +471,65 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
                                    {**instance.payload, **(draft or {})})
                                if carries_well_install(stage) else None),
     }
+
+
+def _dedupe_fields(blocks: list) -> list:
+    """One widget per answer on a page.
+
+    A «فیلد مشترک» draws another field under that field's name; when both land
+    on the same stage the second copy would fight the first over the value, so
+    only the first is kept.
+    """
+    seen = set()
+    out = []
+    for block in blocks:
+        kept = []
+        for f in block.get("fields") or []:
+            name = f.get("field_name")
+            if name in seen:
+                continue
+            seen.add(name)
+            kept.append(f)
+        if kept:
+            out.append(dict(block, fields=kept))
+    return out
+
+
+def _rule_met(raw, values: dict, on_page: set):
+    """True / False when the rule's question was answered off this page, else None."""
+    from .conditions import parse_rules
+    rules = parse_rules(raw)
+    if not rules or any(on in on_page for on, _vals in rules):
+        return None                      # the page itself decides
+    answered = False
+    for on, wanted in rules:
+        have = values.get(on)
+        if have in (None, "", [], {}):
+            continue
+        answered = True
+        have = have if isinstance(have, list) else [have]
+        if any(str(h) in wanted for h in have):
+            return True
+    return False if answered else None
+
+
+def _settle_offpage_rules(blocks: list, values: dict) -> list:
+    """Apply «نمایش فقط وقتی…» whose question an earlier stage answered.
+
+    «تک کابل» opens off «راه‌انداز»; when «راه‌انداز» was chosen at an earlier
+    stage it is not on this page, and the browser cannot judge the rule. The
+    answer is known here, so the field that does not apply is simply not sent.
+    """
+    on_page = {f.get("field_name") for b in blocks for f in b.get("fields") or []}
+    out = []
+    for block in blocks:
+        if _rule_met(block.get("visible_when"), values, on_page) is False:
+            continue
+        kept = [f for f in block.get("fields") or []
+                if f.get("read_only") or _rule_met(f.get("visible_when"), values, on_page) is not False]
+        if kept:
+            out.append(dict(block, fields=kept))
+    return out
 
 
 def _missing_required(instance: WorkflowInstance, stage: WorkflowStage,
@@ -1083,6 +1163,21 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
             if history.get(name) not in (None, "", [], {}):
                 payload[name] = history[name]
 
+    # «مستند» answers are the documents uploaded into them; «محاسباتی» answers
+    # are the server's to compute. Neither is taken from the page.
+    from .formfields import compute_formulas
+    drawn = [f for block in stage_form(instance, stage, payload)["sections"]
+             if not block.get("is_locked")
+             for f in block.get("fields") or [] if not f.get("read_only")]
+    for f in drawn:
+        if f.get("field_type") == "file":
+            payload[f["field_name"]] = [a.id for a in instance.attachments
+                                        if a.field_name == f["field_name"]]
+    formula_here = {f["field_name"] for f in drawn if f.get("field_type") == "formula"}
+    if formula_here:
+        computed = compute_formulas({**instance.payload, **payload}, only=formula_here)
+        payload.update(computed)
+
     # When several people share one stage, what an earlier one of them wrote
     # counts — the second is confirming the form, not typing it again.
     shared = _entry_for(instance, stage.stage_number)
@@ -1093,6 +1188,13 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
         raise WorkflowError(
             "این مرحله کامل نیست؛ " + str(len(missing))
             + " مورد الزامی پر نشده است.", fields=missing)
+
+    # «ارجاع برای تأیید»: nothing is finalised while a ruling is outstanding,
+    # nor while a form the admin made subject to approval lacks one.
+    from .approvals import submit_blockers
+    blockers = submit_blockers(instance, stage, {**so_far, **(payload or {})})
+    if blockers:
+        raise WorkflowError(" ".join(blockers))
 
     merged = dict(instance.payload)
     merged.update(payload or {})
@@ -1140,6 +1242,7 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
     if note:
         entry.note = ((entry.note + " ") if entry.note else "") + note
     entry.needs_docs = False
+    entry.draft_json = None
     entry.user_id = user.id if user else None
     entry.submitted_at = local_now()
     entry.set_payload(payload or {})

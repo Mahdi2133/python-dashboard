@@ -267,6 +267,11 @@ class WorkflowStage(db.Model):
     # Where a rejection sends it. Empty means back to this stage's own owner,
     # which is what «برگشت به کارگاه جهت اصلاح» means.
     reject_to_stage = db.Column(db.Integer)
+    # «ارجاع برای تأیید»: the person on this stage may send chosen forms, a
+    # note and documents to someone for a ruling; the answer comes back to them
+    # and they carry on. Empty list ⇒ any active user may be chosen.
+    approval_request_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    approval_request_user_ids = db.Column(db.String(300))
 
     workflow = db.relationship("WorkflowDefinition", back_populates="stages")
     assignee = db.relationship("AppUser", foreign_keys=[assignee_id])
@@ -369,6 +374,9 @@ class WorkflowStage(db.Model):
             "approver_name": (self.approver.full_name
                               if self.approver else None),
             "reject_to_stage": self.reject_to_stage,
+            "approval_request_enabled": bool(self.approval_request_enabled),
+            "approval_request_user_ids": [int(x) for x in (self.approval_request_user_ids or "").split(",")
+                                          if x.strip().isdigit()],
             "items": [i.to_dict() for i in self.items],
         }
 
@@ -404,6 +412,10 @@ class WorkflowStageItem(db.Model):
     # of the section is filled as usual. «تیپ پمپ قبلی» read off the well's
     # history, visible to کارگاه but not theirs to change.
     locked_fields = db.Column(db.Text)
+    # «تأیید اجباری»: once this form is filled on this stage, it has to be sent
+    # to this person and approved before the stage can be finalised.
+    approval_user_id = db.Column(db.Integer, db.ForeignKey("app_users.id",
+                                                           ondelete="SET NULL"))
 
     stage = db.relationship("WorkflowStage", back_populates="items")
     section = db.relationship("FormSection")
@@ -430,6 +442,7 @@ class WorkflowStageItem(db.Model):
             "applies_to_label": APPLIES_TO.get(self.applies_to, self.applies_to),
             "is_optional": self.is_optional,
             "is_read_only": self.is_read_only,
+            "approval_user_id": self.approval_user_id,
             "locked_fields": self.locked_names,
         }
 
@@ -585,6 +598,9 @@ class WorkflowStageEntry(db.Model):
     decided_by_id = db.Column(db.Integer, db.ForeignKey("app_users.id"))
     decided_at = db.Column(db.DateTime)
     decision_note = db.Column(db.Text)
+    # what the person on this stage had typed when they sent it for approval,
+    # so the form is still there when the answer comes back
+    draft_json = db.Column(db.Text)
 
     instance = db.relationship("WorkflowInstance", back_populates="entries")
     stage = db.relationship("WorkflowStage")
@@ -671,6 +687,14 @@ class WorkflowStageEntry(db.Model):
     def set_payload(self, data: dict):
         self.payload_json = json.dumps(data or {}, ensure_ascii=False)
 
+    @property
+    def draft(self) -> dict:
+        try:
+            value = json.loads(self.draft_json) if self.draft_json else {}
+            return value if isinstance(value, dict) else {}
+        except ValueError:
+            return {}
+
     def to_dict(self):
         from ..services.jalali import tehran_time_str, to_jalali_str
         return {
@@ -728,6 +752,9 @@ class WorkflowAttachment(db.Model):
     stored_name = db.Column(db.String(160), nullable=False)   # on disk
     content_type = db.Column(db.String(120))
     size_bytes = db.Column(db.Integer)
+    # uploaded into a «مستند» field of the form, or with an approval request
+    field_name = db.Column(db.String(80), index=True)
+    approval_request_id = db.Column(db.Integer, index=True)
     uploaded_by = db.Column(db.Integer, db.ForeignKey("app_users.id"))
     uploaded_at = db.Column(db.DateTime, default=local_now, nullable=False)
 
@@ -746,6 +773,8 @@ class WorkflowAttachment(db.Model):
             "uploaded_at_j": to_jalali_str(self.uploaded_at),
             "uploaded_at_time": tehran_time_str(self.uploaded_at, with_seconds=False),
             "url": f"/api/workflow/attachments/{self.id}",
+            "field_name": self.field_name,
+            "approval_request_id": self.approval_request_id,
         }
 
 
@@ -757,3 +786,96 @@ def _human_size(size):
             return f"{size:.0f} {unit}" if unit == "بایت" else f"{size:.1f} {unit}"
         size /= 1024.0
     return f"{size:.1f} گیگابایت"
+
+
+APPROVAL_PENDING = "pending"
+APPROVAL_APPROVED = "approved"
+APPROVAL_REJECTED = "rejected"
+APPROVAL_CANCELLED = "cancelled"
+APPROVAL_REQUEST_STATUS = {APPROVAL_PENDING: "در انتظار تأیید", APPROVAL_APPROVED: "تأیید شد",
+                           APPROVAL_REJECTED: "تأیید نشد", APPROVAL_CANCELLED: "لغو شد"}
+
+
+class WorkflowApprovalRequest(db.Model):
+    """«ارجاع برای تأیید»: forms, a note and documents sent to one person for a ruling.
+
+    Unlike handing a stage on, this does not move the process: the answer goes
+    back to whoever asked, who then finishes their stage. What was sent is kept
+    as a snapshot, so the approver rules on exactly what they were shown.
+    """
+    __tablename__ = "workflow_approval_requests"
+
+    id = db.Column(db.Integer, primary_key=True)
+    instance_id = db.Column(db.Integer, db.ForeignKey("workflow_instances.id",
+                                                      ondelete="CASCADE"),
+                            nullable=False, index=True)
+    stage_number = db.Column(db.Integer, nullable=False, index=True)
+    requested_by = db.Column(db.Integer, db.ForeignKey("app_users.id"), index=True)
+    approver_id = db.Column(db.Integer, db.ForeignKey("app_users.id"), index=True)
+    note = db.Column(db.Text)
+    sections_json = db.Column(db.Text)       # ["<stage>:<section code>", …]
+    snapshot_json = db.Column(db.Text)       # what the approver was shown
+    hashes_json = db.Column(db.Text)         # {"<stage>:<code>": hash of its values}
+    rule_item_id = db.Column(db.Integer)     # the «تأیید اجباری» item it answers
+    status = db.Column(db.String(12), nullable=False, default=APPROVAL_PENDING, index=True)
+    decision_note = db.Column(db.Text)
+    decided_at = db.Column(db.DateTime)
+    result_seen = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, default=local_now, nullable=False)
+
+    instance = db.relationship("WorkflowInstance")
+    requester = db.relationship("AppUser", foreign_keys=[requested_by])
+    approver = db.relationship("AppUser", foreign_keys=[approver_id])
+
+    @staticmethod
+    def _load(raw, default):
+        try:
+            return json.loads(raw) if raw else default
+        except ValueError:
+            return default
+
+    @property
+    def keys(self):
+        return self._load(self.sections_json, [])
+
+    @property
+    def snapshot(self):
+        return self._load(self.snapshot_json, [])
+
+    @property
+    def hashes(self):
+        return self._load(self.hashes_json, {})
+
+    def to_dict(self, full=False):
+        from ..services.jalali import tehran_time_str, to_jalali_str
+        stage = None
+        if self.instance is not None:
+            stage = next((s for s in self.instance.workflow.stages
+                          if s.stage_number == self.stage_number), None)
+        data = {
+            "id": self.id, "instance_id": self.instance_id,
+            "stage_number": self.stage_number,
+            "stage_title": stage.title if stage else None,
+            "well": (self.instance.well.name if self.instance and self.instance.well
+                     else (self.instance.well_name_raw if self.instance else None)),
+            "process": self.instance.workflow.name if self.instance else None,
+            "requested_by": self.requested_by,
+            "requester_name": self.requester.full_name if self.requester else None,
+            "approver_id": self.approver_id,
+            "approver_name": self.approver.full_name if self.approver else None,
+            "note": self.note, "status": self.status,
+            "status_label": APPROVAL_REQUEST_STATUS.get(self.status, self.status),
+            "decision_note": self.decision_note,
+            "decided_at_j": (to_jalali_str(self.decided_at) + " "
+                             + tehran_time_str(self.decided_at, with_seconds=False))
+            if self.decided_at else None,
+            "created_at_j": to_jalali_str(self.created_at) + " "
+            + tehran_time_str(self.created_at, with_seconds=False),
+            "required": bool(self.rule_item_id),
+            "keys": self.keys, "result_seen": self.result_seen,
+        }
+        if full:
+            data["snapshot"] = self.snapshot
+            data["attachments"] = [a.to_dict() for a in WorkflowAttachment.query.filter_by(
+                approval_request_id=self.id).order_by(WorkflowAttachment.id).all()]
+        return data

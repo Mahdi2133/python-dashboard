@@ -36,7 +36,38 @@
       A.qs('#rp-list').innerHTML = '<div class="alert error">' + A.esc(err.message) + '</div>';
     }
   }
+  /* The report list can be folded away so the charts get the whole width; the
+     dropdown above the report always offers the same list. Remembered per
+     browser; on a narrow screen it starts folded. */
+  var LIST_KEY = 'rp-list-hidden';
+  function listHidden() {
+    try {
+      var v = localStorage.getItem(LIST_KEY);
+      if (v !== null) return v === '1';
+    } catch (e) { /* ok */ }
+    return window.innerWidth < 1100;
+  }
+  function setListHidden(hidden) {
+    A.qs('.rp-shell').classList.toggle('list-hidden', hidden);
+    A.qs('#rp-toggle-list').textContent = hidden ? '📋 نمایش فهرست گزارش‌ها' : '📋 پنهان کردن فهرست';
+    try { localStorage.setItem(LIST_KEY, hidden ? '1' : '0'); } catch (e) { /* ok */ }
+    setTimeout(RV.resize, 60);
+  }
+  function fillQuick() {
+    var sel = A.qs('#rp-quick');
+    if (!sel) return;
+    var groups = {};
+    R.catalog.forEach(function (r) { (groups[r.category || 'بدون دسته'] = groups[r.category || 'بدون دسته'] || []).push(r); });
+    sel.innerHTML = '<option value="">— انتخاب سریع گزارش —</option>' + Object.keys(groups).map(function (g) {
+      return '<optgroup label="' + A.esc(g) + '">' + groups[g].map(function (r) {
+        return '<option value="' + r.id + '">' + (r.favorite ? '★ ' : '') + A.esc(r.name) + '</option>';
+      }).join('') + '</optgroup>';
+    }).join('');
+    if (R.report) sel.value = String(R.report.id);
+  }
+
   function drawCatalog() {
+    fillQuick();
     var q = A.qs('#rp-search').value.trim(), cat = A.qs('#rp-category').value, fav = A.qs('#rp-fav-only').checked;
     var box = A.qs('#rp-list');
     box.innerHTML = '';
@@ -219,6 +250,7 @@
   /* ═════════════ dashboard ═════════════ */
   function renderOpts() {
     return {
+      fullWidthCharts: true,
       onChartClick: function (def, data, idx, label) {
         var x = (def.x || {}).field;
         var f = (R.cfg.interactive_filters || []).filter(function (fl) { return fl.field === x; })[0];
@@ -469,7 +501,7 @@
     bar.innerHTML = '📸 در حال مشاهده‌ی Snapshot «<b>' + A.esc(s.title) + '</b>» — نسخه ' + A.esc(s.version || '—') + ' · ' + A.esc((s.created_at || '').replace('T', ' ').slice(0, 16)) + ' ';
     bar.appendChild(el('button', { type: 'button', class: 'btn-sm btn-ghost', text: '↩ بازگشت به داده‌ی زنده', onclick: function () { R.snapshot = null; runDashboard(); } }));
     A.qs('#rp-meta').appendChild(bar);
-    RV.render(box, cfg, s.result, {});
+    RV.render(box, cfg, s.result, { fullWidthCharts: true });
   }
   async function exportSnapshot(id, fmtKey) {
     var images = {};
@@ -598,6 +630,13 @@
     });
     A.qsa('#rp-tabs .tab').forEach(function (t) { t.addEventListener('click', function () { switchTab(t.dataset.tab); }); });
     A.qs('#rp-search').addEventListener('input', A.debounce(drawCatalog, 150));
+    setListHidden(listHidden());
+    A.qs('#rp-toggle-list').addEventListener('click', function () {
+      setListHidden(!A.qs('.rp-shell').classList.contains('list-hidden'));
+    });
+    A.qs('#rp-quick').addEventListener('change', function () {
+      if (this.value) openReport(Number(this.value));
+    });
     A.qs('#rp-category').addEventListener('change', drawCatalog);
     A.qs('#rp-fav-only').addEventListener('change', drawCatalog);
     A.qs('#rp-apply').addEventListener('click', apply);

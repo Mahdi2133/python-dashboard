@@ -10,6 +10,7 @@
   var A = window.App, J = window.Jalali;
   var items = [];
   var current = null;          // { instance, stage_number }
+  var approvalsToMe = [], approvalResults = [];   // «ارجاع برای تأیید»
   var form = null;
   var schema = null;           // lookups + conditional rules, loaded once
   var canStart = false;        // does this user own a stage that opens one?
@@ -65,9 +66,10 @@
   /* ── list ───────────────────────────────────────────────────────────── */
   function renderList() {
     var box = A.qs('#inbox-items');
-    setText('#inbox-count', J.toFaDigits(items.length));
+    setText('#inbox-count', J.toFaDigits(items.length + approvalsToMe.length + approvalResults.length));
     if (!box) return;
-    if (!items.length && !canStart) {
+    var extra = approvalHtml();
+    if (!items.length && !canStart && !extra) {
       box.innerHTML = emptyHtml();
       return;
     }
@@ -81,6 +83,7 @@
         + '<div class="wf-item-sub">نوع عملیات و چاه را تعیین کنید تا فرایند '
         + 'آغاز شود.</div></button>'
       : '';
+    html = extra + html;
     var lastRef = null;
     box.innerHTML = html + items.map(function (it, i) {
       var header = '';
@@ -91,6 +94,37 @@
       }
       return header + itemHtml(it, i);
     }).join('');
+  }
+
+  /* «ارجاع برای تأیید» in the list: requests waiting on me, and the answers
+     to the requests I sent. */
+  function approvalHtml() {
+    var html = '';
+    if (approvalsToMe.length) {
+      html += '<div class="wf-group">📝 درخواست‌های تأیید برای شما</div>'
+        + approvalsToMe.map(function (r) {
+          return '<button class="wf-item to-approve" data-areq="' + r.id + '" type="button">'
+            + '<div class="wf-item-top"><span class="wf-stage-no">✓</span>'
+            + '<span class="wf-item-title">' + A.esc(r.stage_title || '') + '</span>'
+            + (r.required ? '<span class="badge warn">اجباری</span>' : '') + '</div>'
+            + '<div class="wf-item-sub">از ' + A.esc(r.requester_name || '') + ' · '
+            + A.esc(r.well || '') + ' · فرایند #' + J.toFaDigits(r.instance_id) + '</div></button>';
+        }).join('');
+    }
+    if (approvalResults.length) {
+      html += '<div class="wf-group">📬 پاسخ درخواست‌های تأیید شما</div>'
+        + approvalResults.map(function (r) {
+          var okd = r.status === 'approved';
+          return '<button class="wf-item" data-ares="' + r.id + '" data-inst="' + r.instance_id
+            + '" data-stage="' + r.stage_number + '" type="button">'
+            + '<div class="wf-item-top"><span class="wf-stage-no">' + (okd ? '✅' : '✕') + '</span>'
+            + '<span class="wf-item-title">' + A.esc(r.stage_title || '') + '</span>'
+            + '<span class="badge ' + (okd ? 'ok' : 'danger') + '">' + A.esc(r.status_label) + '</span></div>'
+            + '<div class="wf-item-sub">' + A.esc(r.approver_name || '') + (r.decision_note ? ': ' + A.esc(r.decision_note) : '')
+            + ' · ' + A.esc(r.well || '') + '</div></button>';
+        }).join('');
+    }
+    return html;
   }
 
   /* An empty کارتابل that explains itself.
@@ -166,6 +200,8 @@
       startable = res.startable || [];
       myStages = res.my_stages || [];
       running = res.running || 0;
+      approvalsToMe = res.approval_requests || [];
+      approvalResults = res.approval_results || [];
       renderList();
     } catch (err) {
       fill('#inbox-items', '<div class="alert error">'
@@ -310,6 +346,16 @@
     }).join(''));
   }
 
+  /* The label of the «مستند» field a document was uploaded into. */
+  function slotLabel(name) {
+    var found = null;
+    ((current && current.detail && current.detail.form && current.detail.form.sections) || [])
+      .forEach(function (sec) {
+        (sec.fields || []).forEach(function (f) { if (f.field_name === name) found = f.label; });
+      });
+    return found || 'مستند فرم';
+  }
+
   function renderAttachments(detail) {
     var list = detail.attachments || [];
     if (!list.length) {
@@ -320,6 +366,8 @@
     fill('#wf-attachments', '<div class="doc-list">' + list.map(function (a) {
       return '<div class="doc-row">'
         + '<a href="' + A.esc(a.url) + '" class="doc-name">📄 ' + A.esc(a.filename) + '</a>'
+        + (a.field_name ? '<span class="badge muted">' + A.esc(slotLabel(a.field_name)) + '</span>' : '')
+        + (a.approval_request_id ? '<span class="badge warn">پیوست ارجاع تأیید</span>' : '')
         + '<span class="doc-meta">' + A.esc(a.size_label) + ' · '
         + A.esc(a.uploaded_by_name || '') + ' · ' + A.esc(a.uploaded_at_j || '')
         + ' مرحله ' + J.toFaDigits(a.stage_number) + '</span>'
@@ -345,8 +393,10 @@
          Everything the process already knows is filled in, so a stage can see
          and correct what came before rather than typing it again. */
       buildForm(detail.form ? detail.form.sections : [],
-                detail.operation_label, detail.payload || {});
+                detail.operation_label,
+                Object.assign({}, detail.payload || {}, detail.draft || {}));
       if (detail.well) fillPrevious(detail.well);
+      renderApprovalPanel(detail);
       /* A blocking approval in front of this stage stops it being filled —
          the server refuses it either way, so the button says so first. */
       var hold = detail.blocked_by;
@@ -714,7 +764,27 @@
       /* The operation was settled at step zero and is not on this form, so it
          is handed to the engine as context — otherwise a rule keyed on it
          could not be judged and «علت خرابی» would hide itself. */
-      context: { operation_kind: operationLabel },
+      context: Object.assign({}, (current && current.detail && current.detail.payload) || {},
+                             { operation_kind: operationLabel }),
+      /* «مستند» fields upload straight into their slot of this process. */
+      upload: async function (field, files) {
+        var added = [];
+        for (var i = 0; i < files.length; i++) {
+          var body = new FormData();
+          body.append('file', files[i]);
+          body.append('stage_number', current.stage_number);
+          body.append('field_name', field.field_name);
+          var res = await A.request('/api/workflow/instances/' + current.id + '/attachments',
+                                    { method: 'POST', body: body });
+          added.push(res.data);
+        }
+        refreshAttachmentList();
+        return added;
+      },
+      removeFile: async function (id) {
+        await A.api.del('/api/workflow/attachments/' + id);
+        refreshAttachmentList();
+      },
       onWellPicked: fillPrevious,
       onChange: function (name) {
         if (name === 'required_action' || name === 'pump_type_now') {
@@ -868,6 +938,187 @@
     }
   }
 
+
+  /* ── «ارجاع برای تأیید» ─────────────────────────────────────────────── */
+  var STATE = {
+    not_sent: ['muted', 'ارسال نشده'], pending: ['warn', 'در انتظار تأیید'],
+    approved: ['ok', 'تأیید شد'], rejected: ['danger', 'تأیید نشد'],
+    changed: ['warn', 'پس از تأیید تغییر کرده']
+  };
+  var areqRule = null;
+  function renderApprovalPanel(detail) {
+    var box = A.qs('#wf-approval-box');
+    if (!box) return;
+    var ap = detail.approval_requests;
+    if (!ap || !detail.may_act) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+    var html = '<div class="section-title"><span>📝</span><span>ارجاع برای تأیید</span></div>';
+    if ((ap.required || []).length) {
+      html += '<div class="hint">این فرم‌ها پیش از ثبت نهایی مرحله باید به تأیید برسند:</div><ul class="areq-required">'
+        + ap.required.map(function (r) {
+          var st = STATE[r.state] || STATE.not_sent;
+          var action = (r.state === 'approved' || r.state === 'pending') ? ''
+            : '<button class="btn-sm btn-primary" type="button" data-areq-rule="' + r.item_id + '"'
+              + ' data-areq-approver="' + A.esc(r.approver_name || '') + '">📤 ارسال برای تأیید</button>';
+          return '<li><b>' + A.esc(r.title) + '</b> ← ' + A.esc(r.approver_name || '—')
+            + ' <span class="badge ' + st[0] + '">' + st[1] + '</span> ' + action + '</li>';
+        }).join('') + '</ul>';
+    }
+    if (ap.enabled) {
+      html += '<button class="btn-ghost btn-sm" type="button" id="areq-open">📝 ارجاع برای تأیید (با ضمیمه‌ی فرم‌ها، توضیحات و مستندات)</button>';
+    }
+    if ((ap.history || []).length) {
+      html += '<div class="areq-history"><div class="pal-group-title">سابقه‌ی درخواست‌های تأیید این مرحله</div>'
+        + ap.history.map(function (r) {
+          var cls = { approved: 'ok', rejected: 'danger', pending: 'warn' }[r.status] || 'muted';
+          return '<div class="areq-row"><span class="badge ' + cls + '">' + A.esc(r.status_label) + '</span> '
+            + '<b>' + A.esc(r.approver_name || '') + '</b> · ' + A.esc(r.created_at_j || '')
+            + (r.note ? '<div class="hint">توضیح شما: ' + A.esc(r.note) + '</div>' : '')
+            + (r.decision_note ? '<div class="areq-answer">پاسخ: ' + A.esc(r.decision_note) + '</div>' : '')
+            + ' <button class="btn-sm btn-ghost" type="button" data-areq-view="' + r.id + '">جزئیات</button>'
+            + (r.status === 'pending' ? ' <button class="btn-sm btn-ghost" type="button" data-areq-cancel="' + r.id + '">لغو</button>' : '')
+            + '</div>';
+        }).join('') + '</div>';
+    }
+    var pending = (ap.history || []).some(function (r) { return r.status === 'pending'; });
+    if (pending) html += '<div class="alert warn">تا پاسخ تأییدکننده نیاید، ثبت نهایی این مرحله ممکن نیست.</div>';
+    box.innerHTML = html;
+    box.classList.remove('hidden');
+  }
+
+  async function openRequestModal(ruleId, ruleApprover) {
+    if (!current) return;
+    areqRule = ruleId || null;
+    var ap = current.detail.approval_requests || {};
+    var sel = A.qs('#areq-approver');
+    sel.innerHTML = '';
+    if (areqRule) {
+      sel.appendChild(A.el('option', { value: '', text: ruleApprover || 'تأییدکننده‌ی تعیین‌شده' }));
+      sel.disabled = true;
+    } else {
+      sel.disabled = false;
+      sel.appendChild(A.el('option', { value: '', text: '— انتخاب کنید —' }));
+      (ap.approvers || []).forEach(function (u) { sel.appendChild(A.el('option', { value: u.id, text: u.name })); });
+    }
+    A.qs('#areq-note').value = '';
+    A.qs('#areq-files').value = '';
+    var box = A.qs('#areq-blocks');
+    box.innerHTML = '<div class="loading">در حال بارگذاری</div>';
+    A.openModal('areq-modal');
+    try {
+      var res = await A.api.post('/api/workflow/instances/' + current.id + '/approval-blocks',
+        { stage_number: current.stage_number, draft: form ? form.collect() : {} });
+      var rule = areqRule ? (ap.required || []).filter(function (r) { return String(r.item_id) === String(areqRule); })[0] : null;
+      var lastStage = null;
+      box.innerHTML = res.data.map(function (b) {
+        var head = '';
+        if (b.stage_number !== lastStage) {
+          lastStage = b.stage_number;
+          head = '<div class="pal-group-title">مرحله ' + J.toFaDigits(b.stage_number) + ' — ' + A.esc(b.stage_title)
+            + (b.current ? ' (مرحله‌ی شما)' : '') + '</div>';
+        }
+        var forced = rule && rule.key === b.key;
+        var on = forced || (b.current && b.filled > 0 && !areqRule);
+        return head + '<label class="mini-check areq-block"><input type="checkbox" value="' + A.esc(b.key) + '"'
+          + (on ? ' checked' : '') + (forced ? ' disabled' : '') + '> ' + A.esc(b.title)
+          + ' <span class="hint">(' + J.toFaDigits(b.filled) + ' از ' + J.toFaDigits(b.total) + ' فیلد پر شده)</span></label>';
+      }).join('') || '<div class="hint">فرم پرشده‌ای برای ضمیمه نیست.</div>';
+    } catch (err) { box.innerHTML = '<div class="alert error">' + A.esc(err.message) + '</div>'; }
+  }
+
+  async function sendRequest() {
+    var keys = A.qsa('#areq-blocks input:checked').map(function (c) { return c.value; });
+    var btn = A.qs('#areq-send');
+    btn.disabled = true;
+    try {
+      var res = await A.api.post('/api/workflow/instances/' + current.id + '/approval-requests', {
+        stage_number: current.stage_number, approver_id: A.qs('#areq-approver').value || null,
+        keys: keys, note: A.qs('#areq-note').value, draft: form ? form.collect() : {},
+        rule_item_id: areqRule });
+      var files = A.qs('#areq-files').files;
+      for (var i = 0; i < files.length; i++) {
+        var body = new FormData();
+        body.append('file', files[i]);
+        body.append('stage_number', current.stage_number);
+        body.append('approval_request_id', res.data.id);
+        await A.request('/api/workflow/instances/' + current.id + '/attachments', { method: 'POST', body: body });
+      }
+      A.closeModal('areq-modal');
+      A.toast(res.message || 'ارسال شد.', 'success');
+      await openStage({ id: current.id, stage_number: current.stage_number });
+    } catch (err) { A.toast(err.message, 'error'); }
+    btn.disabled = false;
+  }
+
+  var viewing = null;
+  async function openRequestView(id, asApprover) {
+    try {
+      var res = await A.api.get('/api/workflow/approval-requests/' + id);
+      var r = viewing = res.data;
+      A.qs('#areq-view-title').textContent = 'درخواست تأیید — مرحله ' + J.toFaDigits(r.stage_number) + ' «' + (r.stage_title || '') + '»';
+      var html = '<dl class="kv"><dt>فرایند</dt><dd>#' + J.toFaDigits(r.instance_id) + ' — ' + A.esc(r.process || '') + '</dd>'
+        + '<dt>چاه</dt><dd>' + A.esc(r.well || '—') + '</dd>'
+        + '<dt>فرستنده</dt><dd>' + A.esc(r.requester_name || '') + ' · ' + A.esc(r.created_at_j || '') + '</dd>'
+        + '<dt>تأییدکننده</dt><dd>' + A.esc(r.approver_name || '') + '</dd>'
+        + '<dt>وضعیت</dt><dd>' + A.esc(r.status_label) + (r.decision_note ? ' — ' + A.esc(r.decision_note) : '') + '</dd></dl>';
+      if (r.note) html += '<div class="alert info"><b>توضیحات فرستنده:</b> ' + A.esc(r.note) + '</div>';
+      (r.snapshot || []).forEach(function (sec) {
+        html += '<div class="areq-sec"><div class="section-title">📋 ' + A.esc(sec.title)
+          + ' <span class="hint">— مرحله ' + J.toFaDigits(sec.stage_number) + ' «' + A.esc(sec.stage_title) + '»</span></div>'
+          + (sec.values.length ? '<dl class="sum-values">' + sec.values.map(function (v) {
+              var val = v.files && v.files.length
+                ? v.files.map(function (a) { return '<a href="' + A.esc(a.url) + '" target="_blank">📄 ' + A.esc(a.filename) + '</a>'; }).join(' ')
+                : A.esc(v.value);
+              return '<dt>' + A.esc(v.label) + '</dt><dd>' + val + '</dd>';
+            }).join('') + '</dl>' : '<div class="hint">این فرم هنوز خالی بود.</div>') + '</div>';
+      });
+      if ((r.attachments || []).length) {
+        html += '<div class="section-title">📎 مستندات پیوست</div><div class="doc-list">' + r.attachments.map(function (a) {
+          return '<div class="doc-row"><a href="' + A.esc(a.url) + '" target="_blank" class="doc-name">📄 ' + A.esc(a.filename)
+            + '</a><span class="doc-meta">' + A.esc(a.size_label || '') + ' · ' + A.esc(a.uploaded_by_name || '') + '</span></div>';
+        }).join('') + '</div>';
+      }
+      var mayDecide = r.status === 'pending' && asApprover;
+      if (mayDecide) {
+        html += '<div class="field mt-2"><label>نظر شما <span class="hint">(برای «تأیید نمی‌شود» الزامی است)</span></label>'
+          + '<textarea id="areq-decision-note" rows="2"></textarea></div>'
+          + '<div class="field"><label>مستند پاسخ <span class="hint">(اختیاری)</span></label><input type="file" id="areq-decision-files" multiple></div>';
+      }
+      A.qs('#areq-view-body').innerHTML = html;
+      A.qs('#areq-approve').classList.toggle('hidden', !mayDecide);
+      A.qs('#areq-reject').classList.toggle('hidden', !mayDecide);
+      A.openModal('areq-view-modal');
+    } catch (err) { A.toast(err.message, 'error'); }
+  }
+
+  async function decideRequest(approved) {
+    if (!viewing) return;
+    try {
+      var files = (A.qs('#areq-decision-files') || {}).files || [];
+      for (var i = 0; i < files.length; i++) {
+        var body = new FormData();
+        body.append('file', files[i]);
+        body.append('stage_number', viewing.stage_number);
+        body.append('approval_request_id', viewing.id);
+        await A.request('/api/workflow/instances/' + viewing.instance_id + '/attachments', { method: 'POST', body: body });
+      }
+      var res = await A.api.post('/api/workflow/approval-requests/' + viewing.id + '/decide',
+        { approved: approved, note: (A.qs('#areq-decision-note') || {}).value || '' });
+      A.closeModal('areq-view-modal');
+      A.toast(res.message || 'ثبت شد.', 'success');
+      await loadInbox();
+    } catch (err) { A.toast(err.message, 'error'); }
+  }
+
+  async function refreshAttachmentList() {
+    if (!current) return;
+    try {
+      var res = await A.api.get('/api/workflow/instances/' + current.id
+                                + '?stage=' + current.stage_number);
+      renderAttachments(res.data);
+      renderDocsOwed(res.data);
+    } catch (err) { /* the list refreshes on the next open */ }
+  }
+
   async function uploadFiles(files) {
     if (!current || !files.length) return;
     for (var i = 0; i < files.length; i++) {
@@ -941,7 +1192,16 @@
     }
     await loadInbox();
 
-    A.qs('#inbox-items').addEventListener('click', function (ev) {
+    A.qs('#inbox-items').addEventListener('click', async function (ev) {
+      var areq = ev.target.closest('[data-areq]');
+      if (areq) { openRequestView(Number(areq.dataset.areq), true); return; }
+      var ares = ev.target.closest('[data-ares]');
+      if (ares) {
+        try { await A.api.post('/api/workflow/approval-requests/' + ares.dataset.ares + '/seen', {}); } catch (e) { /* ok */ }
+        await openStage({ id: Number(ares.dataset.inst), stage_number: Number(ares.dataset.stage) });
+        loadInbox();
+        return;
+      }
       if (ev.target.closest('[data-start]')) {
         renderKinds(); A.openModal('new-process-modal'); return;
       }
@@ -970,6 +1230,24 @@
       renderList();
     });
     A.qs('#wf-submit').addEventListener('click', submitStage);
+    A.qs('#wf-approval-box').addEventListener('click', async function (ev) {
+      if (ev.target.closest('#areq-open')) { openRequestModal(null); return; }
+      var rule = ev.target.closest('[data-areq-rule]');
+      if (rule) { openRequestModal(rule.dataset.areqRule, rule.dataset.areqApprover); return; }
+      var view = ev.target.closest('[data-areq-view]');
+      if (view) { openRequestView(Number(view.dataset.areqView), false); return; }
+      var cancel = ev.target.closest('[data-areq-cancel]');
+      if (cancel) {
+        if (!(await A.confirmDialog({ message: 'درخواست تأیید لغو شود؟' }))) return;
+        try {
+          await A.api.post('/api/workflow/approval-requests/' + cancel.dataset.areqCancel + '/cancel', {});
+          await openStage({ id: current.id, stage_number: current.stage_number });
+        } catch (err) { A.toast(err.message, 'error'); }
+      }
+    });
+    A.qs('#areq-send').addEventListener('click', sendRequest);
+    A.qs('#areq-approve').addEventListener('click', function () { decideRequest(true); });
+    A.qs('#areq-reject').addEventListener('click', function () { decideRequest(false); });
     A.qs('#wf-approve').addEventListener('click', function () { decide(true); });
     A.qs('#wf-reject').addEventListener('click', function () { decide(false); });
     A.qs('#wf-file').addEventListener('change', function () {

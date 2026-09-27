@@ -48,7 +48,6 @@ bp = Blueprint("api_workflow", __name__, url_prefix="/api/workflow")
 # against executables rather than a whitelist of useful formats.
 BLOCKED_SUFFIXES = {".exe", ".dll", ".bat", ".cmd", ".com", ".scr", ".msi",
                     ".ps1", ".vbs", ".js", ".jar", ".sh", ".php"}
-MAX_ATTACHMENT_BYTES = 64 * 1024 * 1024        # 64 MB per file
 
 
 def _pick_workflow(wanted):
@@ -580,6 +579,12 @@ def update_stage(stage_id):
         if payload["start_kind"] not in APPLIES_TO:
             return fail("مقدار «شروع برای عملیات» نامعتبر است.", 422)
         stage.start_kind = payload["start_kind"]
+    if "approval_request_enabled" in payload:
+        stage.approval_request_enabled = payload["approval_request_enabled"] in (True, "true", "1", 1)
+    if "approval_request_user_ids" in payload:
+        ids = [int(x) for x in (payload.get("approval_request_user_ids") or [])
+               if str(x).isdigit()]
+        stage.approval_request_user_ids = ",".join(str(i) for i in dict.fromkeys(ids)) or None
     if "sla_hours" in payload:
         raw = payload["sla_hours"]
         try:
@@ -733,11 +738,16 @@ def set_stage_items(stage_id):
             names = {f.field_name for f in target.fields}
             locks = [n for n in dict.fromkeys(raw.get("locked_fields") or [])
                      if n in names]
+            approver = raw.get("approval_user_id")
+            approver = int(approver) if str(approver or "").isdigit() else None
+            if approver and db.session.get(AppUser, approver) is None:
+                return fail("تأییدکننده‌ی انتخاب‌شده یافت نشد.", 422)
             cleaned.append(WorkflowStageItem(
                 stage_id=stage.id, section_id=target.id, sort_order=order,
                 applies_to=applies, is_optional=bool(raw.get("is_optional")),
                 is_read_only=bool(raw.get("is_read_only")),
-                locked_fields=",".join(locks) or None))
+                locked_fields=",".join(locks) or None,
+                approval_user_id=None if raw.get("is_read_only") else approver))
         elif kind == "field":
             target = db.session.get(FormField, int(raw.get("id") or 0))
             if target is None:
@@ -1120,6 +1130,8 @@ def inbox():
             })
             rows.append(data)
     db.session.commit()
+    from ..services.approvals import inbox_items
+    approval = inbox_items(user)
     # An empty کارتابل reads as "my forms are not connected to me". It is
     # almost never that: the stages are wired, there is simply no process
     # running that has reached them. Say so, and name them, so the wiring
@@ -1152,6 +1164,8 @@ def inbox():
               startable=[{"value": k, "label": OPERATION_KINDS[k]}
                          for k in kinds],
               my_stages=mine_stages,
+              approval_requests=approval["approval_requests"],
+              approval_results=approval["approval_results"],
               running=WorkflowInstance.query.filter_by(
                   status=INSTANCE_OPEN).count())
 
@@ -1183,12 +1197,14 @@ def get_instance(instance_id):
 
     data["may_act"] = may_act(user, instance, stage)
     data["form"] = stage_form(instance, stage) if stage else None
+    data["approval_requests"] = _approval_panel(instance, stage, user) if stage else None
     # Who this stage's work goes to when it is sent on, and whether this user
     # is the one being asked to approve it rather than to fill it.
     entry = next((e for e in instance.entries
                   if stage and e.stage_number == stage.stage_number), None)
     data["referral"] = referral_choices(instance, stage) if stage else None
     data["entry_status"] = entry.status if entry else None
+    data["draft"] = entry.draft if entry is not None and entry.draft_json else None
     data["awaiting_my_decision"] = bool(
         stage and stage.stage_number in
         {s.stage_number for s in awaiting_approval(instance, user)})
@@ -1374,13 +1390,25 @@ def upload_attachment(instance_id):
     if suffix in BLOCKED_SUFFIXES:
         return fail(f"بارگذاری فایل با پسوند «{suffix}» مجاز نیست.", 415)
 
+    # A «مستند» field of the form: the file belongs to that slot, may be held to
+    # the types the admin allowed, and replaces the previous one when the slot
+    # takes a single file.
+    field_name = (request.form.get("field_name") or "").strip() or None
+    slot = None
+    if field_name:
+        from ..models import FormField
+        slot = FormField.query.filter_by(field_name=field_name, field_type="file").first()
+        if slot is None:
+            return fail("فیلد مستند پیدا نشد.", 422)
+        if slot.file_accept and not _accepted(original, uploaded.mimetype, slot.file_accept):
+            return fail(f"نوع فایل برای «{slot.label}» مجاز نیست (مجاز: {slot.file_accept}).", 415)
+    approval_id = request.form.get("approval_request_id")
+    approval_id = int(approval_id) if str(approval_id or "").isdigit() else None
+
     stored = f"{instance.id}_{secrets.token_hex(8)}{suffix}"
     target = _attachment_dir() / stored
     uploaded.save(target)
     size = target.stat().st_size
-    if size > MAX_ATTACHMENT_BYTES:
-        target.unlink(missing_ok=True)
-        return fail("حجم فایل بیش از ۶۴ مگابایت است.", 413)
 
     # The stage the uploader has open, not the run's lowest open stage: with
     # a stage sent back for documents, or several people on parallel
@@ -1391,8 +1419,14 @@ def upload_attachment(instance_id):
         stage_no = instance.current_stage
     if not any(s.stage_number == stage_no for s in instance.workflow.stages):
         stage_no = instance.current_stage
+    if slot is not None and not slot.file_multiple:
+        for old in WorkflowAttachment.query.filter_by(instance_id=instance.id,
+                                                      field_name=field_name).all():
+            (_attachment_dir() / old.stored_name).unlink(missing_ok=True)
+            db.session.delete(old)
     attachment = WorkflowAttachment(
         instance_id=instance.id, stage_number=stage_no,
+        field_name=field_name, approval_request_id=approval_id,
         filename=original, stored_name=stored, size_bytes=size,
         content_type=(uploaded.mimetype
                       or mimetypes.guess_type(original)[0]
@@ -1403,6 +1437,20 @@ def upload_attachment(instance_id):
                  summary=f"بارگذاری مستند «{original}»")
     db.session.commit()
     return ok(attachment.to_dict(), message="مستند بارگذاری شد.")
+
+
+def _accepted(filename, mimetype, accept):
+    """Does a file match an «accept» list like «image/*,.pdf,application/pdf»?"""
+    name = (filename or "").lower()
+    mime = (mimetype or mimetypes.guess_type(filename or "")[0] or "").lower()
+    for rule in [r.strip().lower() for r in accept.split(",") if r.strip()]:
+        if rule.startswith(".") and name.endswith(rule):
+            return True
+        if rule.endswith("/*") and mime.startswith(rule[:-1]):
+            return True
+        if "/" in rule and mime == rule:
+            return True
+    return False
 
 
 @bp.get("/attachments")
@@ -1630,3 +1678,115 @@ def stage_report_export(fmt):
         "Content-Disposition":
             f'attachment; filename="stage_report_{jy}-{jm:02d}-{jd:02d}.{ext}"; '
             f"filename*=UTF-8''stage_report_{jy}-{jm:02d}-{jd:02d}.{ext}"})
+
+# ── «ارجاع برای تأیید» ───────────────────────────────────────────────────────
+def _approval_panel(instance, stage, user):
+    """What the stage page needs to offer and show approval requests."""
+    from ..services import approvals as ap
+    required = ap.required_status(instance, stage)
+    if not stage.approval_request_enabled and not required \
+            and not ap.requests_for(instance, stage.stage_number):
+        return None
+    return {
+        "enabled": bool(stage.approval_request_enabled),
+        "approvers": ([{"id": u.id, "name": u.full_name} for u in ap.allowed_approvers(stage)
+                       if u.id != (user.id if user else None)]
+                      if stage.approval_request_enabled else []),
+        "required": required,
+        "history": [r.to_dict() for r in ap.requests_for(instance, stage.stage_number)],
+    }
+
+
+@bp.post("/instances/<int:instance_id>/approval-blocks")
+@permission_required("workflow.act")
+def approval_blocks(instance_id):
+    """The forms that may be attached to a request, with this stage's draft."""
+    from ..services import approvals as ap
+    instance = db.session.get(WorkflowInstance, instance_id)
+    if instance is None:
+        return fail("فرایند یافت نشد.", 404)
+    data = body()
+    stage = stage_by_number(instance, int(data.get("stage_number") or instance.current_stage))
+    if stage is None:
+        return fail("مرحله یافت نشد.", 404)
+    return ok(ap.attachable_blocks(instance, stage, data.get("draft") or None))
+
+
+@bp.post("/instances/<int:instance_id>/approval-requests")
+@permission_required("workflow.act")
+def create_approval_request(instance_id):
+    from ..services import approvals as ap
+    instance = db.session.get(WorkflowInstance, instance_id)
+    if instance is None:
+        return fail("فرایند یافت نشد.", 404)
+    data = body()
+    try:
+        req = ap.create_request(instance, data.get("stage_number") or instance.current_stage,
+                                current_user(), data.get("approver_id"), data.get("keys") or [],
+                                data.get("note"), data.get("draft") or None,
+                                data.get("rule_item_id"))
+    except ap.ApprovalError as exc:
+        return fail(str(exc), 422)
+    return ok(req.to_dict(full=True), message=f"برای تأیید «{req.approver.full_name}» ارسال شد.")
+
+
+def _approval_or_fail(req_id):
+    from ..models import WorkflowApprovalRequest
+    from ..services import approvals as ap
+    req = db.session.get(WorkflowApprovalRequest, req_id)
+    if req is None:
+        return None, fail("درخواست تأیید یافت نشد.", 404)
+    if not ap.can_view(req, current_user()):
+        return None, fail("این درخواست برای شما نیست.", 403)
+    return req, None
+
+
+@bp.get("/approval-requests/<int:req_id>")
+@permission_required_any("workflow.act", "workflow.view")
+def get_approval_request(req_id):
+    req, err = _approval_or_fail(req_id)
+    if err:
+        return err
+    return ok(req.to_dict(full=True))
+
+
+@bp.post("/approval-requests/<int:req_id>/decide")
+@permission_required("workflow.act")
+def decide_approval_request(req_id):
+    from ..services import approvals as ap
+    req, err = _approval_or_fail(req_id)
+    if err:
+        return err
+    data = body()
+    try:
+        ap.decide_request(req, current_user(), data.get("approved") in (True, "true", "1", 1),
+                          data.get("note"))
+    except ap.ApprovalError as exc:
+        return fail(str(exc), 422)
+    return ok(req.to_dict(full=True), message="پاسخ شما برای فرستنده ارسال شد.")
+
+
+@bp.post("/approval-requests/<int:req_id>/cancel")
+@permission_required("workflow.act")
+def cancel_approval_request(req_id):
+    from ..services import approvals as ap
+    req, err = _approval_or_fail(req_id)
+    if err:
+        return err
+    try:
+        ap.cancel_request(req, current_user())
+    except ap.ApprovalError as exc:
+        return fail(str(exc), 422)
+    return ok(req.to_dict(), message="درخواست لغو شد.")
+
+
+@bp.post("/approval-requests/<int:req_id>/seen")
+@permission_required("workflow.act")
+def seen_approval_request(req_id):
+    req, err = _approval_or_fail(req_id)
+    if err:
+        return err
+    if req.requested_by == current_user().id:
+        req.result_seen = True
+        db.session.commit()
+    return ok()

@@ -155,7 +155,7 @@ MULTI_TYPES = ("checkbox", "multiselect", "checklist")
 
 
 def form_field_type(field) -> str:
-    if field.field_type == "number":
+    if field.field_type in ("number", "formula"):
         return "decimal"
     if field.field_type in ("date", "jalali_date"):
         return "date"
@@ -196,8 +196,10 @@ def report_form_fields() -> list:
     """
     from ..models import FormField, FormSection
     from sqlalchemy import or_
+    # a «فیلد مشترک» stores nothing of its own — its field is listed already
     return (FormField.query.join(FormSection)
             .filter(or_(FormField.is_active.is_(True), FormField.model_attr.isnot(None)))
+            .filter(FormField.field_type != "mirror")
             .order_by(FormSection.sort_order, FormField.sort_order).all())
 
 

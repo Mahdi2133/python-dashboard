@@ -1148,6 +1148,10 @@ select.mini { font-size:11px; padding:2px 4px; width:auto; }
 
 /* اتصال‌ها: one line per form or field, a box per option. */
 .cl-matrix-box { margin-top:12px; border-top:1px dashed var(--border,#dfe6ea); padding-top:10px; }
+#cl-matrix { max-width:100%; overflow-x:auto; }
+.cl-matrix-box { min-width:0; max-width:100%; }
+.cl-matrix thead th { white-space:nowrap; }
+.cl-matrix tbody th { position:sticky; inset-inline-start:0; z-index:1; }
 .cl-matrix-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:8px; }
 .cl-matrix-head select { margin-inline-start:auto; max-width:320px; }
 .cl-matrix { width:100%; border-collapse:collapse; font-size:12.5px; }
@@ -1350,3 +1354,42 @@ table.rv-grid td.rv-bad { background:#f9d6d5 !important; } table.rv-grid td.rv-i
 .ra-group summary { cursor:pointer; }
 .ra-members { max-height:220px; overflow-y:auto; display:grid; grid-template-columns:1fr 1fr; gap:2px 10px; margin:6px 0; font-size:12px; }
 .rb-perm-table th { color:var(--primary) !important; font-weight:700; }
+
+.rv-cell-tall .rv-canvas { height:clamp(340px, 52vh, 560px); }
+.rv-cell-tall .rv-canvas.sm { height:clamp(280px, 40vh, 420px); }
+.rv-cell-tall .rv-canvas.lg { height:clamp(420px, 66vh, 720px); }
+
+/* report output: collapsible list, sized to the screen */
+.rp-shell { grid-template-columns:clamp(200px, 19vw, 290px) minmax(0,1fr); }
+.rp-shell.list-hidden { grid-template-columns:minmax(0,1fr); }
+.rp-shell.list-hidden .rp-catalog { display:none; }
+.rp-switch { display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap; }
+.rp-switch select { max-width:min(420px, 100%); width:auto; flex:1; }
+.rp-catalog { max-height:calc(100vh - 110px); }
+@media (max-width:900px) { .rp-shell { grid-template-columns:1fr; } .rp-catalog { position:static; max-height:50vh; } }
+.sort-ctl { display:flex; align-items:center; gap:6px; white-space:nowrap; grid-column:span 2; min-width:0; }
+.sort-ctl select { flex:1 1 0; min-width:0; width:auto; }
+@media (max-width:520px) { .sort-ctl { grid-column:1 / -1; } }
+th.sortable { cursor:pointer; user-select:none; }
+th.sortable .arrow.idle { opacity:.35; font-size:11px; }
+th.sortable.sorted { background:rgba(255,255,255,.12); }
+/* «مستند» and «محاسباتی» fields */
+.file-list { display:flex; flex-direction:column; gap:4px; margin:4px 0; }
+.file-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:12.5px; padding:4px 8px;
+  background:var(--input-bg); border:1px solid var(--border); border-radius:8px; }
+.file-row a { font-weight:600; color:var(--primary-light); }
+.file-pick { display:inline-flex; align-items:center; gap:6px; cursor:pointer; margin-top:4px; }
+.calc-output { background:#eef6ea !important; font-weight:700; color:#1d6b3a; direction:ltr; text-align:center; }
+.calc-formula { direction:ltr; font-family:Consolas, monospace; font-size:10.5px; }
+/* «ارجاع برای تأیید» */
+.wf-approval-box { border:1px solid #f0cfa8; background:#fffaf2; border-radius:var(--radius); padding:12px 14px; margin:12px 0; }
+.areq-required { list-style:none; padding:0; margin:6px 0; }
+.areq-required li { padding:5px 0; border-bottom:1px dashed #f0dcc0; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.areq-history { margin-top:8px; }
+.areq-row { padding:6px 0; border-bottom:1px solid #f3e6d3; font-size:12.5px; }
+.areq-answer { background:#eef6fb; border-radius:6px; padding:4px 8px; margin-top:3px; }
+.areq-blocks { max-height:40vh; overflow-y:auto; border:1px solid var(--border); border-radius:9px; padding:6px 10px; background:#fff; }
+.areq-block { display:block; padding:3px 0; }
+.areq-sec { border:1px solid var(--border); border-radius:9px; padding:8px 10px; margin:8px 0; background:#fbfdfe; }
+.wf-areq-toggle { margin-top:10px; display:block; }
+.item-approver { max-width:150px; }

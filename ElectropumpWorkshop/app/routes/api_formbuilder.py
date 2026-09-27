@@ -68,8 +68,23 @@ def get_schema():
     query = FormSection.query.order_by(FormSection.sort_order)
     if active_only:
         query = query.filter(FormSection.is_active.is_(True))
+    if request.args.get("for") == "entry":
+        # the standalone entry page leaves out the process-only forms
+        query = query.filter(FormSection.show_on_entry.isnot(False))
     sections = [s.to_dict(include_fields=True, active_only=active_only)
                 for s in query.all()]
+    if active_only:
+        # one widget per answer: a «فیلد مشترک» whose field is already drawn
+        # in an earlier form is not drawn twice
+        seen = set()
+        for sec in sections:
+            kept = []
+            for f in sec.get("fields") or []:
+                if f["field_name"] in seen:
+                    continue
+                seen.add(f["field_name"])
+                kept.append(f)
+            sec["fields"] = kept
     lookups = items_by_category(active_only=active_only)
     lookups["__months__"] = _month_options()
     # Flattened "show this field only while that one holds this value" rules,
@@ -125,6 +140,7 @@ def create_section():
                            .scalar() or 0) + 1),
         description=payload.get("description"),
         visible_when=normalize_text(payload.get("visible_when")) or None,
+        show_on_entry=payload.get("show_on_entry", True) in (True, "true", "1", 1),
     )
     db.session.add(section)
     db.session.flush()
@@ -146,7 +162,7 @@ def update_section(section_id):
     for attr in ("columns", "sort_order"):
         if attr in payload:
             setattr(section, attr, int(payload[attr] or 0))
-    for attr in ("full_width", "is_active"):
+    for attr in ("full_width", "is_active", "show_on_entry"):
         if attr in payload:
             setattr(section, attr, payload[attr] in (True, "true", "1", 1))
     record_audit("update", "form_section", section.id, summary=f"ویرایش بخش «{section.title}»")
@@ -182,6 +198,65 @@ def delete_section(section_id):
     db.session.delete(section)
     db.session.commit()
     return ok(message="بخش حذف شد.")
+
+
+def _special_settings(field, payload):
+    """Validate and store what «مستند»، «محاسباتی» and «فیلد مشترک» need.
+
+    Returns a Persian error, or None.
+    """
+    ftype = field.field_type
+    if "file_accept" in payload:
+        field.file_accept = normalize_text(payload.get("file_accept")) or None
+    if "file_multiple" in payload:
+        field.file_multiple = payload.get("file_multiple") in (True, "true", "1", 1)
+    if ftype == "mirror":
+        target_name = normalize_text(payload.get("mirror_of", field.mirror_of)) or None
+        if not target_name:
+            return "برای «فیلد مشترک»، فیلدی را که باید نمایش دهد انتخاب کنید."
+        target = FormField.query.filter_by(field_name=target_name).first()
+        if target is None:
+            return f"فیلد «{target_name}» پیدا نشد."
+        if target.id == field.id:
+            return "فیلد مشترک نمی‌تواند به خودش اشاره کند."
+        field.mirror_of = target_name
+        if field.mirror_source() is None:
+            field.mirror_of = None
+            return "این انتخاب یک حلقه می‌سازد (فیلد مشترکی که به خودش برمی‌گردد)."
+        # a mirror stores nothing of its own and is never «required» on its
+        # own — the field it shows carries that
+        field.is_required = False
+    else:
+        field.mirror_of = None
+    if ftype == "formula":
+        text = (payload.get("formula", field.formula) or "").strip()
+        if not text:
+            return "برای «فیلد محاسباتی» فرمول را بنویسید؛ مثلاً [design_flow] * 0.001 / [dynamic_level]"
+        from ..analytics.formula import FormulaError
+        from ..services.formfields import compile_field_formula
+        try:
+            compile_field_formula(text, exclude=field.field_name)
+        except FormulaError as exc:
+            return f"فرمول نامعتبر است: {exc}"
+        field.formula = text
+    elif "formula" in payload and ftype != "formula":
+        field.formula = None
+    return None
+
+
+@bp.post("/formula/check")
+@permission_required("form.manage")
+def check_formula():
+    """Validate a form formula while it is being typed."""
+    from ..analytics.formula import FormulaError
+    from ..services.formfields import compile_field_formula
+    payload = body()
+    try:
+        comp = compile_field_formula(payload.get("formula") or "",
+                                     exclude=payload.get("field_name"))
+    except FormulaError as exc:
+        return ok({"valid": False, "error": str(exc)})
+    return ok({"valid": True, "refs": sorted(comp["refs"])})
 
 
 @bp.post("/fields")
@@ -228,6 +303,9 @@ def create_field():
         # so a new field never filled from the well's history until edited.
         prefill_from=normalize_text(payload.get("prefill_from")) or None,
     )
+    problem = _special_settings(field, payload)
+    if problem:
+        return fail(problem, 422)
     db.session.add(field)
     db.session.flush()
     _sync_options(field, payload.get("options") or [])
@@ -269,6 +347,12 @@ def update_field(field_id):
     for attr in ("is_required", "is_active", "allow_other", "show_in_table"):
         if attr in payload:
             setattr(field, attr, payload[attr] in (True, "true", "1", 1))
+
+    if not field.is_builtin:
+        problem = _special_settings(field, payload)
+        if problem:
+            db.session.rollback()
+            return fail(problem, 422)
 
     # Options were previously ignored here, so editing a field's choices did
     # nothing — the field came back with its original list every time.

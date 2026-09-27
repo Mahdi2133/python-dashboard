@@ -42,7 +42,7 @@
     <div class="wf-docs">
       <div class="section-title"><span>📎</span><span>مستندات این فرایند</span></div>
       <div class="hint">هر نوع فایلی پذیرفته می‌شود — عکس، ویدئو، Word، PDF، Excel
-        و… (حداکثر ۶۴ مگابایت برای هر فایل).</div>
+        و… (بدون محدودیت حجم).</div>
       <input type="file" id="wf-file" multiple class="mt-1">
       <div id="wf-attachments" class="mt-1"></div>
     </div>
@@ -52,6 +52,10 @@
     <!-- Filled when a blocking approval in front of this stage holds it up. -->
     <div id="wf-blocked"></div>
     <div id="wf-progress"></div>
+
+    <!-- «ارجاع برای تأیید»: send chosen forms, a note and documents for a
+         ruling that comes back here; required approvals of this stage. -->
+    <div class="wf-approval-box hidden" id="wf-approval-box"></div>
 
     <!-- Where this stage's work goes next. Shown only when the stage was set
          up to let the person finishing it choose. -->
@@ -108,6 +112,50 @@
       <button class="btn-secondary" id="wf-close" type="button">↩ بستن</button>
     </div>
   </section>
+</div>
+
+<div class="modal-overlay" id="areq-modal">
+  <div class="modal modal-wide">
+    <div class="modal-head"><h3>📝 ارجاع برای تأیید</h3>
+      <button class="modal-x" data-close="areq-modal">×</button></div>
+    <div class="modal-body">
+      <div class="hint">فرم‌های انتخابی، توضیحات و مستندات برای تأییدکننده فرستاده می‌شود. پاسخ او به کارتابل خودتان
+        برمی‌گردد و پس از آن مرحله را ادامه می‌دهید. آنچه تا الان در این مرحله نوشته‌اید نگه داشته می‌شود.</div>
+      <div class="field" id="areq-approver-row">
+        <label>تأییدکننده <span class="req">*</span></label>
+        <select id="areq-approver"></select>
+      </div>
+      <div class="field">
+        <label>فرم‌های ضمیمه <span class="req">*</span> <span class="hint">کدام فرم‌های پرشده همراه ارجاع برود</span></label>
+        <div id="areq-blocks" class="areq-blocks"></div>
+      </div>
+      <div class="field">
+        <label>توضیحات</label>
+        <textarea id="areq-note" rows="3" placeholder="مثلاً: مشخصات کابل تحویلی جهت تأیید؛ عکس پلاک پیوست است."></textarea>
+      </div>
+      <div class="field">
+        <label>مستندات پیوست <span class="hint">(اختیاری، بدون محدودیت حجم)</span></label>
+        <input type="file" id="areq-files" multiple>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-primary" id="areq-send" type="button">📤 ارسال برای تأیید</button>
+      <button class="btn-secondary" data-close="areq-modal" type="button">انصراف</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="areq-view-modal">
+  <div class="modal modal-wide">
+    <div class="modal-head"><h3 id="areq-view-title">درخواست تأیید</h3>
+      <button class="modal-x" data-close="areq-view-modal">×</button></div>
+    <div class="modal-body" id="areq-view-body"></div>
+    <div class="modal-foot" id="areq-view-foot">
+      <button class="btn-success" id="areq-approve" type="button">✅ تأیید می‌شود</button>
+      <button class="btn-danger" id="areq-reject" type="button">✕ تأیید نمی‌شود</button>
+      <button class="btn-secondary" data-close="areq-view-modal" type="button">بستن</button>
+    </div>
+  </div>
 </div>
 
 <div class="modal-overlay" id="new-process-modal">

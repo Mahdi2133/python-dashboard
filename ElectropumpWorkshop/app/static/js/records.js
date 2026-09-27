@@ -48,14 +48,20 @@
         key = field.model_attr.endsWith('_id')
           ? field.model_attr.slice(0, -3) : field.model_attr;
       }
-      columns.push({ key: key, label: field.label,
-                     sort: field.model_attr && !field.model_attr.endsWith('_id')
-                           ? field.model_attr : null });
+      /* Every column sorts: plain ones by value, choice ones by the option's
+         name, the well by the register, form-builder fields by what is stored.
+         Multi-choice tags have no single value to sort by. */
+      var sortKey = null;
+      if (field.field_name === 'well') sortKey = 'well';
+      else if (['failure', 'workshop_opinion', 'desc_tags', 'install_relates_to'].includes(field.field_name)) sortKey = null;
+      else if (field.model_attr) sortKey = field.model_attr;
+      else if (!['checkbox', 'multiselect', 'checklist', 'file'].includes(field.field_type)) sortKey = 'dyn:' + field.field_name;
+      columns.push({ key: key, label: field.label, sort: sortKey });
       /* The PM code and class identify the well, so they sit right beside the
          name — which is what makes two wells sharing a name tellable apart. */
       if (field.field_name === 'well') {
-        columns.push({ key: 'well_pm_code', label: 'کد PM', sort: null });
-        columns.push({ key: 'well_class', label: 'کلاسه چاه', sort: null });
+        columns.push({ key: 'well_pm_code', label: 'کد PM', sort: 'well_pm_code' });
+        columns.push({ key: 'well_class', label: 'کلاسه چاه', sort: 'well_class' });
       }
     });
     A.qs('#table-head').innerHTML = '<th>#</th>'
@@ -63,11 +69,29 @@
           if (!col.sort) return '<th>' + A.esc(col.label) + '</th>';
           var arrow = state.sort === col.sort
             ? (state.dir === 'desc' ? ' <span class="arrow">▼</span>'
-                                    : ' <span class="arrow">▲</span>') : '';
-          return '<th class="sortable" data-sort="' + A.esc(col.sort) + '">'
+                                    : ' <span class="arrow">▲</span>')
+            : ' <span class="arrow idle">⇅</span>';
+          return '<th class="sortable' + (state.sort === col.sort ? ' sorted' : '') + '" data-sort="'
+            + A.esc(col.sort) + '" title="برای مرتب‌سازی کلیک کنید (کم به زیاد / زیاد به کم)">'
             + A.esc(col.label) + arrow + '</th>';
         }).join('')
       + '<th>عملیات</th>';
+    syncSortControls();
+  }
+
+  /* The same order, chosen from two dropdowns — for whoever does not think of
+     clicking a column heading. */
+  function syncSortControls() {
+    var by = A.qs('#f-sort'), dir = A.qs('#f-dir');
+    if (!by || !dir) return;
+    var opts = '<option value="op_date">تاریخ عملیات</option>' + columns.filter(function (c) {
+      return c.sort && c.sort !== 'op_date';
+    }).map(function (c) {
+      return '<option value="' + A.esc(c.sort) + '">' + A.esc(c.label) + '</option>';
+    }).join('');
+    if (by.dataset.built !== String(columns.length)) { by.innerHTML = opts; by.dataset.built = String(columns.length); }
+    by.value = state.sort;
+    dir.value = state.dir;
   }
 
   function cell(value) {
@@ -230,6 +254,10 @@
       });
       reload();
     });
+
+    var sortBy = A.qs('#f-sort'), sortDir = A.qs('#f-dir');
+    if (sortBy) sortBy.addEventListener('change', function () { state.sort = sortBy.value; state.page = 1; buildColumns(); load(); });
+    if (sortDir) sortDir.addEventListener('change', function () { state.dir = sortDir.value; state.page = 1; buildColumns(); load(); });
 
     A.qs('#table-head').addEventListener('click', function (ev) {
       var th = ev.target.closest('[data-sort]');

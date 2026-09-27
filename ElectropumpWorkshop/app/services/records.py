@@ -251,14 +251,33 @@ def _apply_dynamic(record, payload, errors):
                 holder.value_date = dt.date.fromisoformat(str(raw))
             except ValueError:
                 errors[name] = "قالب تاریخ نامعتبر است."
+        elif field.field_type == "formula":
+            holder.value_num = to_float(raw, name, errors)
+        elif field.field_type == "file":
+            holder.value_text = _file_names(raw)
         elif field.field_type in ("checkbox", "multiselect", "checklist"):
             holder.value_text = ", ".join(raw) if isinstance(raw, list) else str(raw)
         else:
             holder.value_text = str(raw)
-        if field.is_required and holder.value in (None, ""):
+        # a «مستند» is uploaded in the process کارتابل, and checked there
+        if field.is_required and field.field_type != "file" and holder.value in (None, ""):
             errors[name] = f"«{field.label}» الزامی است."
         if holder.id is None and holder.field_id not in existing:
             record.dynamic_values.append(holder)
+
+
+def _file_names(raw) -> str:
+    """A «مستند» answer (attachment ids) as the record keeps it: the file names."""
+    from ..models import WorkflowAttachment
+    ids = raw if isinstance(raw, list) else [x for x in str(raw).split(",")]
+    names = []
+    for i in ids:
+        try:
+            a = db.session.get(WorkflowAttachment, int(i))
+        except (TypeError, ValueError):
+            a = None
+        names.append(a.filename if a else str(i).strip())
+    return "، ".join(n for n in names if n)
 
 
 def _demote_coercion_errors(errors, warnings):
@@ -467,6 +486,9 @@ def apply_payload(record: Record, payload: dict, create_missing=False,
             setattr(record, field.model_attr, None)
 
     _apply_tags(record, payload, create_missing)
+    # «محاسباتی» fields are the server's to fill, from the answers above
+    from .formfields import apply_formulas_to_payload
+    payload = apply_formulas_to_payload(payload)
     _apply_dynamic(record, payload, errors)
     if partial:
         _demote_coercion_errors(errors, warnings)
@@ -680,10 +702,52 @@ def search_query(params: dict):
 
     sort = params.get("sort") or "op_date"
     direction = (params.get("dir") or "desc").lower()
-    column = getattr(Record, sort, None) if sort in {
-        c.name for c in Record.__table__.columns} else None
-    if column is None:
-        column = Record.op_date
-    query = query.order_by(column.desc().nullslast() if direction == "desc"
-                           else column.asc().nullsfirst(), Record.id.desc())
+    query, column = _sort_column(query, sort)
+    # empties always last, whichever way the column runs
+    query = query.order_by(column.is_(None), column.desc() if direction == "desc"
+                           else column.asc(), Record.id.desc())
     return query
+
+
+def _sort_column(query, sort: str):
+    """The expression a records column sorts by — every column, not only plain ones.
+
+    * a plain column (op_date, total_head…)            → itself
+    * a choice column (center_id, pump_curr_id…)        → the option's label
+    * well / well_pm_code / well_class                  → the well register
+    * dyn:<field_name> (a form-builder field)           → its stored value
+
+    Text columns sort in Persian alphabetical order (the ``fa`` collation).
+    """
+    from sqlalchemy import collate, select
+    from .persian_sort import COLLATION
+    from sqlalchemy.orm import aliased
+    columns = {c.name for c in Record.__table__.columns}
+    if sort in ("well", "well_pm_code", "well_class"):
+        w = aliased(Well)
+        query = query.outerjoin(w, Record.well_id == w.id)
+        target = {"well": db.func.coalesce(w.name, Record.well_name_raw),
+                  "well_pm_code": w.pm_code, "well_class": w.well_class}[sort]
+        return query, collate(target, COLLATION)
+    if sort.startswith("dyn:"):
+        field = FormField.query.filter_by(field_name=sort[4:]).first()
+        if field is not None:
+            value = (RecordDynamicValue.value_num if field.field_type in ("number", "formula")
+                     else RecordDynamicValue.value_date if field.field_type in ("date", "jalali_date")
+                     else RecordDynamicValue.value_text)
+            sub = (select(value).where(RecordDynamicValue.record_id == Record.id,
+                                       RecordDynamicValue.field_id == field.id)
+                   .limit(1).scalar_subquery())
+            return query, (collate(sub, COLLATION) if value is RecordDynamicValue.value_text
+                           else sub)
+        return query, Record.op_date
+    if sort in columns and sort.endswith("_id") and sort not in ("well_id",):
+        item = aliased(LookupItem)
+        query = query.outerjoin(item, getattr(Record, sort) == item.id)
+        return query, collate(item.label, COLLATION)
+    if sort in columns:
+        column = getattr(Record, sort)
+        if isinstance(column.type, (db.String, db.Text)):
+            return query, collate(column, COLLATION)
+        return query, column
+    return query, Record.op_date

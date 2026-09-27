@@ -8,8 +8,29 @@
     text: 'متن', number: 'عدد', textarea: 'متن بلند', date: 'تاریخ میلادی',
     jalali_date: 'تاریخ شمسی', select: 'لیست کشویی', radio: 'تک‌انتخابی',
     checkbox: 'چندانتخابی', multiselect: 'چندانتخابی (لیست)',
-    autocomplete: 'جستجوی خودکار', checklist: 'چک‌لیست'
+    autocomplete: 'جستجوی خودکار', checklist: 'چک‌لیست',
+    file: 'مستند (بارگذاری فایل)', formula: 'محاسباتی (فرمول)', mirror: 'فیلد مشترک'
   };
+
+  /* Show the settings panel of the chosen special type only. */
+  function toggleSpecial() {
+    var t = A.qs('#fb-type').value;
+    A.qsa('.fb-special').forEach(function (p) { p.classList.toggle('hidden', p.dataset.for !== t); });
+  }
+  function fillFieldPickers(field) {
+    var opts = '';
+    (schema.sections || []).forEach(function (sec) {
+      var group = '';
+      (sec.fields || []).forEach(function (f) {
+        if (field && f.field_name === field.field_name) return;
+        if (f.field_type === 'mirror') return;
+        group += '<option value="' + A.esc(f.field_name) + '">' + A.esc(f.label) + ' (' + A.esc(f.field_name) + ')</option>';
+      });
+      if (group) opts += '<optgroup label="' + A.esc(sec.title) + '">' + group + '</optgroup>';
+    });
+    A.qs('#fb-mirror').innerHTML = '<option value="">— انتخاب فیلد —</option>' + opts;
+    A.qs('#fb-formula-field').innerHTML = '<option value="">＋ درج فیلد…</option>' + opts;
+  }
 
   async function load() {
     var res = await A.api.get('/api/form-builder?all=1');
@@ -44,6 +65,8 @@
       + '<span>' + A.esc(field.label) + '</span>'
       + '<span class="badge muted">' + A.esc(TYPE_LABELS[field.field_type]
           || field.field_type) + '</span>'
+      + (field.field_type === 'mirror' ? '<span class="badge">🔗 ' + A.esc(field.mirror_of || '?') + '</span>' : '')
+      + (field.field_type === 'formula' ? '<span class="badge mono" dir="ltr">= ' + A.esc((field.formula || '').slice(0, 40)) + '</span>' : '')
       + '<span class="badge muted mono">' + A.esc(field.field_name) + '</span>'
       + (field.is_builtin ? '<span class="badge">پایه</span>'
           : '<span class="badge ok">سفارشی</span>')
@@ -266,6 +289,13 @@
     fillPrefill(field);
     A.qs('#fb-placeholder').value = field && field.placeholder ? field.placeholder : '';
     A.qs('#fb-lookup').value = field && field.lookup_category ? field.lookup_category : '';
+    fillFieldPickers(field);
+    A.qs('#fb-accept').value = field && field.file_accept ? field.file_accept : '';
+    A.qs('#fb-multiple').value = field && field.file_multiple === false ? '0' : '1';
+    A.qs('#fb-formula').value = field && field.formula ? field.formula : '';
+    A.qs('#fb-formula-status').textContent = '';
+    A.qs('#fb-mirror').value = field && field.mirror_of ? field.mirror_of : '';
+    toggleSpecial();
     A.qs('#fb-lookup').disabled = !!(field && field.is_builtin);
     A.qs('#fb-min').value = field && field.min_value !== null ? field.min_value : '';
     A.qs('#fb-max').value = field && field.max_value !== null ? field.max_value : '';
@@ -298,6 +328,10 @@
       help_text: A.qs('#fb-help').value.trim(),
       allow_other: A.qs('#fb-other').value === '1',
       export_header: A.qs('#fb-export').value.trim(),
+      file_accept: A.qs('#fb-accept').value.trim(),
+      file_multiple: A.qs('#fb-multiple').value === '1',
+      formula: A.qs('#fb-formula').value.trim(),
+      mirror_of: A.qs('#fb-mirror').value,
       options: collectOptions()
     };
   }
@@ -427,6 +461,7 @@
     A.qs('#sb-columns').value = section ? section.columns : 3;
     A.qs('#sb-full').value = section && section.full_width ? '1' : '0';
     A.qs('#sb-active').value = section && !section.is_active ? '0' : '1';
+    A.qs('#sb-entry').value = section && section.show_on_entry === false ? '0' : '1';
     fillWhen(section && section.visible_when);
     fillBring(section);
     A.qs('#sb-delete').classList.toggle('hidden', !section);
@@ -439,6 +474,7 @@
       icon: A.qs('#sb-icon').value.trim(), columns: A.qs('#sb-columns').value,
       full_width: A.qs('#sb-full').value === '1',
       is_active: A.qs('#sb-active').value === '1',
+      show_on_entry: A.qs('#sb-entry').value === '1',
       visible_when: readWhen()
     };
     if (!payload.code || !payload.title) {
@@ -547,6 +583,23 @@
     /* Changing the type of a NEW field toggles the option editor. */
     A.qs('#fb-type').addEventListener('change', function () {
       if (!editingField) loadOptions(null);
+      toggleSpecial();
+    });
+    A.qs('#fb-formula-field').addEventListener('change', function () {
+      if (!this.value) return;
+      var t = A.qs('#fb-formula'), s0 = t.selectionStart || t.value.length;
+      t.value = t.value.slice(0, s0) + '[' + this.value + ']' + t.value.slice(t.selectionEnd || s0);
+      this.value = '';
+      t.focus();
+    });
+    A.qs('#fb-formula-check').addEventListener('click', async function () {
+      var st = A.qs('#fb-formula-status');
+      try {
+        var res = await A.api.post('/api/form-builder/formula/check', {
+          formula: A.qs('#fb-formula').value, field_name: A.qs('#fb-name').value.trim() });
+        st.textContent = res.data.valid ? '✓ معتبر — ورودی‌ها: ' + res.data.refs.join('، ') : '✕ ' + res.data.error;
+        st.style.color = res.data.valid ? 'var(--success)' : 'var(--danger)';
+      } catch (err) { st.textContent = err.message; }
     });
 
     var optList = A.qs('#fb-options-list');

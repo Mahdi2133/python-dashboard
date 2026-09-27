@@ -9,7 +9,7 @@ from .report import (Report, ReportCategory, ReportDependency, ReportExportJob,
                      ReportFavorite, ReportPermission, ReportSchedule,
                      ReportSnapshot, ReportVersion, UserGroup, user_group_members)
 from .well import PumpCurvePoint, Well, WellAlias
-from .workflow import (WorkflowAttachment, WorkflowDefinition,
+from .workflow import (WorkflowApprovalRequest, WorkflowAttachment, WorkflowDefinition,
                        WorkflowInstance, WorkflowStage,
                        WorkflowStageEntry, WorkflowStageItem,
                        app_user_centers, workflow_stage_owners)
@@ -25,7 +25,7 @@ __all__ = [
     "ReportFavorite", "ReportPermission", "ReportSchedule", "ReportSnapshot",
     "ReportVersion", "UserGroup", "user_group_members",
     "PumpCurvePoint", "Well", "WellAlias",
-    "WorkflowAttachment", "WorkflowDefinition", "WorkflowInstance",
+    "WorkflowApprovalRequest", "WorkflowAttachment", "WorkflowDefinition", "WorkflowInstance",
     "WorkflowStage", "WorkflowStageEntry", "WorkflowStageItem",
     "app_user_centers", "workflow_stage_owners",
 ]

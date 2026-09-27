@@ -126,8 +126,11 @@ def main() -> int:
 
     try:
         from waitress import serve
+        # waitress refuses bodies over 1 GB by default; documents have no cap
+        # here, so allow up to 1 TB (a practical «unlimited» on a LAN).
         serve(app, host=host, port=port, threads=int(cfg.get("threads") or 16),
-              ident="ElectropumpWorkshop")
+              ident="ElectropumpWorkshop",
+              max_request_body_size=1024 ** 4, channel_timeout=3600)
     except ImportError:
         log.warning("waitress not installed — falling back to the Flask dev server")
         app.run(host=host, port=port, threaded=True, debug=False)
