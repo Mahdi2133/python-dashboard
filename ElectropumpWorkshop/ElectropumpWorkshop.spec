@@ -46,10 +46,17 @@ import importlib.util  # noqa: E402
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules  # noqa: E402
 
-for _pkg in ('reportlab', 'arabic_reshaper', 'bidi'):
-    if importlib.util.find_spec(_pkg) is None:
-        raise SystemExit(f"'{_pkg}' is not installed in the build environment; "
-                         f"run: pip install -r requirements.txt")
+import sys  # noqa: E402
+
+# import name → pip package name
+_needed = {'reportlab': 'reportlab', 'arabic_reshaper': 'arabic-reshaper', 'bidi': 'python-bidi'}
+_missing = [pip for mod, pip in _needed.items() if importlib.util.find_spec(mod) is None]
+if _missing:
+    raise SystemExit(
+        "\nNot installed in this Python (" + sys.executable + "): " + ", ".join(_missing)
+        + "\nInstall them, then build again:\n    \"" + sys.executable + "\" -m pip install "
+        + " ".join(_missing) + "\n")
+for _pkg in _needed:
     hiddenimports += collect_submodules(_pkg)
     datas += collect_data_files(_pkg)
 
