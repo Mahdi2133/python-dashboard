@@ -2085,8 +2085,8 @@ def main():
         check("کار هر چاه فقط به متولی مرکز خودش می‌رسد",
               bool(seen) and all(seen), f"{len(seen)} مرکز آزمایش شد")
 
-        # A well whose مرکز nobody claims must stay visible to everyone rather
-        # than fall into a کارتابل nobody reads.
+        # A well whose مرکز nobody claims stays with the office that opened it
+        # rather than fall into a کارتابل nobody reads.
         orphan = Well.query.filter(
             Well.center_id.notin_([i.id for i in pair]),
             Well.is_active.is_(True)).first()
@@ -2094,14 +2094,29 @@ def main():
                                "well": orphan.name}, people[0])
         sync_entries(inst)
         _db.session.commit()
-        check("چاهی که مرکزش متولی ندارد گم نمی‌شود",
-              sorted(owners_of(inst, stage)) == sorted(u.id for u in people))
+        check("چاهی که مرکزش متولی ندارد نزد اداره‌ی شروع‌کننده می‌ماند",
+              owners_of(inst, stage) == [people[0].id])
 
-        # Turning the switch off puts the job back with everybody.
+        # Without routing by مرکز: the run is the starting office's alone —
+        # the other ادارات on the same door do not see it.
         stage.route_by_center = False
         _db.session.commit()
-        check("بدون مسیردهی، کار به همه‌ی متولی‌ها می‌رسد",
-              sorted(owners_of(inst, stage)) == sorted(u.id for u in people))
+        check("بدون مسیردهی، کار فقط نزد اداره‌ی شروع‌کننده است",
+              owners_of(inst, stage) == [people[0].id])
+        inst_b = start_instance({"operation_kind": "کشیدن", "well": orphan.name}, people[1])
+        sync_entries(inst_b)
+        _db.session.commit()
+        check("فرایندِ اداره‌ی دیگر هم فقط نزد خودش است",
+              owners_of(inst_b, stage) == [people[1].id])
+        from app.services.workflow import stages_of_user as _sou
+        check("اداره‌ی دیگر آن را در کارتابل خود نمی‌بیند",
+              not _sou(inst, people[1]) and not _sou(inst_b, people[0]))
+        boss_ = AppUser.query.filter_by(role="admin").first()
+        inst_c = start_instance({"operation_kind": "کشیدن", "well": orphan.name}, boss_)
+        sync_entries(inst_c)
+        _db.session.commit()
+        check("فرایندی که مدیر شروع کند به همه‌ی متولی‌ها می‌رسد",
+              sorted(owners_of(inst_c, stage)) == sorted(u.id for u in people))
 
         # A disabled account must not hold work another owner could do.
         people[0].is_active = False

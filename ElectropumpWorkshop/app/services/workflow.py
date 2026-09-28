@@ -1107,25 +1107,29 @@ def _standing_owners(instance: WorkflowInstance, stage: WorkflowStage) -> list:
     # truth, rather than silently ownerless.
     live = [u for u in people if u.is_active]
     people = live or people
+    if len(people) < 2:
+        return list(people)
+    # «فقط متولی مرکز چاه»: the owner who answers for this well's مرکز, when
+    # one does — the admin asked for exactly that.
     if stage.route_by_center:
-        people = _for_this_center(people, instance)
-    return list(people)
+        matching = _center_owners(people, instance)
+        if matching:
+            return matching
+    # Otherwise the office that opened this run keeps it: when its starter is
+    # one of the stage's several متولی‌ها — eight ادارات on the door — the stage
+    # is theirs alone on this run, and the other seven are not shown another
+    # office's well. A stage the starter does not hold stays with all.
+    starter = [u for u in people if u.id == instance.created_by]
+    return starter or list(people)
 
 
-def _for_this_center(people: list, instance: WorkflowInstance) -> list:
-    """Narrow a stage's owners to the one who answers for this well's مرکز.
-
-    Nobody is narrowed out by a centre they were never given: if no owner
-    claims this well's مرکز, the stage stays with all of them rather than
-    falling into a کارتابل nobody reads.
-    """
+def _center_owners(people: list, instance: WorkflowInstance) -> list:
+    """The owners who answer for this well's مرکز (none if nobody claims it)."""
     well = instance.well
     center_id = well.center_id if well is not None else None
     if center_id is None:
-        return people
-    matching = [u for u in people
-                if any(c.id == center_id for c in u.centers)]
-    return matching or people
+        return []
+    return [u for u in people if any(c.id == center_id for c in u.centers)]
 
 
 def owner_of(instance: WorkflowInstance, stage: WorkflowStage):
