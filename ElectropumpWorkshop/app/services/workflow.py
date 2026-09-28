@@ -1021,6 +1021,8 @@ def sync_entries(instance: WorkflowInstance):
             entry.note = ("این مرحله در عملیات "
                           f"«{OPERATION_KINDS.get(instance.operation_kind, '')}» "
                           "طی نمی‌شود.")
+    if instance.status == INSTANCE_OPEN:
+        _resume_skipped_approvals(instance)
     _unpin_approvers(instance)
 
 
@@ -1351,14 +1353,17 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
     instance.set_payload(merged)
 
     # An approval holds the work here until somebody rules on it; only then is
-    # it referred onward. Anything else goes on its way immediately.
-    if entry.status == ENTRY_SUBMITTED and stage.needs_approval:
+    # it referred onward. Anything else goes on its way immediately. A stage
+    # whose form a rule set aside («بایگانی»، «موکول») was still done by
+    # somebody, and is signed off like any other.
+    if entry.status in ENTRY_DONE and stage.needs_approval:
         approver = _approver_for(stage)
         if approver is None:
             raise WorkflowError(
                 f"مرحله «{stage.title}» نیاز به تأیید دارد ولی تأییدکننده‌ای "
                 f"برایش تعیین نشده است. از مدیر سیستم بخواهید در فرایندساز "
                 f"تأییدکننده را مشخص کند.")
+        entry.status_after_approval = entry.status
         entry.status = ENTRY_AWAITING
         entry.approver_id = approver
         entry.shared_stages = _shared_for(stage, share_stages)
@@ -1719,9 +1724,10 @@ def approver_ids(stage: WorkflowStage) -> set:
     ids = set()
     if stage.needs_approval and stage.approver_id:
         ids.add(stage.approver_id)
-    if stage.approval_request_enabled:
-        ids.update(int(x) for x in (stage.approval_request_user_ids or "").split(",")
-                   if x.strip().isdigit())
+    # named as an approver of «ارجاع برای تأیید» — even with the switch off,
+    # the admin said what this person is for
+    ids.update(int(x) for x in (stage.approval_request_user_ids or "").split(",")
+               if x.strip().isdigit())
     from .approvals import required_approver_ids
     ids.update(required_approver_ids(stage))
     return ids
@@ -1730,6 +1736,32 @@ def approver_ids(stage: WorkflowStage) -> set:
 def approvers_only(stage: WorkflowStage, target: WorkflowStage) -> set:
     """Approvers of ``stage`` who do not also hold ``target`` themselves."""
     return approver_ids(stage) - set(stage_owner_ids(target))
+
+
+def _resume_skipped_approvals(instance: WorkflowInstance):
+    """Send a stage the approval an earlier version let it skip.
+
+    A stage whose form a rule set aside («بایگانی»، «موکول») went straight on
+    even when the admin had made it subject to approval. If nothing after it
+    has been recorded yet, it goes to its approver now, as it should have.
+    """
+    stages = applicable_stages(instance)
+    for i, stage in enumerate(stages):
+        if not (stage.needs_approval and stage.approver_id):
+            continue
+        entry = _entry_for(instance, stage.stage_number)
+        if entry is None or entry.status not in (ENTRY_ARCHIVED, ENTRY_DEFERRED) \
+                or entry.approver_id or entry.decided_at:
+            continue
+        later = [_entry_for(instance, s.stage_number) for s in stages[i + 1:]]
+        if any(e is not None and e.status in ENTRY_DONE + (ENTRY_AWAITING,) for e in later):
+            continue
+        entry.status_after_approval = entry.status
+        entry.status = ENTRY_AWAITING
+        entry.approver_id = stage.approver_id
+        record_audit("update", "workflow", instance.id,
+                     summary=f"ارسال مرحله {stage.stage_number} «{stage.title}» برای تأیید "
+                             f"(تأییدی که پیش‌تر از آن رد شده بود)")
 
 
 def _unpin_approvers(instance: WorkflowInstance):
@@ -1849,7 +1881,9 @@ def decide_stage(instance: WorkflowInstance, stage_number: int, user,
     entry.decision_note = comment or None
 
     if approved:
-        entry.status = ENTRY_SUBMITTED
+        entry.status = (entry.status_after_approval
+                        if entry.status_after_approval in ENTRY_DONE else ENTRY_SUBMITTED)
+        entry.status_after_approval = None
         record_audit("update", "workflow", instance.id,
                      summary=f"تأیید مرحله {stage.stage_number} «{stage.title}»")
         _refer_onward(instance, stage, user)

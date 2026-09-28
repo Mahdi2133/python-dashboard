@@ -2417,6 +2417,58 @@ def main():
         _db.session.commit()
         st2_id, st3_id = s2.id, s3.id
 
+        # Stage 4 set aside («بایگانی») by «اقدام مورد نیاز» is still approved
+        # first; «ارجاع به» naming the approver and an approval-request approver
+        # hands stage 5 to neither of them.
+        from app.models.workflow import ENTRY_ARCHIVED, ENTRY_AWAITING
+        from app.services.workflow import awaiting_approval, blocked_by, carries_well_install
+        s4, s5 = [next(x for x in wf.stages if x.stage_number == n) for n in (4, 5)]
+        other = next(u for u in _AU.query.filter_by(is_active=True).order_by(_AU.id).all()
+                     if u.id not in (boss.id, judge.id) and u.id not in stage_owner_ids(s5))
+        saved4 = (s4.needs_approval, s4.approver_id, s4.approval_blocks, s4.referral_mode,
+                  s4.referral_user_id, s4.referral_user_ids, s4.approval_request_user_ids)
+        s4.needs_approval, s4.approver_id, s4.approval_blocks = True, judge.id, True
+        s4.referral_mode, s4.referral_user_id = REFER_USER, judge.id
+        s4.referral_user_ids = f"{judge.id},{other.id}"
+        s4.approval_request_user_ids = str(other.id)
+        _db.session.commit()
+        check("مرحله ۴ فرم «اطلاعات چاه و نصب» را دارد", carries_well_install(s4))
+        inst4 = start_instance({"operation_kind": "کشیدن", "well": "امام رضا 11"}, boss)
+        sync_entries(inst4)
+        _db.session.commit()
+        submit_stage(inst4, {"required_action": "ویدئومتری"}, boss, stage_number=4)
+        e4 = _entry_for(inst4, 4)
+        check("مرحله‌ی بایگانی‌شده هم برای تأیید می‌رود",
+              e4.status == ENTRY_AWAITING and e4.status_after_approval == ENTRY_ARCHIVED,
+              f"{e4.status} / {e4.status_after_approval}")
+        check("در کارتابل تأییدکننده برای تأیید است",
+              [s.stage_number for s in awaiting_approval(inst4, judge)] == [4])
+        standing5 = [u.id for u in _standing_owners(inst4, s5)]
+        check("مرحله ۵ به تأییدکننده‌ها نمی‌رسد و نزد متولی خودش است",
+              owners_of(inst4, s5) == standing5 and other.id not in owners_of(inst4, s5))
+        check("تا تأیید نشود مرحله ۵ ثبت نمی‌شود", blocked_by(inst4, 5) is not None)
+        decide_stage(inst4, 4, judge, approved=True, comment="تأیید")
+        check("پس از تأیید، مرحله ۴ همان «بایگانی» می‌ماند", _entry_for(inst4, 4).status == ENTRY_ARCHIVED)
+        check("و مرحله ۵ آزاد و نزد متولی خودش است",
+              blocked_by(inst4, 5) is None and owners_of(inst4, s5) == standing5)
+        # a run the old version let skip its approval is sent to it now
+        s4.needs_approval = False
+        _db.session.commit()
+        inst5 = start_instance({"operation_kind": "کشیدن", "well": "امام رضا 11"}, boss)
+        sync_entries(inst5)
+        _db.session.commit()
+        submit_stage(inst5, {"required_action": "ویدئومتری"}, boss, stage_number=4)
+        s4.needs_approval = True
+        _db.session.commit()
+        sync_entries(inst5)
+        _db.session.commit()
+        check("تأییدِ جاافتاده‌ی قبلی خودکار به کارتابل تأییدکننده می‌رود",
+              _entry_for(inst5, 4).status == ENTRY_AWAITING
+              and _entry_for(inst5, 4).approver_id == judge.id)
+        (s4.needs_approval, s4.approver_id, s4.approval_blocks, s4.referral_mode,
+         s4.referral_user_id, s4.referral_user_ids, s4.approval_request_user_ids) = saved4
+        _db.session.commit()
+
     print("\n— تأیید گزینه‌ی یک فیلد، و فیلدی که در مرحله‌ی بعد پر می‌شود —")
     c.post("/api/form-builder/sections", json={"code": "t_opt", "title": "فرم تأیید گزینه",
                                                "show_on_entry": False})

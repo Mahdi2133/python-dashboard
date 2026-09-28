@@ -598,6 +598,9 @@ class WorkflowStageEntry(db.Model):
     decided_by_id = db.Column(db.Integer, db.ForeignKey("app_users.id"))
     decided_at = db.Column(db.DateTime)
     decision_note = db.Column(db.Text)
+    # What the stage becomes once approved: «ثبت شده», or «بایگانی» / «موکول»
+    # when a rule set its form aside — that stage is still signed off first.
+    status_after_approval = db.Column(db.String(20))
     # what the person on this stage had typed when they sent it for approval,
     # so the form is still there when the answer comes back
     draft_json = db.Column(db.Text)
