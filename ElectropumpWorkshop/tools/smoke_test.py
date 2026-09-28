@@ -2252,6 +2252,27 @@ def main():
     check("فرم‌های انتخاب پمپ ساخته شده‌اند",
           len([sec for sec in c.get("/api/form-builder").get_json()["data"]["sections"]
                if sec["code"].startswith("ps_")]) == 9)
+    # Two forms on one answer — one of them process-only — both open on the entry page.
+    cl = c.get("/api/form-builder/cause-links?field=failure").get_json()["data"]
+    check("فرم‌های انتخاب پمپ در «اتصال‌ها» قابل انتخاب‌اند",
+          {o["code"] for o in cl["others"] if o.get("process_only")} >= {"ps_select", "ps_collect"})
+    two_cause = next(x for x in cl["causes"] if x["forms"])
+    before_links = {two_cause["forms"][0]: [two_cause["value"]], "ps_select": []}
+    c.put("/api/form-builder/cause-links", json={"field": "failure", "links": {
+        two_cause["forms"][0]: [two_cause["value"]], "ps_select": [two_cause["value"]]}})
+    cl2 = c.get("/api/form-builder/cause-links?field=failure").get_json()["data"]
+    check("دو فرم به یک گزینه وصل می‌شود",
+          set(next(x for x in cl2["causes"] if x["value"] == two_cause["value"])["forms"])
+          >= {two_cause["forms"][0], "ps_select"})
+    es = c.get("/api/form-builder?for=entry").get_json()["data"]
+    opened = {r["section"] for r in es["conditional"] if r.get("section")
+              and two_cause["value"] in r["value"].split("|")}
+    check("در ثبت اطلاعات هر دو فرمِ وصل‌شده باز می‌شوند",
+          {two_cause["forms"][0], "ps_select"} <= opened
+          and any(sec["code"] == "ps_select" for sec in es["sections"]), str(opened))
+    check("فرم فقط-فرایندیِ وصل‌نشده همچنان در ثبت اطلاعات نیست",
+          all(sec["code"] != "ps_collect" for sec in es["sections"]))
+    c.put("/api/form-builder/cause-links", json={"field": "failure", "links": before_links})
 
     wfd = c.get("/api/workflow/definition").get_json()["data"]
     st1 = [x for x in wfd["workflow"]["stages"] if x["stage_number"] == 1][0]

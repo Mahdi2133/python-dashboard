@@ -642,6 +642,11 @@ def _missing_required(instance: WorkflowInstance, stage: WorkflowStage,
     for block in stage_form(instance, stage, payload)["sections"]:
         if block.get("is_locked") or block.get("is_optional"):
             continue
+        # A form opened by an answer asks nothing while that answer is not
+        # given — including its «فیلد مشترک», whose own form is not conditional.
+        if (block.get("visible_when") or "").strip() \
+                and _rule_met(block.get("visible_when"), merged, set()) is not True:
+            continue
         for f in block.get("fields") or []:
             name = f.get("field_name")
             if (not f.get("is_required") or f.get("read_only")

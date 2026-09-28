@@ -32,11 +32,21 @@
       return '<option value="' + A.esc(f.code) + '">' + A.esc(f.title)
         + ' (' + J.toFaDigits(f.field_count) + ' فیلد)</option>';
     }).join('');
-    var otherChoices = (data.others || []).map(function (f) {
+    function otherOption(f) {
       return '<option value="' + A.esc(f.code) + '" data-plain="'
         + (f.has_rule ? '0' : '1') + '">' + A.esc(f.title)
+        + ' (' + J.toFaDigits(f.field_count) + ' فیلد)'
         + (f.has_rule ? ' · به پرسش دیگری هم وصل است' : '') + '</option>';
-    }).join('');
+    }
+    /* Process-only forms (the pump-selection forms and the like) get their own
+       group, so they are not lost at the end of a long list. */
+    var entryOthers = (data.others || []).filter(function (f) { return !f.process_only; });
+    var processOthers = (data.others || []).filter(function (f) { return f.process_only; });
+    var otherChoices = (entryOthers.length
+        ? '<optgroup label="بخش‌های دیگر فرم">' + entryOthers.map(otherOption).join('') + '</optgroup>' : '')
+      + (processOthers.length
+        ? '<optgroup label="فرم‌های فقط‌فرایندی (مثل فرم‌های انتخاب پمپ)">'
+          + processOthers.map(otherOption).join('') + '</optgroup>' : '');
     var fieldChoices = (data.field_links || []).concat(data.field_others || [])
       .map(function (f) {
         return '<option value="' + A.esc(f.code) + '" data-plain="'
@@ -63,8 +73,7 @@
         + '</div>'
         + '<select class="cl-add"><option value="">افزودن فرم…</option>'
         + (choices ? '<optgroup label="فرم‌های علت">' + choices + '</optgroup>' : '')
-        + (otherChoices ? '<optgroup label="بخش‌های دیگر فرم">' + otherChoices
-            + '</optgroup>' : '')
+        + otherChoices
         + (fieldChoices ? '<optgroup label="یک فیلد تکی">' + fieldChoices
             + '</optgroup>' : '')
         + '</select>'
@@ -103,7 +112,7 @@
     if (add) {
       add.innerHTML = '<option value="">➕ افزودن فرم یا فیلد…</option>'
         + (choices ? '<optgroup label="فرم‌های وصل‌شده">' + choices + '</optgroup>' : '')
-        + (otherChoices ? '<optgroup label="بخش‌های دیگر فرم">' + otherChoices + '</optgroup>' : '')
+        + otherChoices
         + (fieldChoices ? '<optgroup label="یک فیلد تکی">' + fieldChoices + '</optgroup>' : '');
     }
   }

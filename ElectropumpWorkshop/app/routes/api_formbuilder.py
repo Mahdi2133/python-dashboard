@@ -71,10 +71,16 @@ def get_schema():
     if active_only:
         query = query.filter(FormSection.is_active.is_(True))
     if request.args.get("for") == "entry":
-        # the standalone entry page leaves out the process-only forms
-        query = query.filter(FormSection.show_on_entry.isnot(False))
-    sections = [s.to_dict(include_fields=True, active_only=active_only)
-                for s in query.all()]
+        # The standalone entry page leaves out the process-only forms — except
+        # one the admin linked to a question («اتصال‌ها»): a linked form opens
+        # wherever its question is asked, so two forms linked to one answer
+        # both open, not only the one that happens to be on the entry page.
+        from ..services.conditions import parse_rules as _rules
+        linked = lambda s: any(vals for _on, vals in _rules(s.visible_when))  # noqa: E731
+        rows = [s for s in query.all() if s.show_on_entry is not False or linked(s)]
+    else:
+        rows = query.all()
+    sections = [s.to_dict(include_fields=True, active_only=active_only) for s in rows]
     if active_only:
         # one widget per answer: a «فیلد مشترک» whose field is already drawn
         # in an earlier form is not drawn twice
@@ -710,7 +716,7 @@ def cause_links():
                 .order_by(FormSection.sort_order).all()):
         links = _links_on(sec, name)
         row = {"id": sec.id, "code": sec.code, "title": sec.title,
-               "icon": sec.icon,
+               "icon": sec.icon, "process_only": sec.show_on_entry is False,
                "field_count": len([f for f in sec.fields if f.is_active])}
         if links is None:
             # Offered for linking, with a warning when it currently shows for
