@@ -1162,6 +1162,9 @@ def export(report_id, fmt):
         payload, mimetype, ext, _res = build()
     except (ReportError, FormulaError, ValueError, RuntimeError) as exc:
         return _err(exc)
+    except Exception as exc:  # noqa: BLE001 — an export must answer, not crash
+        current_app.logger.exception("export %s of report %s failed", fmt, report.id)
+        return fail(f"ساخت خروجی {fmt.upper()} ناموفق بود: {type(exc).__name__}: {exc}", 500)
     record_audit("export", "report", report.id, summary=audit_text, commit=True)
     if fmt == "print":
         return Response(payload, mimetype=mimetype)

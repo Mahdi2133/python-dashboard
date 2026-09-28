@@ -131,6 +131,26 @@
         </div>
         <textarea id="fb-options-bulk" class="hidden mt-1"
           placeholder="هر خط یک گزینه، به شکل  مقدار|برچسب|آیکون"></textarea>
+        <!-- «تأیید گزینه»: these answers need somebody's approval -->
+        <div class="fb-approval-box" id="fb-approval-box">
+          <label>✅ گزینه‌هایی که نیاز به تأیید دارند</label>
+          <div id="fb-approval-options" class="fb-approval-options"></div>
+          <div class="fb-inline">
+            <label for="fb-approval-user">تأییدکننده</label>
+            <select id="fb-approval-user"><option value="">— بدون تأیید —</option></select>
+          </div>
+          <div class="hint">اگر در هر مرحله‌ای یکی از گزینه‌های تیک‌خورده انتخاب شود، آن مرحله تا تأیید این کاربر
+            نهایی نمی‌شود. کاربرِ مرحله در کارتابل خود «📤 ارسال برای تأیید» را می‌زند؛ پس از تأیید، مرحله به مرحله‌ی بعد می‌رود.
+            اگر پاسخ بعد از تأیید عوض شود، تأیید دوباره لازم است.</div>
+        </div>
+      </div>
+      <!-- «مرحله‌ی پرکردن» -->
+      <div class="field span-full" id="fb-fill-wrap">
+        <label>🖊 این فیلد در کدام مرحله‌ی فرایند پر شود؟</label>
+        <div id="fb-fill-stages" class="fb-fill-stages"></div>
+        <div class="hint">اگر مرحله‌ای انتخاب کنید، این فیلد خودکار در کارتابل کاربر همان مرحله برای پر کردن می‌آید (حتی
+          اگر فرمش در آن مرحله نباشد). در مرحله‌های قبل از آن نمایش داده نمی‌شود و در مرحله‌های بعد فقط خواندنی نشان
+          داده می‌شود. انتخاب نکنید تا مثل همیشه با فرم خودش پر شود. در هر فرایند یک مرحله.</div>
       </div>
     </div>
     <div class="modal-actions">

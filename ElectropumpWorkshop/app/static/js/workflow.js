@@ -562,6 +562,10 @@
       + '<label>کاربر</label>'
       + referPicker(s)
       + '</div>'
+      + '<div class="hint wf-refer-user-hint"' + (s.referral_mode === 'next' ? ' hidden' : '') + '>'
+      + 'کاربرِ «ارجاع به» <b>مرحله‌ی بعد را پر می‌کند</b>. برای کسی که فقط باید تأیید کند، '
+      + '«این مرحله باید تأیید شود» یا «ارجاع برای تأیید» را به کار ببرید؛ تأییدکننده‌ها '
+      + 'هیچ‌وقت فرم مرحله‌ی بعد را دریافت نمی‌کنند و آن مرحله به متولی خودش می‌رود.</div>'
       + '<label class="mini-check wf-refer-all-row"'
       + (s.referral_mode === 'next' ? ' hidden' : '') + '>'
       + '<input type="checkbox" class="wf-refer-all"'
@@ -1423,6 +1427,8 @@
         card.querySelector('.wf-refer-user').hidden = mode === 'next';
         var allRow = card.querySelector('.wf-refer-all-row');
         if (allRow) allRow.hidden = mode === 'next';
+        var userHint = card.querySelector('.wf-refer-user-hint');
+        if (userHint) userHint.hidden = mode === 'next';
         card.querySelector('.wf-refer-hint-row').hidden = mode !== 'choose';
         card.querySelector('.wf-refer-user').querySelector('label').textContent =
           mode === 'choose' ? 'پیش‌فرض' : 'کاربر';

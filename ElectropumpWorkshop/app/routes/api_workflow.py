@@ -1680,14 +1680,18 @@ def stage_report_export(fmt):
             f"filename*=UTF-8''stage_report_{jy}-{jm:02d}-{jd:02d}.{ext}"})
 
 # ── «ارجاع برای تأیید» ───────────────────────────────────────────────────────
-def _approval_panel(instance, stage, user):
+def _approval_panel(instance, stage, user, draft=None):
     """What the stage page needs to offer and show approval requests."""
     from ..services import approvals as ap
-    required = ap.required_status(instance, stage)
-    if not stage.approval_request_enabled and not required \
+    required = ap.required_status(instance, stage, draft)
+    watch = ap.option_rules_possible(stage)
+    if not stage.approval_request_enabled and not required and not watch \
             and not ap.requests_for(instance, stage.stage_number):
         return None
     return {
+        # answers on this page that may need «تأیید گزینه»: the page asks
+        # again for the panel whenever one of them changes
+        "watch": sorted(n for n, f in ap._option_fields().items()) if watch else [],
         "enabled": bool(stage.approval_request_enabled),
         "approvers": ([{"id": u.id, "name": u.full_name} for u in ap.allowed_approvers(stage)
                        if u.id != (user.id if user else None)]
@@ -1710,6 +1714,21 @@ def approval_blocks(instance_id):
     if stage is None:
         return fail("مرحله یافت نشد.", 404)
     return ok(ap.attachable_blocks(instance, stage, data.get("draft") or None))
+
+
+@bp.post("/instances/<int:instance_id>/approval-status")
+@permission_required("workflow.act")
+def approval_status(instance_id):
+    """The approval panel recomputed with the answers on the page (not saved),
+    so an answer that needs «تأیید گزینه» shows its rule the moment it is picked."""
+    instance = db.session.get(WorkflowInstance, instance_id)
+    if instance is None:
+        return fail("فرایند یافت نشد.", 404)
+    data = body()
+    stage = stage_by_number(instance, int(data.get("stage_number") or instance.current_stage))
+    if stage is None:
+        return fail("مرحله یافت نشد.", 404)
+    return ok(_approval_panel(instance, stage, current_user(), data.get("draft") or None))
 
 
 @bp.post("/instances/<int:instance_id>/approval-requests")

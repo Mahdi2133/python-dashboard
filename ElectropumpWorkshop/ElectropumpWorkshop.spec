@@ -38,6 +38,21 @@ hiddenimports = [
     'email.mime.text',
 ]
 
+# reportlab, arabic_reshaper and python-bidi load parts of themselves by name
+# (font metrics, encodings, the reshaper's config file), which PyInstaller's
+# import scan does not see: a build without them opens fine and then fails the
+# first time a PDF is asked for. Bundle them whole.
+import importlib.util  # noqa: E402
+
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules  # noqa: E402
+
+for _pkg in ('reportlab', 'arabic_reshaper', 'bidi'):
+    if importlib.util.find_spec(_pkg) is None:
+        raise SystemExit(f"'{_pkg}' is not installed in the build environment; "
+                         f"run: pip install -r requirements.txt")
+    hiddenimports += collect_submodules(_pkg)
+    datas += collect_data_files(_pkg)
+
 a = Analysis(
     ['run.py'],
     pathex=[project_dir],

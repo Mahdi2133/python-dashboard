@@ -160,6 +160,84 @@ def required_items(stage) -> list:
     return [i for i in stage.items if i.approval_user_id and i.section_id]
 
 
+def _option_fields():
+    """Fields with «تأیید گزینه» set: field_name (as drawn) → FormField."""
+    from ..models import FormField
+    out = {}
+    for f in FormField.query.filter(FormField.approval_user_id.isnot(None),
+                                    FormField.is_active.is_(True)).all():
+        if f.approval_option_list:
+            out[f.field_name] = f
+    return out
+
+
+def _names_on(stage, options) -> set:
+    """Field names a stage may draw: its forms' and single fields, the fields
+    assigned to it («مرحله‌ی پرکردن»), and «فیلد مشترک» by what they draw."""
+    names = set()
+    for item in stage.items:
+        fields = (item.section.fields if item.section is not None
+                  else [item.field] if item.field is not None else [])
+        for f in fields:
+            src = f.mirror_source() if f.field_type == "mirror" else f
+            names.add((src or f).field_name)
+    names.update(n for n, f in options.items() if stage.id in f.fill_stage_list)
+    return names
+
+
+def required_approver_ids(stage) -> set:
+    """Everyone a stage's «تأیید اجباری» rules — forms or answers — may go to."""
+    ids = {i.approval_user_id for i in required_items(stage)}
+    options = _option_fields()
+    if options:
+        names = _names_on(stage, options)
+        ids.update(f.approval_user_id for n, f in options.items() if n in names)
+    return ids
+
+
+def _hits(field, value) -> list:
+    """Which of ``field``'s approval-needing options ``value`` holds."""
+    if value in (None, "", [], {}):
+        return []
+    wanted = set(field.approval_option_list)
+    have = value if isinstance(value, list) else [value]
+    return [str(v) for v in have if str(v) in wanted]
+
+
+def option_rules(instance, stage, payload=None, form=None, values=None) -> list:
+    """«تأیید گزینه»: the forms of this stage holding an answer that needs
+    somebody's approval — one rule per form and approver."""
+    options = _option_fields()
+    if not options:
+        return []
+    wf = _wf()
+    values = values if values is not None else _stage_values(instance, stage, payload)
+    form = form or wf.stage_form(instance, stage, payload)
+    rules = {}
+    for block in form["sections"]:
+        if block.get("is_locked"):
+            continue
+        for f in block.get("fields") or []:
+            field = options.get(f.get("field_name"))
+            if field is None or f.get("read_only"):
+                continue
+            hits = _hits(field, values.get(field.field_name))
+            if not hits:
+                continue
+            rid = f"f{field.id}:{block.get('code')}"
+            rule = rules.setdefault((block.get("code"), field.approval_user_id), {
+                "item_id": rid, "block": block, "approver_id": field.approval_user_id,
+                "answers": []})
+            rule["answers"].append(f"{f.get('label') or field.label}: {'، '.join(hits)}")
+    return list(rules.values())
+
+
+def option_rules_possible(stage) -> bool:
+    """Whether any answer on this stage could need «تأیید گزینه»."""
+    options = _option_fields()
+    return bool(options) and bool(_names_on(stage, options) & set(options))
+
+
 def requests_for(instance, stage_number) -> list:
     return (WorkflowApprovalRequest.query
             .filter_by(instance_id=instance.id, stage_number=stage_number)
@@ -204,7 +282,37 @@ def required_status(instance, stage, payload=None) -> list:
                     "approver_name": approver.full_name if approver else None,
                     "filled": filled, "state": state,
                     "request_id": req.id if req else None})
+    # «تأیید گزینه»: an answer chosen here that the admin said needs approval
+    for rule in option_rules(instance, stage, payload, form=form, values=values):
+        block = rule["block"]
+        code = block.get("code")
+        key = f"{stage.stage_number}:{code}"
+        if any(o["key"] == key and o["approver_id"] == rule["approver_id"] for o in out):
+            continue                         # the form's own rule already covers it
+        now = _values_hash(block.get("fields") or [], values, instance)
+        state, req = _state_of(history, key, rule["approver_id"], now)
+        approver = db.session.get(AppUser, rule["approver_id"])
+        out.append({"item_id": rule["item_id"], "key": key, "code": code,
+                    "title": f"{block.get('title')} — {' / '.join(rule['answers'])}",
+                    "approver_id": rule["approver_id"],
+                    "approver_name": approver.full_name if approver else None,
+                    "filled": True, "state": state, "kind": "option",
+                    "request_id": req.id if req else None})
     return out
+
+
+def _state_of(history, key, approver_id, now):
+    """The latest request for ``key`` to ``approver_id``, and what it means now."""
+    for r in history:
+        if key not in r.keys or r.approver_id != approver_id:
+            continue
+        if r.status == APPROVAL_PENDING:
+            return "pending", r
+        if r.status == APPROVAL_APPROVED:
+            return ("approved" if r.hashes.get(key) == now else "changed"), r
+        if r.status == APPROVAL_REJECTED:
+            return "rejected", r
+    return "not_sent", None
 
 
 def submit_blockers(instance, stage, payload) -> list:
@@ -216,6 +324,16 @@ def submit_blockers(instance, stage, payload) -> list:
                        f"در انتظار پاسخ است؛ پس از پاسخ ادامه دهید.")
     for st in required_status(instance, stage, payload):
         if st["state"] == "approved" or st["state"] == "pending":
+            continue
+        if st.get("kind") == "option":
+            what = st["title"].split(" — ", 1)[-1]
+            if st["state"] == "rejected":
+                reasons.append(f"پاسخ «{what}» را «{st['approver_name']}» تأیید نکرده است؛ "
+                               f"پاسخ را اصلاح کنید یا دوباره برای تأیید بفرستید.")
+            else:
+                reasons.append(f"پاسخ «{what}» نیاز به تأیید «{st['approver_name']}» دارد"
+                               + (" و پس از تأیید تغییر کرده است" if st["state"] == "changed" else "")
+                               + "؛ از «ارجاع برای تأیید» آن را بفرستید.")
             continue
         if st["state"] == "changed":
             reasons.append(f"فرم «{st['title']}» پس از تأیید تغییر کرده است؛ دوباره برای تأیید "
@@ -240,19 +358,27 @@ def create_request(instance, stage_number, user, approver_id, keys, note=None,
     if not wf.may_act(user, instance, stage):
         raise ApprovalError("این مرحله در اختیار شما نیست.")
     rule = None
+    ruled = False
     if rule_item_id:
-        rule = next((i for i in required_items(stage) if i.id == int(rule_item_id)), None)
-        if rule is None:
-            raise ApprovalError("قاعده‌ی تأیید اجباری پیدا نشد.")
-        approver_id = rule.approval_user_id
-        keys = list(dict.fromkeys(list(keys or []) + [f"{stage.stage_number}:{rule.section.code}"]))
-    elif not stage.approval_request_enabled and not required_items(stage):
+        # a form's «تأیید اجباری» (the stage item's id) or an answer's
+        # «تأیید گزینه» ("f<field id>:<form code>"), as required_status lists them
+        st = next((r for r in required_status(instance, stage, draft)
+                   if str(r["item_id"]) == str(rule_item_id)), None)
+        if st is None:
+            raise ApprovalError("قاعده‌ی تأیید اجباری پیدا نشد (شاید پاسخ تغییر کرده است).")
+        ruled = True
+        if st.get("kind") != "option":
+            rule = next((i for i in required_items(stage) if i.id == st["item_id"]), None)
+        approver_id = st["approver_id"]
+        keys = list(dict.fromkeys(list(keys or []) + [st["key"]]))
+    elif not stage.approval_request_enabled and not required_items(stage) \
+            and not option_rules(instance, stage, draft):
         raise ApprovalError("«ارجاع برای تأیید» برای این مرحله فعال نشده است.")
     approver = db.session.get(AppUser, int(approver_id or 0))
     if approver is None or not approver.is_active:
         raise ApprovalError("تأییدکننده را انتخاب کنید.")
-    required_ids = {i.approval_user_id for i in required_items(stage)}
-    if rule is None and approver.id not in {u.id for u in allowed_approvers(stage)} \
+    required_ids = required_approver_ids(stage)
+    if not ruled and approver.id not in {u.id for u in allowed_approvers(stage)} \
             and approver.id not in required_ids:
         raise ApprovalError(f"«{approver.full_name}» در فهرست تأییدکننده‌های این مرحله نیست.")
     if approver.id == user.id:

@@ -67,6 +67,9 @@
           || field.field_type) + '</span>'
       + (field.field_type === 'mirror' ? '<span class="badge">🔗 ' + A.esc(field.mirror_of || '?') + '</span>' : '')
       + (field.field_type === 'formula' ? '<span class="badge mono" dir="ltr">= ' + A.esc((field.formula || '').slice(0, 40)) + '</span>' : '')
+      + ((field.approval_options || []).length && field.approval_user_id
+          ? '<span class="badge warn" title="' + A.esc(field.approval_options.join('، ')) + '">✅ تأیید گزینه</span>' : '')
+      + ((field.fill_stage_ids || []).length ? '<span class="badge">🖊 ' + stageNames(field.fill_stage_ids) + '</span>' : '')
       + '<span class="badge muted mono">' + A.esc(field.field_name) + '</span>'
       + (field.is_builtin ? '<span class="badge">پایه</span>'
           : '<span class="badge ok">سفارشی</span>')
@@ -82,6 +85,11 @@
       + '</div>';
   }
 
+  function stageNames(ids) {
+    return (schema.stages || []).filter(function (s) { return ids.indexOf(s.id) !== -1; })
+      .map(function (s) { return 'مرحله ' + J.toFaDigits(s.stage_number); }).join('، ') || 'مرحله';
+  }
+
   function findField(id) {
     var found = null;
     schema.sections.forEach(function (s) {
@@ -92,6 +100,11 @@
 
   /* ── option editor ──────────────────────────────────────────────────── */
   function renderOptions() {
+    drawOptions();
+    renderApprovalOptions();
+  }
+
+  function drawOptions() {
     var list = A.qs('#fb-options-list');
     var count = A.qs('#fb-options-count');
     count.textContent = optionState.rows.length
@@ -295,6 +308,8 @@
     A.qs('#fb-formula').value = field && field.formula ? field.formula : '';
     A.qs('#fb-formula-status').textContent = '';
     A.qs('#fb-mirror').value = field && field.mirror_of ? field.mirror_of : '';
+    fillApproval(field);
+    fillStages(field);
     toggleSpecial();
     A.qs('#fb-lookup').disabled = !!(field && field.is_builtin);
     A.qs('#fb-min').value = field && field.min_value !== null ? field.min_value : '';
@@ -332,8 +347,54 @@
       file_multiple: A.qs('#fb-multiple').value === '1',
       formula: A.qs('#fb-formula').value.trim(),
       mirror_of: A.qs('#fb-mirror').value,
+      approval_options: A.qs('#fb-approval-user').value ? approvalPicked.slice() : [],
+      approval_user_id: approvalPicked.length ? (A.qs('#fb-approval-user').value || null) : null,
+      fill_stage_ids: A.qsa('#fb-fill-stages select').map(function (s) { return s.value; })
+        .filter(Boolean).map(Number),
       options: collectOptions()
     };
+  }
+
+  /* «تأیید گزینه»: tick the answers that need approval, name the approver. */
+  var approvalPicked = [];
+  function fillApproval(field) {
+    approvalPicked = (field && field.approval_options || []).slice();
+    A.qs('#fb-approval-user').innerHTML = '<option value="">— بدون تأیید —</option>'
+      + (schema.users || []).map(function (u) {
+          return '<option value="' + u.id + '">' + A.esc(u.name) + '</option>';
+        }).join('');
+    A.qs('#fb-approval-user').value = field && field.approval_user_id ? field.approval_user_id : '';
+    renderApprovalOptions();
+  }
+  function renderApprovalOptions() {
+    var box = A.qs('#fb-approval-options');
+    if (!box) return;
+    var rows = optionState.rows.filter(function (o) { return o.value; });
+    box.innerHTML = rows.length ? rows.map(function (o) {
+      var on = approvalPicked.indexOf(String(o.value)) !== -1;
+      return '<label class="mini-check' + (on ? ' on' : '') + '"><input type="checkbox" class="fb-approval-opt" value="'
+        + A.esc(o.value) + '"' + (on ? ' checked' : '') + '> ' + A.esc(o.label || o.value) + '</label>';
+    }).join('') : '<span class="muted small">اول گزینه‌های فیلد را تعریف کنید.</span>';
+  }
+
+  /* «مرحله‌ی پرکردن»: one choice per process. */
+  function fillStages(field) {
+    var chosen = (field && field.fill_stage_ids) || [];
+    var flows = {};
+    (schema.stages || []).forEach(function (s) {
+      (flows[s.workflow_id] = flows[s.workflow_id] || { name: s.workflow, stages: [] }).stages.push(s);
+    });
+    var ids = Object.keys(flows);
+    A.qs('#fb-fill-wrap').classList.toggle('hidden', !ids.length);
+    A.qs('#fb-fill-stages').innerHTML = ids.map(function (id) {
+      var flow = flows[id];
+      return '<label class="fb-inline"><span>' + A.esc(flow.name) + '</span><select data-workflow="' + id + '">'
+        + '<option value="">— با فرم خودش (هر مرحله‌ای که فرمش را دارد) —</option>'
+        + flow.stages.map(function (s) {
+            return '<option value="' + s.id + '"' + (chosen.indexOf(s.id) !== -1 ? ' selected' : '') + '>مرحله '
+              + J.toFaDigits(s.stage_number) + ' — ' + A.esc(s.title) + '</option>';
+          }).join('') + '</select></label>';
+    }).join('');
   }
 
   async function saveField() {
@@ -585,6 +646,15 @@
       if (!editingField) loadOptions(null);
       toggleSpecial();
     });
+    A.qs('#fb-approval-options').addEventListener('change', function (ev) {
+      if (!ev.target.classList.contains('fb-approval-opt')) return;
+      var v = String(ev.target.value);
+      approvalPicked = approvalPicked.filter(function (x) { return x !== v; });
+      if (ev.target.checked) approvalPicked.push(v);
+      ev.target.closest('label').classList.toggle('on', ev.target.checked);
+    });
+    /* an option typed or renamed in the list shows up among the approvable ones */
+    A.qs('#fb-options-list').addEventListener('change', renderApprovalOptions);
     A.qs('#fb-formula-field').addEventListener('change', function () {
       if (!this.value) return;
       var t = A.qs('#fb-formula'), s0 = t.selectionStart || t.value.length;

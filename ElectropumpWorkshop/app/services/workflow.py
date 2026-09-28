@@ -460,6 +460,8 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
                 "description": None,
                 "fields": fields,
             })
+    blocks = _apply_fill_stages(instance, stage, blocks,
+                                lambda fs: with_files(usable(fs)), locked)
     blocks += _dependent_sections(blocks, lambda fs: with_files(usable(fs)), settled)
     blocks = _settle_offpage_rules(_dedupe_fields(blocks),
                                    {**instance.payload, **(draft or {})})
@@ -471,6 +473,96 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
                                    {**instance.payload, **(draft or {})})
                                if carries_well_install(stage) else None),
     }
+
+
+def fill_stage_map(instance: WorkflowInstance) -> dict:
+    """«مرحله‌ی پرکردن» on this run: field_name → (stage number, FormField).
+
+    Only a stage of this run's own process that the run actually visits
+    counts; anything else leaves the field to be filled with its form, as
+    before.
+    """
+    visited = {s.id: s.stage_number for s in applicable_stages(instance)}
+    out = {}
+    for f in (FormField.query.filter(FormField.fill_stage_ids.isnot(None),
+                                     FormField.is_active.is_(True)).all()):
+        number = next((visited[i] for i in f.fill_stage_list if i in visited), None)
+        if number is None:
+            continue
+        source = f.mirror_source() if f.field_type == "mirror" else f
+        if source is not None:
+            out[source.field_name] = (number, f)
+    return out
+
+
+def _apply_fill_stages(instance, stage, blocks, usable, locked) -> list:
+    """Put each field with «مرحله‌ی پرکردن» where the admin said it is filled.
+
+    On its stage it is asked — inside its own form if the stage carries it,
+    otherwise in a block of its own, so it reaches that stage's کارتابل with
+    no further wiring. Before that stage it is not shown; after it, it is
+    shown read-only with the answer given there.
+    """
+    assigned = fill_stage_map(instance)
+    if not assigned:
+        return blocks
+    here = stage.stage_number
+    asked_here = set()
+    out = []
+    for block in blocks:
+        block = dict(block)
+        shut = list(block.get("locked_fields") or [])
+        kept = []
+        for f in block.get("fields") or []:
+            name = f.get("field_name")
+            if name not in assigned:
+                kept.append(f)
+                continue
+            number = assigned[name][0]
+            if here < number:
+                continue                          # not asked yet
+            if here > number:
+                if not f.get("read_only"):
+                    f = locked([f])[0]
+                    shut.append(name)
+                kept.append(f)
+                continue
+            if block.get("is_locked") or name in shut:
+                shut = [n for n in shut if n != name]
+                continue                          # asked below, where it can be written
+            asked_here.add(name)
+            kept.append(f)
+        if shut:
+            block["locked_fields"] = sorted(set(shut))
+        if kept:
+            block["fields"] = kept
+            out.append(block)
+
+    groups = {}
+    for name, (number, field) in assigned.items():
+        if number != here or name in asked_here:
+            continue
+        drawn = field.render_dict()
+        if drawn is None:
+            continue
+        section = field.section
+        key = section.code if section is not None else "_"
+        groups.setdefault(key, (section, []))[1].append(drawn)
+    for key, (section, fields) in groups.items():
+        fields = usable(sorted(fields, key=lambda f: f.get("sort_order") or 0))
+        if not fields:
+            continue
+        out.append({
+            "id": None, "code": f"fill_{key}",
+            "title": section.title if section is not None else "فیلدهای این مرحله",
+            "icon": "🖊", "columns": section.columns if section is not None else 3,
+            "full_width": True, "is_active": True, "is_optional": False,
+            "is_locked": False,
+            "visible_when": section.visible_when if section is not None else None,
+            "description": "این فیلدها در این مرحله پر می‌شوند.",
+            "fields": fields,
+        })
+    return out
 
 
 def _dedupe_fields(blocks: list) -> list:
@@ -924,6 +1016,7 @@ def sync_entries(instance: WorkflowInstance):
             entry.note = ("این مرحله در عملیات "
                           f"«{OPERATION_KINDS.get(instance.operation_kind, '')}» "
                           "طی نمی‌شود.")
+    _unpin_approvers(instance)
 
 
 def blocking_approvals(instance: WorkflowInstance) -> list:
@@ -1428,6 +1521,8 @@ def forward_candidates(instance: WorkflowInstance, stage: WorkflowStage) -> list
     if target is None:
         return []
     behind = _earlier_people(instance, target) - set(stage_owner_ids(target))
+    # nor the people who only approve this stage (see _refer_onward)
+    behind |= approvers_only(stage, target)
     return [u for u in AppUser.query.filter_by(is_active=True)
             .order_by(AppUser.first_name, AppUser.username).all()
             if u.id not in behind]
@@ -1609,6 +1704,50 @@ def referral_choices(instance: WorkflowInstance, stage: WorkflowStage) -> dict:
     return data
 
 
+def approver_ids(stage: WorkflowStage) -> set:
+    """Everyone who rules on ``stage``: its تأییدکننده, the approvers of
+    «ارجاع برای تأیید» and of «تأیید اجباری» forms and answers on it."""
+    ids = set()
+    if stage.needs_approval and stage.approver_id:
+        ids.add(stage.approver_id)
+    if stage.approval_request_enabled:
+        ids.update(int(x) for x in (stage.approval_request_user_ids or "").split(",")
+                   if x.strip().isdigit())
+    from .approvals import required_approver_ids
+    ids.update(required_approver_ids(stage))
+    return ids
+
+
+def approvers_only(stage: WorkflowStage, target: WorkflowStage) -> set:
+    """Approvers of ``stage`` who do not also hold ``target`` themselves."""
+    return approver_ids(stage) - set(stage_owner_ids(target))
+
+
+def _unpin_approvers(instance: WorkflowInstance):
+    """Undo a hand-off that put a stage with somebody who only approves.
+
+    Earlier versions let «ارجاع به» name the approver of the stage before, so
+    once they approved, the next stage — its forms and its «ثبت» — sat in
+    their کارتابل and never reached its own متولی. Such a stage goes back to
+    its owners.
+    """
+    stages = applicable_stages(instance)
+    for before, stage in zip(stages, stages[1:]):
+        entry = _entry_for(instance, stage.stage_number)
+        if entry is None or entry.status not in (ENTRY_PENDING, ENTRY_REJECTED) \
+                or not entry.recipient_ids:
+            continue
+        # a stage sent *back* to the person who filled it is not a hand-off
+        if entry.status == ENTRY_REJECTED:
+            continue
+        stray = approvers_only(before, stage)
+        if stray and all(p in stray for p in entry.recipient_ids):
+            entry.referred_to_id = None
+            entry.referred_to_ids = None
+            entry.refer_all = False
+            entry.done_by_ids = None
+
+
 def _refer_onward(instance, stage, user, refer_to=None, referral_note=None):
     """Put the next stage in somebody's کارتابل, by name.
 
@@ -1639,6 +1778,12 @@ def _refer_onward(instance, stage, user, refer_to=None, referral_note=None):
         chosen = chosen or stage.referral_ids
     else:
         chosen = []                       # the next stage's own متولی
+    # Somebody who is on this stage only to approve it — its تأییدکننده, or an
+    # approver of «ارجاع برای تأیید» — is not handed the next stage's forms,
+    # even if the admin also named them under «ارجاع به». The next stage then
+    # goes to its own متولی, as it would with no referral at all.
+    approvers = approvers_only(stage, target)
+    chosen = [int(p) for p in chosen if int(p) not in approvers]
     if not chosen:
         return None
 

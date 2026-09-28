@@ -790,6 +790,8 @@
         if (name === 'required_action' || name === 'pump_type_now') {
           refreshStageForm();
         }
+        var ap = current && current.detail && current.detail.approval_requests;
+        if (ap && (ap.watch || []).indexOf(name) !== -1) refreshApproval();
         refreshDecisions();
       },
     });
@@ -950,14 +952,15 @@
     var box = A.qs('#wf-approval-box');
     if (!box) return;
     var ap = detail.approval_requests;
-    if (!ap || !detail.may_act) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+    if (!ap || !detail.may_act || (!(ap.required || []).length && !ap.enabled
+        && !(ap.history || []).length)) { box.classList.add('hidden'); box.innerHTML = ''; return; }
     var html = '<div class="section-title"><span>📝</span><span>ارجاع برای تأیید</span></div>';
     if ((ap.required || []).length) {
-      html += '<div class="hint">این فرم‌ها پیش از ثبت نهایی مرحله باید به تأیید برسند:</div><ul class="areq-required">'
+      html += '<div class="hint">این فرم‌ها و پاسخ‌ها پیش از ثبت نهایی مرحله باید به تأیید برسند:</div><ul class="areq-required">'
         + ap.required.map(function (r) {
           var st = STATE[r.state] || STATE.not_sent;
           var action = (r.state === 'approved' || r.state === 'pending') ? ''
-            : '<button class="btn-sm btn-primary" type="button" data-areq-rule="' + r.item_id + '"'
+            : '<button class="btn-sm btn-primary" type="button" data-areq-rule="' + A.esc(String(r.item_id)) + '"'
               + ' data-areq-approver="' + A.esc(r.approver_name || '') + '">📤 ارسال برای تأیید</button>';
           return '<li><b>' + A.esc(r.title) + '</b> ← ' + A.esc(r.approver_name || '—')
             + ' <span class="badge ' + st[0] + '">' + st[1] + '</span> ' + action + '</li>';
@@ -984,6 +987,18 @@
     box.innerHTML = html;
     box.classList.remove('hidden');
   }
+
+  /* An answer that needs «تأیید گزینه» was picked or changed: the server
+     recomputes the panel with the answers on the page (nothing is saved). */
+  var refreshApproval = A.debounce(async function () {
+    if (!current || !form) return;
+    try {
+      var res = await A.api.post('/api/workflow/instances/' + current.id + '/approval-status',
+        { stage_number: current.stage_number, draft: form.collect() });
+      current.detail.approval_requests = res.data;
+      renderApprovalPanel(current.detail);
+    } catch (err) { /* the submit check still says what is missing */ }
+  }, 400);
 
   async function openRequestModal(ruleId, ruleApprover) {
     if (!current) return;

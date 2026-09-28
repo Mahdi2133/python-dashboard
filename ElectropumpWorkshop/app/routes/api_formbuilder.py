@@ -1,4 +1,6 @@
 """/api/form-builder — the real form designer (requirements 13 & 14)."""
+import json
+
 from flask import Blueprint, request
 
 from ..extensions import db
@@ -112,13 +114,28 @@ def get_schema():
             if rule:
                 conditional.append({"field": field["field_name"], **rule})
     from ..services.workflow import PREFILL_WELL_ATTRS, PREFILL_WHEN
+    extra = {}
+    if not active_only:
+        # the editor's pickers: who may approve an answer, and which process
+        # stage a field may be filled at
+        from ..models import AppUser, WorkflowDefinition
+        extra["users"] = [{"id": u.id, "name": u.full_name}
+                          for u in AppUser.query.filter_by(is_active=True)
+                          .order_by(AppUser.first_name, AppUser.username).all()]
+        extra["stages"] = [
+            {"id": s.id, "stage_number": s.stage_number, "title": s.title,
+             "workflow_id": w.id, "workflow": w.name}
+            for w in WorkflowDefinition.query.filter_by(is_active=True)
+            .order_by(WorkflowDefinition.id).all()
+            for s in sorted(w.stages, key=lambda x: x.stage_number)
+            if s.is_active and s.stage_number > 0]
     return ok({"sections": sections, "lookups": lookups,
                "conditional": conditional,
                "prefill_when": [{"value": k, "label": v}
                                 for k, v in PREFILL_WHEN.items()],
                "prefill_well": [{"value": "@well:" + k, "label": v}
                                 for k, v in PREFILL_WELL_ATTRS.items()],
-               "field_types": list(FIELD_TYPES)})
+               "field_types": list(FIELD_TYPES), **extra})
 
 
 @bp.post("/sections")
@@ -241,6 +258,37 @@ def _special_settings(field, payload):
         field.formula = text
     elif "formula" in payload and ftype != "formula":
         field.formula = None
+    # «تأیید گزینه»: which answers need whose approval
+    if "approval_options" in payload or "approval_user_id" in payload:
+        chosen = [normalize_text(x) for x in (payload.get("approval_options") or [])
+                  if normalize_text(x)]
+        who = payload.get("approval_user_id")
+        if chosen and not field.is_choice:
+            return "«تأیید گزینه» فقط برای فیلدهای انتخابی است."
+        if chosen and not str(who or "").isdigit():
+            return "برای گزینه‌های نیازمند تأیید، تأییدکننده را انتخاب کنید."
+        if chosen:
+            from ..models import AppUser
+            person = db.session.get(AppUser, int(who))
+            if person is None or not person.is_active:
+                return "تأییدکننده پیدا نشد یا غیرفعال است."
+        field.approval_options = (json.dumps(list(dict.fromkeys(chosen)), ensure_ascii=False)
+                                  if chosen else None)
+        field.approval_user_id = int(who) if chosen else None
+    # «مرحله‌ی پرکردن»: at most one stage per process
+    if "fill_stage_ids" in payload:
+        from ..models import WorkflowStage
+        ids = [int(x) for x in (payload.get("fill_stage_ids") or []) if str(x).isdigit()]
+        stages = [db.session.get(WorkflowStage, i) for i in dict.fromkeys(ids)]
+        if any(s is None for s in stages):
+            return "مرحله‌ی انتخاب‌شده برای پرکردن پیدا نشد."
+        per_flow = {}
+        for s in stages:
+            if s.workflow_id in per_flow:
+                return (f"در فرایند «{s.workflow.name}» فقط یک مرحله را برای پرکردن "
+                        f"این فیلد انتخاب کنید.")
+            per_flow[s.workflow_id] = s
+        field.fill_stage_ids = ",".join(str(s.id) for s in stages) or None
     return None
 
 

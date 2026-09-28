@@ -582,12 +582,21 @@ def _rl_chart(ch, width, height):
 
 
 def to_pdf(meta, definition, result, raw=None, images=None, extras=None) -> bytes:
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.units import mm
-    from reportlab.platypus import (Image, KeepTogether, PageBreak, Paragraph,
-                                    SimpleDocTemplate, Spacer, Table, TableStyle)
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.units import mm
+        from reportlab.platypus import (Image, KeepTogether, PageBreak, Paragraph,
+                                        SimpleDocTemplate, Spacer, Table, TableStyle)
+    except ImportError as exc:
+        # A build made without reportlab bundled: say so plainly, and offer the
+        # way that works without it, instead of an error page.
+        raise RuntimeError(
+            "کتابخانه‌ی ساخت PDF (reportlab) در این نسخه‌ی برنامه موجود نیست "
+            f"({exc.name or exc}). برنامه را با build_exe.bat جدید دوباره بسازید؛ "
+            "تا آن زمان از «چاپ» استفاده کنید و در پنجره‌ی چاپ «ذخیره به‌صورت PDF» "
+            "را انتخاب کنید.") from exc
 
     if not _register_pdf_font():
         raise RuntimeError("فونت فارسی برای تولید PDF یافت نشد.")

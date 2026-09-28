@@ -2335,6 +2335,170 @@ def main():
     check("مقدار محاسباتی روی سرور حساب شد", pay.get("t_sum") == 0.06, str(pay.get("t_sum")))
     check("مستند در پاسخ فیلد ثبت شد", isinstance(pay.get("t_doc"), list) and len(pay["t_doc"]) == 1)
 
+    print("\n— تأییدکننده فرم مرحله‌ی بعد را نمی‌گیرد —")
+    with app.app_context():
+        from app.extensions import db as _db
+        from app.models import AppUser as _AU
+        from app.models.workflow import REFER_NEXT, REFER_USER
+        from app.services.workflow import (_entry_for, _standing_owners, active_workflow,
+                                           decide_stage, owners_of, stage_owner_ids,
+                                           start_instance, submit_stage, sync_entries)
+        wf = active_workflow()
+        s1, s2, s3 = [next(x for x in wf.stages if x.stage_number == n) for n in (1, 2, 3)]
+        for it in list(s1.items):                 # the compulsory-approval form of the test above
+            if it.section is not None and it.section.code == "t_rq":
+                _db.session.delete(it)
+        boss = _AU.query.filter_by(role="admin").first()
+        judge = next(u for u in _AU.query.filter_by(is_active=True).order_by(_AU.id).all()
+                     if u.id != boss.id and u.id not in stage_owner_ids(s3))
+        # the setting that went wrong: stage 2 approved by X, and «ارجاع به» also X
+        s2.needs_approval, s2.approver_id, s2.approval_blocks = True, judge.id, False
+        s2.referral_mode, s2.referral_user_id, s2.referral_user_ids = REFER_USER, judge.id, str(judge.id)
+        _db.session.commit()
+        inst = start_instance({"operation_kind": "کشیدن", "well": "امام رضا 11"}, boss)
+        sync_entries(inst)
+        _db.session.commit()
+        submit_stage(inst, {"failure": ["هوادهی"], "op_jdate": "1405/07/03",
+                            "fail_aeration_p01": ["وضعیت لوله و اتصالات بررسی شده است"],
+                            "fail_aeration_p02": 3, "fail_aeration_p03": 12}, boss, stage_number=1)
+        submit_stage(inst, {}, boss, stage_number=2)
+        decide_stage(inst, 2, judge, approved=True, comment="تأیید")
+        standing = [u.id for u in _standing_owners(inst, s3)]
+        check("پس از تأیید، مرحله‌ی بعد به تأییدکننده نمی‌رسد", judge.id not in owners_of(inst, s3),
+              f"{owners_of(inst, s3)} / judge={judge.id}")
+        check("مرحله‌ی بعد نزد متولی خودش است", owners_of(inst, s3) == standing,
+              f"{owners_of(inst, s3)} != {standing}")
+        # a run the old version already put in the approver's کارتابل is repaired
+        e3 = _entry_for(inst, 3)
+        e3.referred_to_id, e3.referred_to_ids, e3.referred_by_id = judge.id, str(judge.id), judge.id
+        _db.session.commit()
+        sync_entries(inst)
+        _db.session.commit()
+        check("ارجاع اشتباه قبلی به تأییدکننده خودکار اصلاح می‌شود",
+              judge.id not in owners_of(inst, s3) and owners_of(inst, s3) == standing)
+        s2.needs_approval, s2.approver_id = False, None
+        s2.referral_mode, s2.referral_user_id, s2.referral_user_ids = REFER_NEXT, None, None
+        _db.session.commit()
+        st2_id, st3_id = s2.id, s3.id
+
+    print("\n— تأیید گزینه‌ی یک فیلد، و فیلدی که در مرحله‌ی بعد پر می‌شود —")
+    c.post("/api/form-builder/sections", json={"code": "t_opt", "title": "فرم تأیید گزینه",
+                                               "show_on_entry": False})
+    with app.app_context():
+        opt_sec = _FS.query.filter_by(code="t_opt").first().id
+    rr = c.post("/api/form-builder/fields", json={
+        "field_name": "t_kind", "label": "نوع کار", "field_type": "radio", "section_id": opt_sec,
+        "options": [{"value": "عادی", "label": "عادی"}, {"value": "ویژه", "label": "ویژه"}],
+        "approval_options": ["ویژه"], "approval_user_id": owners["bozorg"]})
+    check("ذخیره‌ی گزینه‌ی نیازمند تأیید", rr.status_code == 200
+          and rr.get_json()["data"].get("approval_options") == ["ویژه"], str(rr.get_json())[:200])
+    rr = c.post("/api/form-builder/fields", json={
+        "field_name": "t_txt_ap", "label": "متن", "field_type": "text", "section_id": opt_sec,
+        "approval_options": ["x"], "approval_user_id": owners["bozorg"]})
+    check("تأیید گزینه برای فیلد غیرانتخابی رد می‌شود", rr.status_code == 422)
+    rr = c.post("/api/form-builder/fields", json={
+        "field_name": "t_later2", "label": "دو مرحله", "field_type": "text", "section_id": opt_sec,
+        "fill_stage_ids": [st2_id, st3_id]})
+    check("دو مرحله از یک فرایند برای پرکردن رد می‌شود", rr.status_code == 422)
+    rr = c.post("/api/form-builder/fields", json={
+        "field_name": "t_later", "label": "شماره سریال", "field_type": "text", "section_id": opt_sec,
+        "is_required": True, "fill_stage_ids": [st2_id]})
+    check("ذخیره‌ی مرحله‌ی پرکردن فیلد", rr.status_code == 200
+          and rr.get_json()["data"].get("fill_stage_ids") == [st2_id], str(rr.get_json())[:200])
+    fb = c.get("/api/form-builder?all=1").get_json()["data"]
+    check("فرم‌ساز فهرست کاربران و مرحله‌ها را دارد",
+          fb.get("users") and any(s["id"] == st2_id for s in fb.get("stages") or []))
+    # t_opt on stage 1 and on stage 3 — never on stage 2, where t_later is filled
+    wfd = c.get("/api/workflow/definition").get_json()["data"]
+
+    def _items(st, extra=None):
+        out = [{"kind": i["kind"], "id": i["section_id"] or i["field_id"], "applies_to": i["applies_to"],
+                "is_optional": i["is_optional"], "is_read_only": i["is_read_only"],
+                "approval_user_id": i.get("approval_user_id"),
+                "locked_fields": i.get("locked_fields") or []}
+               for i in st["items"]]
+        return out + ([extra] if extra else [])
+    stages_ = {x["stage_number"]: x for x in wfd["workflow"]["stages"]}
+    for n in (1, 3):
+        rr = c.put(f"/api/workflow/stages/{stages_[n]['id']}/items", json={"items": _items(
+            stages_[n], {"kind": "section", "id": opt_sec, "applies_to": "both",
+                         "is_read_only": n == 3})})
+        check(f"فرم آزمون روی مرحله {n}", rr.status_code == 200, str(rr.get_json().get("error")))
+    rr = markaz.post("/api/workflow/instances", json={"operation_kind": "کشیدن", "well": well_name})
+    pid3 = rr.get_json()["data"]["id"]
+    det = markaz.get(f"/api/workflow/instances/{pid3}?stage=1").get_json()["data"]
+    names1 = {f["field_name"] for b in det["form"]["sections"] for f in b["fields"]}
+    check("فیلد مرحله‌ی بعد در مرحله‌ی قبل دیده نمی‌شود", "t_later" not in names1 and "t_kind" in names1)
+    check("پنل تأیید پاسخ‌های نیازمند تأیید را زیر نظر دارد",
+          "t_kind" in ((det.get("approval_requests") or {}).get("watch") or []))
+    data3 = {"failure": [plain_cause], "op_jdate": "1405/07/02", "center": "سوران", "t_kind": "عادی"}
+    st = markaz.post(f"/api/workflow/instances/{pid3}/approval-status",
+                     json={"stage_number": 1, "draft": data3}).get_json()["data"]
+    check("گزینه‌ی عادی تأیید نمی‌خواهد", not [r for r in st["required"] if r.get("kind") == "option"])
+    data3["t_kind"] = "ویژه"
+    st = markaz.post(f"/api/workflow/instances/{pid3}/approval-status",
+                     json={"stage_number": 1, "draft": data3}).get_json()["data"]
+    rule = next((r for r in st["required"] if r.get("kind") == "option"), None)
+    check("گزینه‌ی «ویژه» تأیید «بزرگمهر» را می‌خواهد", rule is not None
+          and rule["approver_id"] == owners["bozorg"] and rule["state"] == "not_sent", str(st)[:300])
+    rr = markaz.post(f"/api/workflow/instances/{pid3}/submit", json={"stage_number": 1, "data": data3})
+    check("بدون تأیید گزینه، مرحله به بعد نمی‌رود", rr.status_code == 422
+          and "ویژه" in rr.get_json().get("error", ""), str(rr.get_json().get("error"))[:200])
+    rr = markaz.post(f"/api/workflow/instances/{pid3}/approval-requests", json={
+        "stage_number": 1, "keys": [], "note": "گزینه‌ی ویژه", "draft": data3,
+        "rule_item_id": rule["item_id"] if rule else None})
+    check("ارسال گزینه برای تأیید", rr.status_code == 200, str(rr.get_json().get("error")))
+    req3 = rr.get_json()["data"]
+    rr = bozorg.post(f"/api/workflow/approval-requests/{req3['id']}/decide",
+                     json={"approved": True, "note": "بلامانع"})
+    check("تأیید گزینه توسط کاربر تعیین‌شده", rr.status_code == 200)
+    rr = markaz.post(f"/api/workflow/instances/{pid3}/submit", json={"stage_number": 1, "data": data3})
+    check("پس از تأیید گزینه، مرحله ثبت می‌شود", rr.status_code == 200, str(rr.get_json().get("error")))
+    det2 = c.get(f"/api/workflow/instances/{pid3}?stage=2").get_json()["data"]
+    fill = [b for b in det2["form"]["sections"] if b["code"] == "fill_t_opt"]
+    later = [f for b in fill for f in b["fields"] if f["field_name"] == "t_later"]
+    check("فیلد خودکار در کارتابل مرحله‌ی تعیین‌شده برای پر کردن می‌آید",
+          bool(later) and not later[0].get("read_only"),
+          str([b["code"] for b in det2["form"]["sections"]]))
+    check("و فقط همان فیلد، نه کل فرمش", [f["field_name"] for b in fill for f in b["fields"]] == ["t_later"])
+    rr = c.post(f"/api/workflow/instances/{pid3}/submit", json={"stage_number": 2, "data": {}})
+    check("فیلد الزامیِ آن مرحله خالی بماند، ثبت نمی‌شود", rr.status_code == 422
+          and "t_later" in (rr.get_json().get("fields") or {}), str(rr.get_json())[:200])
+    with app.app_context():
+        from app.models import WorkflowInstance as _WI
+        from app.services.workflow import stage_form as _sf
+        inst3 = _db2.session.get(_WI, pid3)
+        e2 = next(e for e in inst3.entries if e.stage_number == 2)
+        e2.set_payload({"t_later": "SN-778"})
+        e2.status = "submitted"
+        _db2.session.commit()
+        form3 = _sf(inst3, next(s for s in inst3.workflow.stages if s.stage_number == 3))
+        f3 = {f["field_name"]: f for b in form3["sections"] for f in b["fields"]}
+    check("در مرحله‌های بعد همان فیلد فقط خواندنی با مقدار ثبت‌شده است",
+          f3.get("t_later", {}).get("read_only") and f3["t_later"].get("read_only_value") == "SN-778",
+          str(f3.get("t_later"))[:200])
+    for n in (1, 3):
+        c.put(f"/api/workflow/stages/{stages_[n]['id']}/items", json={"items": _items(stages_[n])})
+    c.put(f"/api/form-builder/fields/{[f for s in fb['sections'] for f in s['fields'] if f['field_name'] == 't_later'][0]['id']}",
+          json={"fill_stage_ids": []})
+
+    print("\n— خروجی PDF بدون کتابخانه‌ی reportlab پیام روشن می‌دهد —")
+    import sys as _sys
+    _saved = _sys.modules.get("reportlab.platypus")
+    _sys.modules["reportlab.platypus"] = None
+    try:
+        rr = c.post(A + f"/reports/{rid}/export/pdf", json={})
+    finally:
+        if _saved is not None:
+            _sys.modules["reportlab.platypus"] = _saved
+        else:
+            _sys.modules.pop("reportlab.platypus", None)
+    check("نبود reportlab خطای ۵۰۰ نمی‌دهد و راه جایگزین را می‌گوید",
+          rr.status_code in (400, 422) and "reportlab" in (rr.get_json() or {}).get("error", "")
+          and "چاپ" in rr.get_json()["error"], str(rr.status_code) + str(rr.get_data()[:200]))
+    rr = c.post(A + f"/reports/{rid}/export/pdf", json={})
+    check("با reportlab، PDF ساخته می‌شود", rr.status_code == 200 and rr.data[:4] == b"%PDF")
+
     print("\n— مرتب‌سازی رکوردها و به‌روز بودن گزارش‌ها —")
     for key in ("center_id", "well", "well_pm_code", "op_date", "pump_curr_id", "total_head"):
         for d in ("asc", "desc"):

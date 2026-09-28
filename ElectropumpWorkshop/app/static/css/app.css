@@ -1393,3 +1393,11 @@ th.sortable.sorted { background:rgba(255,255,255,.12); }
 .areq-sec { border:1px solid var(--border); border-radius:9px; padding:8px 10px; margin:8px 0; background:#fbfdfe; }
 .wf-areq-toggle { margin-top:10px; display:block; }
 .item-approver { max-width:150px; }
+/* «تأیید گزینه» and «مرحله‌ی پرکردن» in the field editor */
+.fb-approval-box { margin-top:12px; padding:10px 12px; border:1px dashed var(--border,#dfe6ea); border-radius:10px; background:#fbfcfd; }
+.fb-approval-options { display:flex; flex-wrap:wrap; gap:6px 12px; margin:6px 0 8px; }
+.fb-approval-options .mini-check.on { font-weight:700; color:#8a5a00; }
+.fb-inline { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:4px 0; min-width:0; }
+.fb-inline > span, .fb-inline > label { white-space:nowrap; font-weight:600; }
+.fb-inline select { flex:1 1 220px; min-width:0; max-width:100%; }
+.fb-fill-stages { display:grid; gap:6px; margin:6px 0; }

@@ -125,6 +125,15 @@ class FormField(db.Model):
     # «مستند»: accepted file types (e.g. «image/*,.pdf») and one or many files.
     file_accept = db.Column(db.String(200))
     file_multiple = db.Column(db.Boolean, nullable=False, default=True)
+    # «تأیید گزینه»: answers (option values, JSON list) that need somebody's
+    # approval — whichever stage records one of them cannot be finalised until
+    # that user (``approval_user_id``) has approved it.
+    approval_options = db.Column(db.Text)
+    approval_user_id = db.Column(db.Integer)
+    # «مرحله‌ی پرکردن»: workflow stage ids (comma-separated) where this field is
+    # filled. On that stage it is asked, whatever forms the stage carries;
+    # before it the field is not shown, after it it is shown read-only.
+    fill_stage_ids = db.Column(db.String(200))
     show_in_table = db.Column(db.Boolean, nullable=False, default=False)
     table_order = db.Column(db.Integer, nullable=False, default=0)
     export_header = db.Column(db.String(200))
@@ -182,7 +191,23 @@ class FormField(db.Model):
             "options_source": self.options_source,
             "mirror_of": self.mirror_of, "formula": self.formula,
             "file_accept": self.file_accept, "file_multiple": self.file_multiple,
+            "approval_options": self.approval_option_list,
+            "approval_user_id": self.approval_user_id,
+            "fill_stage_ids": self.fill_stage_list,
         }
+
+    @property
+    def approval_option_list(self) -> list:
+        import json
+        try:
+            got = json.loads(self.approval_options or "[]")
+        except ValueError:
+            return []
+        return [str(x) for x in got if str(x).strip()] if isinstance(got, list) else []
+
+    @property
+    def fill_stage_list(self) -> list:
+        return [int(x) for x in (self.fill_stage_ids or "").split(",") if x.strip().isdigit()]
 
     def mirror_source(self, _seen=None):
         """The field a «فیلد مشترک» finally draws, following chains."""
