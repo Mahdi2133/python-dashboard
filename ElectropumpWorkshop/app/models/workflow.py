@@ -820,6 +820,10 @@ class WorkflowApprovalRequest(db.Model):
     snapshot_json = db.Column(db.Text)       # what the approver was shown
     hashes_json = db.Column(db.Text)         # {"<stage>:<code>": hash of its values}
     rule_item_id = db.Column(db.Integer)     # the «تأیید اجباری» item it answers
+    # «پاسخ تأییدکننده»: a choice field the approver answers when approving
+    # («کارگاه مکانیک / نصب و کشیدن / …»), and what they chose.
+    answer_field = db.Column(db.String(80))
+    answer_value = db.Column(db.String(200))
     status = db.Column(db.String(12), nullable=False, default=APPROVAL_PENDING, index=True)
     decision_note = db.Column(db.Text)
     decided_at = db.Column(db.DateTime)
@@ -849,6 +853,16 @@ class WorkflowApprovalRequest(db.Model):
     def hashes(self):
         return self._load(self.hashes_json, {})
 
+    def answer_info(self):
+        """The question the approver answers, its choices, and the answer."""
+        if not self.answer_field:
+            return None
+        from ..services.approvals import answer_choices
+        field, choices = answer_choices(self.answer_field)
+        return {"field": self.answer_field,
+                "label": field.label if field is not None else self.answer_field,
+                "choices": choices, "value": self.answer_value}
+
     def to_dict(self, full=False):
         from ..services.jalali import tehran_time_str, to_jalali_str
         stage = None
@@ -876,6 +890,7 @@ class WorkflowApprovalRequest(db.Model):
             + tehran_time_str(self.created_at, with_seconds=False),
             "required": bool(self.rule_item_id),
             "keys": self.keys, "result_seen": self.result_seen,
+            "answer": self.answer_info(),
         }
         if full:
             data["snapshot"] = self.snapshot

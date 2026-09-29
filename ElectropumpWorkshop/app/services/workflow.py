@@ -691,7 +691,8 @@ def _dependent_sections(blocks: list, usable, settled=None) -> list:
             FormSection.is_active.is_(True))
             .order_by(FormSection.sort_order).all()):
         from .conditions import parse_rules
-        sources = {on for on, _values in parse_rules(section.visible_when)}
+        # a form unlinked in «اتصال‌ها» («field=») opens for nothing: not sent
+        sources = {on for on, values in parse_rules(section.visible_when) if values}
         if not (sources & asked) or section.code in present:
             continue
         block = section.to_dict(include_fields=True, active_only=True)

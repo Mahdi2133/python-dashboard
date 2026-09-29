@@ -1779,7 +1779,7 @@ def decide_approval_request(req_id):
     data = body()
     try:
         ap.decide_request(req, current_user(), data.get("approved") in (True, "true", "1", 1),
-                          data.get("note"))
+                          data.get("note"), data.get("answer"))
     except ap.ApprovalError as exc:
         return fail(str(exc), 422)
     return ok(req.to_dict(full=True), message="پاسخ شما برای فرستنده ارسال شد.")

@@ -265,22 +265,34 @@ def _special_settings(field, payload):
     elif "formula" in payload and ftype != "formula":
         field.formula = None
     # «تأیید گزینه»: which answers need whose approval
-    if "approval_options" in payload or "approval_user_id" in payload:
+    if any(k in payload for k in ("approval_options", "approval_user_id", "approval_user_ids")):
         chosen = [normalize_text(x) for x in (payload.get("approval_options") or [])
                   if normalize_text(x)]
-        who = payload.get("approval_user_id")
+        # one approver or several — every one of them must approve
+        raw = payload.get("approval_user_ids")
+        if raw is None:
+            raw = [payload.get("approval_user_id")] if payload.get("approval_user_id") else []
+        who = list(dict.fromkeys(int(x) for x in raw if str(x or "").isdigit()))
         if chosen and not field.is_choice:
             return "«تأیید گزینه» فقط برای فیلدهای انتخابی است."
-        if chosen and not str(who or "").isdigit():
+        if chosen and not who:
             return "برای گزینه‌های نیازمند تأیید، تأییدکننده را انتخاب کنید."
         if chosen:
             from ..models import AppUser
-            person = db.session.get(AppUser, int(who))
-            if person is None or not person.is_active:
-                return "تأییدکننده پیدا نشد یا غیرفعال است."
+            for pid in who:
+                person = db.session.get(AppUser, pid)
+                if person is None or not person.is_active:
+                    return "تأییدکننده پیدا نشد یا غیرفعال است."
+        answer = normalize_text(payload.get("approval_answer_field")) or None
+        if chosen and answer:
+            target = FormField.query.filter_by(field_name=answer).first()
+            if target is None or not target.is_choice or target.id == field.id:
+                return "«پاسخ تأییدکننده» باید یک فیلد انتخابی دیگر باشد."
         field.approval_options = (json.dumps(list(dict.fromkeys(chosen)), ensure_ascii=False)
                                   if chosen else None)
-        field.approval_user_id = int(who) if chosen else None
+        field.approval_user_id = who[0] if chosen else None
+        field.approval_user_ids = ",".join(str(x) for x in who) if chosen else None
+        field.approval_answer_field = answer if chosen else None
     # «مرحله‌ی پرکردن»: at most one stage per process
     if "fill_stage_ids" in payload:
         from ..models import WorkflowStage

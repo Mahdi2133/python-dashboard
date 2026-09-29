@@ -2542,13 +2542,63 @@ def main():
     check("تأیید گزینه توسط کاربر تعیین‌شده", rr.status_code == 200)
     rr = markaz.post(f"/api/workflow/instances/{pid3}/submit", json={"stage_number": 1, "data": data3})
     check("پس از تأیید گزینه، مرحله ثبت می‌شود", rr.status_code == 200, str(rr.get_json().get("error")))
+    # several approvers on one answer — all must approve — and the approver's choice
+    rr = c.post("/api/form-builder/fields", json={
+        "field_name": "t_route", "label": "ارجاع بعدی", "field_type": "radio", "section_id": opt_sec,
+        "options": [{"value": "کارگاه مکانیک", "label": "کارگاه مکانیک"},
+                    {"value": "تایید و برگشت", "label": "تایید و برگشت"}],
+        "fill_stage_ids": [st2_id]})
+    rr = c.post("/api/form-builder/fields", json={
+        "field_name": "t_multi", "label": "اقلام", "field_type": "checkbox", "section_id": opt_sec,
+        "options": [{"value": "کابل", "label": "کابل"}, {"value": "ترانس", "label": "ترانس"}],
+        "approval_options": ["کابل", "ترانس"], "approval_user_ids": [owners["bozorg"], owners["kahani"]],
+        "approval_answer_field": "t_route"})
+    check("چند تأییدکننده و پاسخ تأییدکننده ذخیره می‌شود", rr.status_code == 200
+          and rr.get_json()["data"]["approval_user_ids"] == [owners["bozorg"], owners["kahani"]]
+          and rr.get_json()["data"]["approval_answer_field"] == "t_route", str(rr.get_json())[:200])
+    pid4 = markaz.post("/api/workflow/instances", json={"operation_kind": "کشیدن", "well": well_name}
+                       ).get_json()["data"]["id"]
+    data4 = {"failure": [plain_cause], "op_jdate": "1405/07/02", "center": "سوران",
+             "t_kind": "عادی", "t_multi": ["کابل"]}
+    st4 = markaz.post(f"/api/workflow/instances/{pid4}/approval-status",
+                      json={"stage_number": 1, "draft": data4}).get_json()["data"]
+    rules4 = [r for r in st4["required"] if r.get("kind") == "option"]
+    check("هر دو تأییدکننده جداگانه لازم‌اند",
+          sorted(r["approver_id"] for r in rules4) == sorted([owners["bozorg"], owners["kahani"]]),
+          str(rules4)[:300])
+    reqs4 = {}
+    for rule4 in rules4:
+        rr = markaz.post(f"/api/workflow/instances/{pid4}/approval-requests", json={
+            "stage_number": 1, "keys": [], "draft": data4, "rule_item_id": rule4["item_id"]})
+        reqs4[rule4["approver_id"]] = rr.get_json()["data"]
+    check("دو درخواست تأیید ساخته شد", len(reqs4) == 2 and all(r.get("id") for r in reqs4.values()))
+    rb = reqs4[owners["bozorg"]]
+    check("تأییدکننده گزینه‌های پاسخ را می‌بیند",
+          (rb.get("answer") or {}).get("choices") == ["کارگاه مکانیک", "تایید و برگشت"])
+    rr = bozorg.post(f"/api/workflow/approval-requests/{rb['id']}/decide", json={"approved": True})
+    check("تأیید بدون انتخاب پاسخ رد می‌شود", rr.status_code == 422)
+    rr = bozorg.post(f"/api/workflow/approval-requests/{rb['id']}/decide",
+                     json={"approved": True, "answer": "کارگاه مکانیک"})
+    check("تأیید با پاسخ", rr.status_code == 200
+          and rr.get_json()["data"]["answer"]["value"] == "کارگاه مکانیک")
+    rr = markaz.post(f"/api/workflow/instances/{pid4}/submit", json={"stage_number": 1, "data": data4})
+    check("تا همه‌ی تأییدکننده‌ها تأیید نکنند، مرحله ثبت نمی‌شود", rr.status_code == 422)
+    kahani.post(f"/api/workflow/approval-requests/{reqs4[owners['kahani']]['id']}/decide",
+                json={"approved": True, "answer": "تایید و برگشت"})
+    rr = markaz.post(f"/api/workflow/instances/{pid4}/submit", json={"stage_number": 1, "data": data4})
+    check("پس از تأیید همه، مرحله ثبت می‌شود", rr.status_code == 200, str(rr.get_json().get("error")))
+    det4 = c.get(f"/api/workflow/instances/{pid4}?stage=2").get_json()["data"]
+    route = [f for b in det4["form"]["sections"] for f in b["fields"] if f["field_name"] == "t_route"]
+    check("پاسخ تأییدکننده در پرونده ثبت و در مرحله‌ی بعد پیش‌پر است",
+          det4["payload"].get("t_route") in ("کارگاه مکانیک", "تایید و برگشت") and bool(route))
     det2 = c.get(f"/api/workflow/instances/{pid3}?stage=2").get_json()["data"]
     fill = [b for b in det2["form"]["sections"] if b["code"] == "fill_t_opt"]
     later = [f for b in fill for f in b["fields"] if f["field_name"] == "t_later"]
     check("فیلد خودکار در کارتابل مرحله‌ی تعیین‌شده برای پر کردن می‌آید",
           bool(later) and not later[0].get("read_only"),
           str([b["code"] for b in det2["form"]["sections"]]))
-    check("و فقط همان فیلد، نه کل فرمش", [f["field_name"] for b in fill for f in b["fields"]] == ["t_later"])
+    check("و فقط فیلدهای همان مرحله، نه کل فرمش",
+          {f["field_name"] for b in fill for f in b["fields"]} <= {"t_later", "t_route"})
     rr = c.post(f"/api/workflow/instances/{pid3}/submit", json={"stage_number": 2, "data": {}})
     check("فیلد الزامیِ آن مرحله خالی بماند، ثبت نمی‌شود", rr.status_code == 422
           and "t_later" in (rr.get_json().get("fields") or {}), str(rr.get_json())[:200])

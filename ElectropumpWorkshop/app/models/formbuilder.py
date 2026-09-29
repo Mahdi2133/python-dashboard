@@ -130,6 +130,12 @@ class FormField(db.Model):
     # that user (``approval_user_id``) has approved it.
     approval_options = db.Column(db.Text)
     approval_user_id = db.Column(db.Integer)
+    # Several approvers, every one of whom must approve (comma-separated ids;
+    # ``approval_user_id`` is kept as the first of them).
+    approval_user_ids = db.Column(db.String(200))
+    # A choice field the approver answers when approving — «ارجاع به امین»
+    # where امین also says where the work goes next.
+    approval_answer_field = db.Column(db.String(80))
     # «مرحله‌ی پرکردن»: workflow stage ids (comma-separated) where this field is
     # filled. On that stage it is asked, whatever forms the stage carries;
     # before it the field is not shown, after it it is shown read-only.
@@ -193,8 +199,18 @@ class FormField(db.Model):
             "file_accept": self.file_accept, "file_multiple": self.file_multiple,
             "approval_options": self.approval_option_list,
             "approval_user_id": self.approval_user_id,
+            "approval_user_ids": self.approver_ids,
+            "approval_answer_field": self.approval_answer_field,
             "fill_stage_ids": self.fill_stage_list,
         }
+
+    @property
+    def approver_ids(self) -> list:
+        """Everyone who must approve this field's marked answers."""
+        ids = [int(x) for x in (self.approval_user_ids or "").split(",") if x.strip().isdigit()]
+        if self.approval_user_id and self.approval_user_id not in ids:
+            ids.insert(0, self.approval_user_id)
+        return ids
 
     @property
     def approval_option_list(self) -> list:

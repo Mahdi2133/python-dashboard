@@ -347,8 +347,9 @@
       file_multiple: A.qs('#fb-multiple').value === '1',
       formula: A.qs('#fb-formula').value.trim(),
       mirror_of: A.qs('#fb-mirror').value,
-      approval_options: A.qs('#fb-approval-user').value ? approvalPicked.slice() : [],
-      approval_user_id: approvalPicked.length ? (A.qs('#fb-approval-user').value || null) : null,
+      approval_options: approvers().length ? approvalPicked.slice() : [],
+      approval_user_ids: approvalPicked.length ? approvers() : [],
+      approval_answer_field: approvalPicked.length ? A.qs('#fb-approval-answer').value : '',
       fill_stage_ids: A.qsa('#fb-fill-stages select').map(function (s) { return s.value; })
         .filter(Boolean).map(Number),
       options: collectOptions()
@@ -359,12 +360,27 @@
   var approvalPicked = [];
   function fillApproval(field) {
     approvalPicked = (field && field.approval_options || []).slice();
-    A.qs('#fb-approval-user').innerHTML = '<option value="">— بدون تأیید —</option>'
-      + (schema.users || []).map(function (u) {
-          return '<option value="' + u.id + '">' + A.esc(u.name) + '</option>';
-        }).join('');
-    A.qs('#fb-approval-user').value = field && field.approval_user_id ? field.approval_user_id : '';
+    var mine = (field && field.approval_user_ids) || [];
+    A.qs('#fb-approval-user').innerHTML = (schema.users || []).map(function (u) {
+      return '<option value="' + u.id + '"' + (mine.indexOf(u.id) !== -1 ? ' selected' : '') + '>'
+        + A.esc(u.name) + '</option>';
+    }).join('');
+    /* the question the approver answers: any other choice field */
+    var answer = field && field.approval_answer_field;
+    var opts = '';
+    (schema.sections || []).forEach(function (sec) {
+      (sec.fields || []).forEach(function (f) {
+        if (!f.is_choice || (field && f.field_name === field.field_name)) return;
+        opts += '<option value="' + A.esc(f.field_name) + '"' + (f.field_name === answer ? ' selected' : '') + '>'
+          + A.esc(f.label) + ' — ' + A.esc(sec.title) + '</option>';
+      });
+    });
+    A.qs('#fb-approval-answer').innerHTML = '<option value="">— فقط تأیید / عدم تأیید —</option>' + opts;
     renderApprovalOptions();
+  }
+  function approvers() {
+    return Array.prototype.slice.call(A.qs('#fb-approval-user').selectedOptions)
+      .map(function (o) { return Number(o.value); });
   }
   function renderApprovalOptions() {
     var box = A.qs('#fb-approval-options');

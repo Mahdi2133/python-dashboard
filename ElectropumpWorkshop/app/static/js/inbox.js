@@ -120,7 +120,9 @@
             + '<div class="wf-item-top"><span class="wf-stage-no">' + (okd ? '✅' : '✕') + '</span>'
             + '<span class="wf-item-title">' + A.esc(r.stage_title || '') + '</span>'
             + '<span class="badge ' + (okd ? 'ok' : 'danger') + '">' + A.esc(r.status_label) + '</span></div>'
-            + '<div class="wf-item-sub">' + A.esc(r.approver_name || '') + (r.decision_note ? ': ' + A.esc(r.decision_note) : '')
+            + '<div class="wf-item-sub">' + A.esc(r.approver_name || '')
+            + (r.answer && r.answer.value ? ' — ' + A.esc(r.answer.value) : '')
+            + (r.decision_note ? ': ' + A.esc(r.decision_note) : '')
             + ' · ' + A.esc(r.well || '') + '</div></button>';
         }).join('');
     }
@@ -976,6 +978,7 @@
           return '<div class="areq-row"><span class="badge ' + cls + '">' + A.esc(r.status_label) + '</span> '
             + '<b>' + A.esc(r.approver_name || '') + '</b> · ' + A.esc(r.created_at_j || '')
             + (r.note ? '<div class="hint">توضیح شما: ' + A.esc(r.note) + '</div>' : '')
+            + (r.answer && r.answer.value ? '<div class="areq-answer">' + A.esc(r.answer.label) + ': <b>' + A.esc(r.answer.value) + '</b></div>' : '')
             + (r.decision_note ? '<div class="areq-answer">پاسخ: ' + A.esc(r.decision_note) + '</div>' : '')
             + ' <button class="btn-sm btn-ghost" type="button" data-areq-view="' + r.id + '">جزئیات</button>'
             + (r.status === 'pending' ? ' <button class="btn-sm btn-ghost" type="button" data-areq-cancel="' + r.id + '">لغو</button>' : '')
@@ -1093,6 +1096,18 @@
         }).join('') + '</div>';
       }
       var mayDecide = r.status === 'pending' && asApprover;
+      /* «پاسخ تأییدکننده»: approving also says which way the work goes on. */
+      if (r.answer && r.answer.value) {
+        html += '<div class="alert ok"><b>' + A.esc(r.answer.label) + ':</b> ' + A.esc(r.answer.value) + '</div>';
+      }
+      if (mayDecide && r.answer) {
+        html += '<div class="field mt-2 areq-answer-box"><label>' + A.esc(r.answer.label)
+          + ' <span class="hint">(برای «تأیید» یکی را انتخاب کنید)</span></label><div class="btn-group">'
+          + (r.answer.choices || []).map(function (c) {
+              return '<label><input type="radio" name="areq-answer" value="' + A.esc(c) + '"><span class="btn-opt">'
+                + A.esc(c) + '</span></label>';
+            }).join('') + '</div></div>';
+      }
       if (mayDecide) {
         html += '<div class="field mt-2"><label>نظر شما <span class="hint">(برای «تأیید نمی‌شود» الزامی است)</span></label>'
           + '<textarea id="areq-decision-note" rows="2"></textarea></div>'
@@ -1107,6 +1122,11 @@
 
   async function decideRequest(approved) {
     if (!viewing) return;
+    var picked = A.qs('input[name="areq-answer"]:checked');
+    if (approved && viewing.answer && !picked) {
+      A.toast('برای تأیید، «' + viewing.answer.label + '» را انتخاب کنید.', 'error');
+      return;
+    }
     try {
       var files = (A.qs('#areq-decision-files') || {}).files || [];
       for (var i = 0; i < files.length; i++) {
@@ -1117,7 +1137,8 @@
         await A.request('/api/workflow/instances/' + viewing.instance_id + '/attachments', { method: 'POST', body: body });
       }
       var res = await A.api.post('/api/workflow/approval-requests/' + viewing.id + '/decide',
-        { approved: approved, note: (A.qs('#areq-decision-note') || {}).value || '' });
+        { approved: approved, note: (A.qs('#areq-decision-note') || {}).value || '',
+          answer: picked ? picked.value : null });
       A.closeModal('areq-view-modal');
       A.toast(res.message || 'ثبت شد.', 'success');
       await loadInbox();

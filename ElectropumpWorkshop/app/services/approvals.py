@@ -182,6 +182,13 @@ def _names_on(stage, options) -> set:
             src = f.mirror_source() if f.field_type == "mirror" else f
             names.add((src or f).field_name)
     names.update(n for n, f in options.items() if stage.id in f.fill_stage_list)
+    # forms opened by an answer on this stage («اتصال‌ها») are asked here too
+    from ..models import FormSection
+    from .conditions import parse_rules
+    for sec in FormSection.query.filter(FormSection.visible_when.isnot(None),
+                                        FormSection.is_active.is_(True)).all():
+        if {on for on, _v in parse_rules(sec.visible_when)} & names:
+            names.update(f.field_name for f in sec.fields)
     return names
 
 
@@ -191,8 +198,24 @@ def required_approver_ids(stage) -> set:
     options = _option_fields()
     if options:
         names = _names_on(stage, options)
-        ids.update(f.approval_user_id for n, f in options.items() if n in names)
+        for n, f in options.items():
+            if n in names:
+                ids.update(f.approver_ids)
     return ids
+
+
+def answer_choices(field_name):
+    """A choice field an approver answers: (the field, its option values)."""
+    from ..models import FormField, LookupCategory
+    field = FormField.query.filter_by(field_name=field_name).first()
+    if field is None:
+        return None, []
+    if field.options:
+        return field, [o.value for o in field.options if o.is_active]
+    cat = LookupCategory.query.filter_by(code=field.lookup_category).first() \
+        if field.lookup_category else None
+    return field, ([i.value for i in sorted(cat.items, key=lambda x: x.sort_order)
+                    if i.is_active] if cat else [])
 
 
 def _hits(field, value) -> list:
@@ -224,11 +247,14 @@ def option_rules(instance, stage, payload=None, form=None, values=None) -> list:
             hits = _hits(field, values.get(field.field_name))
             if not hits:
                 continue
-            rid = f"f{field.id}:{block.get('code')}"
-            rule = rules.setdefault((block.get("code"), field.approval_user_id), {
-                "item_id": rid, "block": block, "approver_id": field.approval_user_id,
-                "answers": []})
-            rule["answers"].append(f"{f.get('label') or field.label}: {'، '.join(hits)}")
+            # every approver named on the field must approve, each on their own
+            for approver_id in field.approver_ids:
+                rid = f"f{field.id}:{block.get('code')}:{approver_id}"
+                rule = rules.setdefault((block.get("code"), approver_id), {
+                    "item_id": rid, "block": block, "approver_id": approver_id,
+                    "answers": [], "answer_field": None})
+                rule["answers"].append(f"{f.get('label') or field.label}: {'، '.join(hits)}")
+                rule["answer_field"] = rule["answer_field"] or field.approval_answer_field
     return list(rules.values())
 
 
@@ -297,6 +323,8 @@ def required_status(instance, stage, payload=None) -> list:
                     "approver_id": rule["approver_id"],
                     "approver_name": approver.full_name if approver else None,
                     "filled": True, "state": state, "kind": "option",
+                    "answer_field": rule.get("answer_field"),
+                    "answer_value": req.answer_value if req is not None else None,
                     "request_id": req.id if req else None})
     return out
 
@@ -359,6 +387,7 @@ def create_request(instance, stage_number, user, approver_id, keys, note=None,
         raise ApprovalError("این مرحله در اختیار شما نیست.")
     rule = None
     ruled = False
+    answer_field = None
     if rule_item_id:
         # a form's «تأیید اجباری» (the stage item's id) or an answer's
         # «تأیید گزینه» ("f<field id>:<form code>"), as required_status lists them
@@ -369,6 +398,7 @@ def create_request(instance, stage_number, user, approver_id, keys, note=None,
         ruled = True
         if st.get("kind") != "option":
             rule = next((i for i in required_items(stage) if i.id == st["item_id"]), None)
+        answer_field = st.get("answer_field")
         approver_id = st["approver_id"]
         keys = list(dict.fromkeys(list(keys or []) + [st["key"]]))
     elif not stage.approval_request_enabled and not required_items(stage) \
@@ -401,7 +431,8 @@ def create_request(instance, stage_number, user, approver_id, keys, note=None,
         approver_id=approver.id, note=(note or "").strip() or None,
         sections_json=json.dumps([s["key"] for s in snap], ensure_ascii=False),
         snapshot_json=json.dumps(snap, ensure_ascii=False, default=str),
-        hashes_json=json.dumps(hashes), rule_item_id=rule.id if rule else None)
+        hashes_json=json.dumps(hashes), rule_item_id=rule.id if rule else None,
+        answer_field=answer_field)
     db.session.add(req)
     record_audit("update", "workflow", instance.id,
                  summary=f"ارجاع مرحله {stage.stage_number} «{stage.title}» برای تأیید "
@@ -410,7 +441,7 @@ def create_request(instance, stage_number, user, approver_id, keys, note=None,
     return req
 
 
-def decide_request(req, user, approved: bool, note=None):
+def decide_request(req, user, approved: bool, note=None, answer=None):
     if req.status != APPROVAL_PENDING:
         raise ApprovalError("این درخواست قبلاً پاسخ گرفته است.")
     manager = user.role == "admin" or user.can("workflow.manage")
@@ -418,6 +449,16 @@ def decide_request(req, user, approved: bool, note=None):
         raise ApprovalError("پاسخ به این درخواست در اختیار شما نیست.")
     if not approved and not (note or "").strip():
         raise ApprovalError("برای «تأیید نمی‌شود»، دلیل را بنویسید.")
+    # «پاسخ تأییدکننده»: approving also says which way the work goes on
+    if approved and req.answer_field:
+        field, choices = answer_choices(req.answer_field)
+        picked = str(answer or "").strip()
+        if picked not in choices:
+            label = field.label if field is not None else req.answer_field
+            raise ApprovalError(f"برای تأیید، «{label}» را انتخاب کنید.")
+        req.answer_value = picked
+        instance = req.instance
+        instance.set_payload({**instance.payload, req.answer_field: picked})
     req.status = APPROVAL_APPROVED if approved else APPROVAL_REJECTED
     req.decision_note = (note or "").strip() or None
     req.decided_at = local_now()
@@ -425,6 +466,7 @@ def decide_request(req, user, approved: bool, note=None):
     record_audit("update", "workflow", req.instance_id,
                  summary=f"{'تأیید' if approved else 'عدم تأیید'} درخواست مرحله "
                          f"{req.stage_number} توسط «{user.full_name}»"
+                         + (f" — {req.answer_value}" if approved and req.answer_value else "")
                          + (f": {req.decision_note}" if req.decision_note else ""))
     db.session.commit()
     return req

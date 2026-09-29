@@ -136,9 +136,16 @@
           <label>✅ گزینه‌هایی که نیاز به تأیید دارند</label>
           <div id="fb-approval-options" class="fb-approval-options"></div>
           <div class="fb-inline">
-            <label for="fb-approval-user">تأییدکننده</label>
-            <select id="fb-approval-user"><option value="">— بدون تأیید —</option></select>
+            <label for="fb-approval-user">تأییدکننده‌ها</label>
+            <select id="fb-approval-user" multiple size="4"></select>
           </div>
+          <div class="hint">با نگه‌داشتن Ctrl چند نفر را انتخاب کنید؛ <b>همه‌ی</b> آن‌ها باید تأیید کنند.</div>
+          <div class="fb-inline">
+            <label for="fb-approval-answer">پاسخ تأییدکننده</label>
+            <select id="fb-approval-answer"><option value="">— فقط تأیید / عدم تأیید —</option></select>
+          </div>
+          <div class="hint">اگر فیلدی انتخاب کنید، تأییدکننده هنگام «تأیید» یکی از گزینه‌های آن را هم انتخاب می‌کند
+            (مثلاً «کارگاه مکانیک / نصب و کشیدن / …») و انتخاب او در همان فیلد ثبت می‌شود.</div>
           <div class="hint">اگر در هر مرحله‌ای یکی از گزینه‌های تیک‌خورده انتخاب شود، آن مرحله تا تأیید این کاربر
             نهایی نمی‌شود. کاربرِ مرحله در کارتابل خود «📤 ارسال برای تأیید» را می‌زند؛ پس از تأیید، مرحله به مرحله‌ی بعد می‌رود.
             اگر پاسخ بعد از تأیید عوض شود، تأیید دوباره لازم است.</div>
