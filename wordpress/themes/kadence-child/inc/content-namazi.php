@@ -158,10 +158,18 @@ return array(
 	'gallery' => array(
 		'title' => 'In the field',
 		'text'  => 'Click any photograph to enlarge.',
+	/*
+	 * 'focus' اختیاری است و می‌گوید وقتی عکس به نسبتِ ۴:۳ بریده
+	 * می‌شود، کدام قسمتش حتماً بماند (۰٪ بالا، ۱۰۰٪ پایین).
+	 *
+	 * عکسِ دوم مربعی است (۹۰۰×۹۰۰) و ایشان تمام‌قد ایستاده‌اند؛
+	 * با برشِ وسط، سرشان می‌افتاد بیرونِ کادر. پس کادر به بالا
+	 * چسبانده شده.
+	 */
 		'items' => array(
-			array( 'file' => 'resume/namazi-IMG_20.webp',  'cap' => 'Saeed Namazi — Nirooye Bartar Academy' ),
-			array( 'file' => 'resume/namazi-875f87.webp',  'cap' => 'Saeed Namazi — training floor' ),
-			array( 'file' => 'resume/namazi-6293fb.webp',  'cap' => 'Saeed Namazi — conditioning session' ),
+			array( 'file' => 'resume/namazi-IMG_20.webp', 'cap' => 'Saeed Namazi — Nirooye Bartar Academy' ),
+			array( 'file' => 'resume/namazi-875f87.webp', 'cap' => 'Saeed Namazi — training floor', 'focus' => 'center 6%' ),
+			array( 'file' => 'resume/namazi-6293fb.webp', 'cap' => 'Saeed Namazi — conditioning session' ),
 		),
 	),
 

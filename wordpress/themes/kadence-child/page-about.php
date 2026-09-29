@@ -30,8 +30,15 @@ get_header();
 	} else {
 		$head_class .= ' sm-phead--compact';
 	}
+
+	/*
+	 * نقطه‌ی کانونیِ عکس. وقتی عکس بریده می‌شود، این می‌گوید کدام
+	 * قسمتش حتماً بماند. خالی باشد یعنی وسط. نمونه: '64% center'
+	 */
+	$head_focus = isset( $c['image_focus'] ) ? trim( (string) $c['image_focus'] ) : '';
 	?>
-	<section class="<?php echo esc_attr( trim( $head_class ) ); ?>" aria-labelledby="sm-about-title">
+	<section class="<?php echo esc_attr( trim( $head_class ) ); ?>"
+		<?php if ( $head_focus ) : ?>style="--sm-phead-focus: <?php echo esc_attr( $head_focus ); ?>"<?php endif; ?> aria-labelledby="sm-about-title">
 		<?php if ( $head_src ) : ?>
 			<div class="sm-phead__bg">
 				<img src="<?php echo esc_url( $head_src ); ?>"

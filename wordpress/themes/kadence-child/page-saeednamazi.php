@@ -26,6 +26,9 @@ get_header();
 
 <main id="main" class="sm-page sm-page--namazi" role="main" dir="ltr" lang="en">
 
+	<?php /* نوارِ پیشرفتِ اسکرول — محضِ تزیین، پس از دید صفحه‌خوان پنهان است. */ ?>
+	<div class="sm-nmbar" id="sm-nmbar" aria-hidden="true"></div>
+
 <?php if ( empty( $c['enabled'] ) ) : ?>
 
 	<section class="sm-section">
@@ -81,8 +84,8 @@ get_header();
 		<?php if ( ! empty( $c['stats'] ) ) : ?>
 			<div class="sm-wrap">
 				<ul class="sm-nmstats">
-					<?php foreach ( $c['stats'] as $s ) : ?>
-						<li class="sm-nmstat sm-reveal">
+					<?php foreach ( $c['stats'] as $si => $s ) : ?>
+						<li class="sm-nmstat sm-reveal" style="--sm-i: <?php echo (int) $si; ?>">
 							<?php
 							/*
 							 * عدد از همان اول داخل صفحه هست. جاوااسکریپت
@@ -142,8 +145,8 @@ get_header();
 						</h2>
 
 						<ul class="sm-nmblock__list">
-							<?php foreach ( $block['items'] as $item ) : ?>
-								<li class="sm-nmitem sm-reveal">
+							<?php foreach ( $block['items'] as $ii => $item ) : ?>
+								<li class="sm-nmitem sm-reveal" style="--sm-i: <?php echo (int) $ii; ?>">
 									<?php if ( ! empty( $item['label'] ) ) : ?>
 										<h3 class="sm-nmitem__label"><?php echo esc_html( $item['label'] ); ?></h3>
 									<?php endif; ?>
@@ -169,15 +172,25 @@ get_header();
 				<?php endif; ?>
 
 				<ul class="sm-nmgal__grid">
-					<?php foreach ( $gal['items'] as $shot ) : ?>
+					<?php foreach ( $gal['items'] as $gi => $shot ) : ?>
 						<?php $src = sm_img_src( $shot['file'] ); ?>
 						<?php if ( ! $src ) { continue; } ?>
-						<li class="sm-nmshot sm-reveal">
+						<?php
+						/*
+						 * 'focus' می‌گوید وقتی عکس به نسبتِ ۴:۳ بریده
+						 * می‌شود، کدام قسمتش بماند. عکسِ مربعی بدونِ
+						 * این، سرِ ایشان را می‌انداخت بیرون.
+						 */
+						$focus = ! empty( $shot['focus'] ) ? $shot['focus'] : 'center';
+						?>
+						<li class="sm-nmshot sm-reveal" style="--sm-i: <?php echo (int) $gi; ?>">
 							<a class="sm-nmshot__link" href="<?php echo esc_url( $src ); ?>"
+							   style="--sm-shot-focus: <?php echo esc_attr( $focus ); ?>"
 							   data-sm-lightbox data-sm-caption="<?php echo esc_attr( $shot['cap'] ); ?>"
 							   target="_blank" rel="noopener">
 								<img src="<?php echo esc_url( $src ); ?>" alt="<?php echo esc_attr( $shot['cap'] ); ?>"
 								     width="900" height="700" loading="lazy" decoding="async">
+								<span class="sm-nmshot__cap" aria-hidden="true"><?php echo esc_html( $shot['cap'] ); ?></span>
 							</a>
 						</li>
 					<?php endforeach; ?>

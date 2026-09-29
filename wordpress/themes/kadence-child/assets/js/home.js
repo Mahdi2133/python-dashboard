@@ -853,3 +853,65 @@
 	Array.prototype.forEach.call( nodes, function ( el ) { io.observe( el ); } );
 
 }() );
+
+
+/**
+ * حرکتِ وابسته به اسکرول در صفحه‌ی سعید نمازی
+ * -----------------------------------------------------------------
+ * دو چیز را با هم می‌سازد، چون هر دو به یک عدد نیاز دارند و بهتر
+ * است در یک requestAnimationFrame حساب شوند نه دو تا:
+ *
+ *   --sm-progress   نسبتِ پیمایشِ صفحه (۰ تا ۱) روی نوارِ بالا
+ *   --sm-shift      مقدارِ پیمایش بر حسبِ پیکسل، برای پارالاکسِ هیرو
+ *
+ * چرا این شکلی:
+ *
+ *  • مقدارها را روی <main> می‌نویسیم، نه روی تک‌تک عنصرها. یعنی
+ *    فقط یک بار style دست می‌خورد و مرورگر یک بار دوباره می‌چیند.
+ *
+ *  • اگر کاربر «کاهش حرکت» را روشن کرده باشد، هیچ‌کدام اجرا
+ *    نمی‌شوند و صفحه ثابت می‌ماند.
+ *
+ *  • هر دو متغیر در CSS مقدارِ پیش‌فرضِ صفر دارند، پس بدونِ
+ *    جاوااسکریپت هم صفحه درست است — فقط بی‌حرکت.
+ */
+( function () {
+	'use strict';
+
+	var page = document.querySelector( '.sm-page--namazi' );
+	if ( ! page ) { return; }
+
+	if ( window.matchMedia && window.matchMedia( '(prefers-reduced-motion: reduce)' ).matches ) { return; }
+
+	var bar = document.getElementById( 'sm-nmbar' );
+	var tick = false;
+
+	function paint() {
+		tick = false;
+
+		var doc  = document.documentElement;
+		var span = doc.scrollHeight - window.innerHeight;
+		var y    = window.pageYOffset || doc.scrollTop || 0;
+
+		if ( bar ) {
+			bar.style.setProperty( '--sm-progress', span > 0 ? Math.min( 1, y / span ) : 0 );
+		}
+
+		/*
+		 * پارالاکس فقط تا جایی که هیرو روی صفحه است معنی دارد.
+		 * بعد از آن ثابت نگه می‌داریم تا عکس بی‌دلیل کشیده نشود.
+		 */
+		page.style.setProperty( '--sm-shift', Math.min( y, window.innerHeight ) + 'px' );
+	}
+
+	function onScroll() {
+		if ( tick ) { return; }
+		tick = true;
+		requestAnimationFrame( paint );
+	}
+
+	window.addEventListener( 'scroll', onScroll, { passive: true } );
+	window.addEventListener( 'resize', onScroll, { passive: true } );
+	paint();
+
+}() );

@@ -110,62 +110,6 @@
   color: var(--sm-navy-100);
 }
 
-/* ---------- سربرگ با عکس کنار متن ----------
-   در صفحه‌ی رسانه‌ها استفاده می‌شود. برخلافِ sm-phead--split که
-   عکس را در پس‌زمینه می‌گذارد، اینجا عکس یک <figure> واقعی داخلِ
-   خودِ ستون است و در موبایل زیرِ متن می‌رود. */
-
-.sm-phead--withphoto .sm-phead__inner {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: clamp(1.5rem, 1rem + 2vw, 2.5rem);
-  align-items: center;
-  text-align: start;
-}
-
-.sm-phead--withphoto .sm-phead__title,
-.sm-phead--withphoto .sm-phead__lead,
-.sm-phead--withphoto .sm-phead__eyebrow { text-align: start; }
-
-.sm-phead--withphoto .sm-phead__lead { margin-inline: 0; max-width: 46ch; }
-
-.sm-phead__figure {
-  margin: 0;
-  position: relative;
-  border-radius: var(--sm-radius-lg);
-  overflow: hidden;
-  box-shadow: 0 12px 34px rgba(5, 15, 26, .38);
-}
-
-/* قابِ نازکِ طلایی دورِ عکس */
-.sm-phead__figure::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border: 1px solid rgba(233, 214, 170, .38);
-  border-radius: inherit;
-  pointer-events: none;
-}
-
-.sm-phead__photo {
-  display: block;
-  width: 100%;
-  /* height: auto لازم است، وگرنه صفتِ height="1200" روی <img>
-     نسبتِ تصویر را نادیده می‌گیرد و عکس کشیده می‌شود. */
-  height: auto;
-  aspect-ratio: 4 / 3;
-  object-fit: cover;
-  object-position: center 30%;
-}
-
-@media (min-width: 52rem) {
-  .sm-phead--withphoto .sm-phead__inner {
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
-  }
-  .sm-phead__photo { aspect-ratio: 1 / 1; }
-}
-
-
 @media (min-width: 62rem) {
 
   /* ---------- چیدمان «کنار هم» ---------- */
@@ -2414,24 +2358,73 @@ a.sm-outlet__card:focus-visible {
 /* ==========================================================================
    صفحه‌ی سعید نمازی  —  /saeednamazi/
    --------------------------------------------------------------------------
-   تنها صفحه‌ی انگلیسیِ سایت. کلِ <main> با dir="ltr" می‌آید، پس هر جا
-   از margin-inline یا padding-inline استفاده شده، خودش برعکس می‌شود و
-   لازم نیست دوباره نوشته شود.
+   تنها صفحه‌ی انگلیسیِ سایت. کلِ <main> با dir="ltr" می‌آید، پس هر جا از
+   margin-inline یا padding-inline استفاده شده، خودش برعکس می‌شود.
 
-   فونت: وزیرمتن برای لاتین هم حروفِ کاملی دارد، ولی برای یک صفحه‌ی
-   تماماً انگلیسی، فونتِ سیستمی خواناتر است. پس فقط همین یک صفحه به
-   استکِ سیستمی می‌رود.
+   ── فونت‌ها ─────────────────────────────────────────────────────────────
+   دو فونت، هر دو محلی (هیچ درخواستی به گوگل نمی‌رود):
+
+     Pinyon Script       خطِ تحریریِ انگلیسی — همان سبکی که فرستادید.
+                         فقط برای نام و تیترهای بزرگ. متنِ بدنه با خطِ
+                         تحریری خوانده نمی‌شود، پس آنجا استفاده نشده.
+
+     Cormorant Garamond  سریفِ بدنه و تیترها. جفتِ کلاسیکِ خطِ تحریری.
+
+   هر دو OFL هستند، یعنی استفاده‌ی تجاری‌شان آزاد است.
    ========================================================================== */
 
+@font-face {
+  font-family: "Pinyon Script";
+  src: url("../fonts/PinyonScript-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Cormorant Garamond";
+  src: url("../fonts/CormorantGaramond-Variable.woff2") format("woff2");
+  /* فایل variable است؛ یک فایل همه‌ی وزن‌های ۳۰۰ تا ۷۰۰ را می‌دهد. */
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 .sm-page--namazi {
-  --nm-font: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  font-family: var(--nm-font);
+  --nm-script: "Pinyon Script", "Segoe Script", cursive;
+  --nm-serif:  "Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --nm-sans:   ui-sans-serif, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+
+  font-family: var(--nm-serif);
+  font-size: 1.06rem;         /* کورمورانت ریزتر از سنس‌سریف می‌نشیند */
   background: var(--sm-paper);
 }
 
-.sm-page--namazi h1,
-.sm-page--namazi h2,
-.sm-page--namazi h3 { font-family: var(--nm-font); }
+/*
+ * :where() عمداً است. بدونِ آن، این قاعده ویژگیِ (۰،۱،۱) می‌گیرد و
+ * از .sm-nmhero__name که (۰،۱،۰) است جلو می‌زند — یعنی نامِ بالای
+ * صفحه به‌جای خطِ تحریری، سریف می‌شد. :where() ویژگی را صفر
+ * می‌کند، پس این فقط «پیش‌فرض» است و هر کلاسی رویش را می‌گیرد.
+ */
+.sm-page--namazi :where(h1, h2, h3) { font-family: var(--nm-serif); }
+
+
+/* ---------- نوارِ پیشرفتِ اسکرول ----------
+   یک خطِ طلاییِ نازکِ بالای صفحه که با پایین رفتن پر می‌شود.
+   عرضش را جاوااسکریپت در --sm-progress می‌گذارد؛ اگر اجرا نشود،
+   خط صفر می‌ماند و هیچ‌چیز خراب نمی‌شود. */
+
+.sm-nmbar {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline: 0;
+  height: 3px;
+  z-index: 999;
+  pointer-events: none;
+  background: linear-gradient(90deg, var(--sm-gold-600), var(--sm-gold-300));
+  transform: scaleX(var(--sm-progress, 0));
+  transform-origin: 0 50%;
+}
 
 
 /* ---------- Hero ---------- */
@@ -2442,15 +2435,12 @@ a.sm-outlet__card:focus-visible {
   overflow: hidden;
   padding-block: clamp(3rem, 2rem + 5vw, 6.5rem) clamp(2rem, 1.5rem + 2vw, 3.5rem);
   background:
-    radial-gradient(90% 120% at 15% 0%, rgba(168, 132, 60, .20) 0%, transparent 55%),
+    radial-gradient(90% 120% at 15% 0%, rgba(168, 132, 60, .22) 0%, transparent 55%),
     linear-gradient(155deg, var(--sm-navy-950) 0%, var(--sm-navy-800) 55%, var(--sm-navy-700) 100%);
   color: var(--sm-text-invert);
 }
 
-/*
- * نوارِ طلاییِ باریکِ بالای هیرو. محضِ تزیین است، پس aria-hidden
- * لازم ندارد — عنصری وجود ندارد که صفحه‌خوان بخواند.
- */
+/* نوارِ طلاییِ بالای هیرو */
 .sm-nmhero::before {
   content: "";
   position: absolute;
@@ -2458,6 +2448,25 @@ a.sm-outlet__card:focus-visible {
   inset-inline: 0;
   height: 3px;
   background: linear-gradient(90deg, transparent, var(--sm-gold-500), var(--sm-gold-300), var(--sm-gold-500), transparent);
+}
+
+/*
+ * حرفِ اولِ نام، خیلی بزرگ و خیلی کم‌رنگ، پشتِ همه‌چیز.
+ * با اسکرول کمی بالا می‌رود (--sm-shift از جاوااسکریپت می‌آید).
+ */
+.sm-nmhero::after {
+  content: "S";
+  position: absolute;
+  z-index: -1;
+  inset-block-start: -8%;
+  inset-inline-start: -2%;
+  font-family: var(--nm-script);
+  font-size: min(46rem, 62vw);
+  line-height: 1;
+  color: rgba(233, 214, 170, .05);
+  transform: translateY(calc(var(--sm-shift, 0px) * .35));
+  pointer-events: none;
+  user-select: none;
 }
 
 .sm-nmhero__inner {
@@ -2468,42 +2477,63 @@ a.sm-outlet__card:focus-visible {
 }
 
 .sm-nmhero__eyebrow {
-  margin: 0 0 .9rem;
-  font-size: .76rem;
+  margin: 0 0 1rem;
+  font-family: var(--nm-sans);
+  font-size: .72rem;
   font-weight: 600;
-  letter-spacing: .18em;
+  letter-spacing: .22em;
   text-transform: uppercase;
   color: var(--sm-gold-300);
+  opacity: 0;
+  animation: sm-nm-in .7s .05s ease both;
 }
 
+/*
+ * نامِ اصلی با خطِ تحریری. چون کورمورانت و پینیون ارتفاعِ x
+ * متفاوتی دارند، اندازه‌اش جداگانه تنظیم شده.
+ */
 .sm-nmhero__name {
   margin: 0;
-  font-size: clamp(2.4rem, 1.6rem + 3.6vw, 4.4rem);
-  line-height: 1.04;
-  font-weight: 800;
-  letter-spacing: -.02em;
-  background: linear-gradient(100deg, #FFFFFF 10%, var(--sm-gold-200) 55%, var(--sm-gold-400) 100%);
+  font-family: var(--nm-script);
+  font-size: clamp(3.2rem, 2rem + 6vw, 6.5rem);
+  line-height: 1.02;
+  font-weight: 400;
+  letter-spacing: 0;
+  padding-block-end: .12em;   /* دنباله‌ی حرف‌ها بریده نشود */
+  background: linear-gradient(100deg, #FFFFFF 5%, var(--sm-gold-200) 45%, var(--sm-gold-400) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  opacity: 0;
+  animation: sm-nm-in .9s .15s ease both;
 }
 
 .sm-nmhero__role {
-  margin: 1rem 0 0;
+  margin: .6rem 0 0;
   max-width: 34ch;
-  font-size: clamp(1rem, .95rem + .3vw, 1.2rem);
-  line-height: 1.55;
+  font-family: var(--nm-sans);
+  font-size: clamp(.92rem, .88rem + .25vw, 1.08rem);
+  line-height: 1.6;
   color: var(--sm-navy-100);
+  opacity: 0;
+  animation: sm-nm-in .9s .3s ease both;
 }
 
 .sm-nmhero__tagline {
   margin: 1.4rem 0 0;
   padding-inline-start: 1rem;
-  border-inline-start: 3px solid var(--sm-gold-500);
-  font-size: clamp(1rem, .95rem + .35vw, 1.28rem);
+  border-inline-start: 2px solid var(--sm-gold-500);
+  font-size: clamp(1.15rem, 1rem + .6vw, 1.6rem);
   font-style: italic;
   line-height: 1.5;
   color: var(--sm-gold-100);
+  opacity: 0;
+  animation: sm-nm-in .9s .45s ease both;
+}
+
+@keyframes sm-nm-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
 }
 
 /* عکسِ پرتره */
@@ -2513,6 +2543,8 @@ a.sm-outlet__card:focus-visible {
   aspect-ratio: 4 / 3;
   border-radius: var(--sm-radius-lg);
   overflow: hidden;
+  opacity: 0;
+  animation: sm-nm-in 1s .25s ease both;
 }
 
 .sm-nmhero__photo {
@@ -2521,15 +2553,17 @@ a.sm-outlet__card:focus-visible {
   object-fit: cover;
   display: block;
   /*
-   * حرکتِ بسیار آهسته‌ی کن‌برنز. چون هیچ‌چیزِ اطلاعاتی‌ای جابه‌جا
-   * نمی‌شود، با prefers-reduced-motion کامل خاموش می‌شود.
+   * دو حرکتِ هم‌زمان: کن‌برنزِ بسیار آهسته، و یک پارالاکسِ ریز که
+   * با اسکرول می‌آید. چون --sm-shift پیش‌فرضِ صفر دارد، بدونِ
+   * جاوااسکریپت هم عکس سرِ جایش است.
    */
-  animation: sm-nm-kenburns 22s ease-in-out infinite alternate;
+  transform: translateY(calc(var(--sm-shift, 0px) * -.08));
+  animation: sm-nm-kenburns 24s ease-in-out infinite alternate;
 }
 
 @keyframes sm-nm-kenburns {
-  from { transform: scale(1); }
-  to   { transform: scale(1.07); }
+  from { scale: 1; }
+  to   { scale: 1.08; }
 }
 
 .sm-nmhero__glow {
@@ -2565,15 +2599,19 @@ a.sm-outlet__card:focus-visible {
 }
 
 .sm-nmstat {
-  padding: 1.25rem 1rem;
+  position: relative;
+  padding: 1.35rem 1rem;
   text-align: center;
   background: rgba(5, 15, 26, .55);
+  transition: background .3s ease;
 }
+
+.sm-nmstat:hover { background: rgba(5, 15, 26, .3); }
 
 .sm-nmstat__num {
   display: block;
-  font-size: clamp(1.6rem, 1.1rem + 1.9vw, 2.5rem);
-  font-weight: 800;
+  font-size: clamp(1.7rem, 1.1rem + 2.1vw, 2.7rem);
+  font-weight: 700;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
   color: var(--sm-gold-200);
@@ -2581,9 +2619,11 @@ a.sm-outlet__card:focus-visible {
 
 .sm-nmstat__label {
   display: block;
-  margin-block-start: .4rem;
-  font-size: .8rem;
-  line-height: 1.45;
+  margin-block-start: .45rem;
+  font-family: var(--nm-sans);
+  font-size: .74rem;
+  letter-spacing: .04em;
+  line-height: 1.5;
   color: var(--sm-navy-200);
 }
 
@@ -2601,6 +2641,7 @@ a.sm-outlet__card:focus-visible {
 
 .sm-nmbio__media {
   margin: 0;
+  position: relative;
   /*
    * بدون این، گرید ارتفاعِ قطعی به عکس می‌دهد و aspect-ratio
    * بی‌اثر می‌شود — همان چیزی که یک بار عکسِ تیم را کشیده بود.
@@ -2622,23 +2663,37 @@ a.sm-outlet__card:focus-visible {
   height: auto;
   aspect-ratio: 1 / 1;
   object-fit: cover;
+  transition: scale .7s cubic-bezier(.2, .7, .3, 1);
 }
+
+.sm-nmbio__media:hover img { scale: 1.05; }
 
 .sm-nmbio__title {
   margin: 0 0 1rem;
-  font-size: clamp(1.4rem, 1.1rem + 1.2vw, 2rem);
-  line-height: 1.25;
+  font-size: clamp(1.7rem, 1.2rem + 1.6vw, 2.6rem);
+  font-weight: 600;
+  line-height: 1.2;
   color: var(--sm-navy-800);
 }
 
 .sm-nmbio__text {
   margin: 0 0 1rem;
-  font-size: 1.02rem;
+  font-size: 1.12rem;
   line-height: 1.75;
   color: var(--sm-text-soft);
 }
 
 .sm-nmbio__text:last-child { margin-bottom: 0; }
+
+/* پاراگرافِ اول با حرفِ اولِ بزرگ شروع می‌شود */
+.sm-nmbio__text:first-of-type::first-letter {
+  float: inline-start;
+  margin-inline-end: .12em;
+  font-family: var(--nm-script);
+  font-size: 3.4em;
+  line-height: .78;
+  color: var(--sm-gold-500);
+}
 
 
 /* ---------- بلوک‌های رزومه ---------- */
@@ -2648,20 +2703,50 @@ a.sm-outlet__card:focus-visible {
 .sm-nmblock + .sm-nmblock { margin-block-start: clamp(2.5rem, 1.5rem + 3vw, 4rem); }
 
 .sm-nmblock__title {
+  position: relative;
   display: flex;
   align-items: baseline;
   gap: .75rem;
   margin: 0 0 1.5rem;
-  padding-block-end: .85rem;
-  border-block-end: 1px solid var(--sm-rule);
-  font-size: clamp(1.25rem, 1rem + 1vw, 1.7rem);
+  padding-block-end: .9rem;
+  font-size: clamp(1.5rem, 1.1rem + 1.4vw, 2.2rem);
+  font-weight: 600;
   color: var(--sm-navy-800);
 }
 
+/* خطِ خاکستریِ کامل */
+.sm-nmblock__title::before {
+  content: "";
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline: 0;
+  height: 1px;
+  background: var(--sm-rule);
+}
+
+/*
+ * خطِ طلایی که وقتی تیتر وارد صفحه شد از صفر تا انتها کشیده
+ * می‌شود. کلاسِ is-visible را همان ناظرِ sm-reveal می‌گذارد.
+ */
+.sm-nmblock__title::after {
+  content: "";
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-start: 0;
+  height: 2px;
+  width: 0;
+  background: linear-gradient(90deg, var(--sm-gold-600), var(--sm-gold-300));
+  transition: width 1.1s cubic-bezier(.2, .7, .3, 1) .1s;
+}
+
+.sm-nmblock__title.is-visible::after { width: 100%; }
+
+/* شماره‌ی بلوک، با خطِ تحریری */
 .sm-nmblock__no {
-  font-size: .8em;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--nm-script);
+  font-size: 1.5em;
+  font-weight: 400;
+  line-height: 1;
   color: var(--sm-gold-500);
 }
 
@@ -2676,48 +2761,67 @@ a.sm-outlet__card:focus-visible {
 
 .sm-nmitem {
   position: relative;
-  padding: 1.15rem 1.25rem;
+  padding: 1.25rem 1.35rem;
   background: var(--sm-surface);
   border: 1px solid var(--sm-rule);
   border-radius: var(--sm-radius);
   box-shadow: var(--sm-shadow-sm);
-  transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
+  overflow: hidden;
+  transition: transform .28s cubic-bezier(.2, .7, .3, 1),
+              box-shadow .28s ease,
+              border-color .28s ease;
 }
 
 /* خطِ طلاییِ کناره — با هاور از بالا تا پایین کشیده می‌شود */
 .sm-nmitem::before {
   content: "";
   position: absolute;
-  inset-block-start: 1.15rem;
+  inset-block-start: 1.25rem;
   inset-inline-start: 0;
   width: 3px;
   height: 0;
   border-radius: 3px;
   background: var(--sm-gold-500);
-  transition: height .28s ease;
+  transition: height .32s ease;
+}
+
+/* درخششی که با هاور از یک طرف به طرفِ دیگر می‌رود */
+.sm-nmitem::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: -60%;
+  width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(168, 132, 60, .09), transparent);
+  transition: inset-inline-start .6s ease;
+  pointer-events: none;
 }
 
 .sm-nmitem:hover,
 .sm-nmitem:focus-within {
-  transform: translateY(-3px);
+  transform: translateY(-5px);
   border-color: var(--sm-gold-300);
   box-shadow: var(--sm-shadow);
 }
 
 .sm-nmitem:hover::before,
-.sm-nmitem:focus-within::before { height: calc(100% - 2.3rem); }
+.sm-nmitem:focus-within::before { height: calc(100% - 2.5rem); }
+
+.sm-nmitem:hover::after { inset-inline-start: 115%; }
 
 .sm-nmitem__label {
   margin: 0 0 .4rem;
-  font-size: 1rem;
+  font-size: 1.22rem;
   font-weight: 700;
+  line-height: 1.3;
   color: var(--sm-navy-800);
 }
 
 .sm-nmitem__text {
   margin: 0;
-  font-size: .93rem;
-  line-height: 1.65;
+  font-family: var(--nm-sans);
+  font-size: .88rem;
+  line-height: 1.7;
   color: var(--sm-text-muted);
 }
 
@@ -2728,13 +2832,15 @@ a.sm-outlet__card:focus-visible {
 
 .sm-nmgal__title {
   margin: 0 0 .5rem;
-  font-size: clamp(1.25rem, 1rem + 1vw, 1.7rem);
+  font-size: clamp(1.5rem, 1.1rem + 1.4vw, 2.2rem);
+  font-weight: 600;
   color: var(--sm-navy-800);
 }
 
 .sm-nmgal__text {
   margin: 0 0 1.5rem;
-  font-size: .93rem;
+  font-family: var(--nm-sans);
+  font-size: .88rem;
   color: var(--sm-text-muted);
 }
 
@@ -2750,16 +2856,17 @@ a.sm-outlet__card:focus-visible {
 .sm-nmshot { margin: 0; }
 
 .sm-nmshot__link {
+  position: relative;
   display: block;
   border-radius: var(--sm-radius);
   overflow: hidden;
   box-shadow: var(--sm-shadow-sm);
-  transition: transform .25s ease, box-shadow .25s ease;
+  transition: transform .3s cubic-bezier(.2, .7, .3, 1), box-shadow .3s ease;
 }
 
 .sm-nmshot__link:hover,
 .sm-nmshot__link:focus-visible {
-  transform: translateY(-4px);
+  transform: translateY(-6px);
   box-shadow: var(--sm-shadow-lg);
 }
 
@@ -2769,32 +2876,83 @@ a.sm-outlet__card:focus-visible {
   height: auto;               /* همان دلیلِ بالا */
   aspect-ratio: 4 / 3;
   object-fit: cover;
-  transition: transform .5s ease;
+  /*
+   * نقطه‌ی کانونیِ هر عکس جداگانه از فایلِ محتوا می‌آید. عکسِ
+   * مربعی وقتی به ۴:۳ بریده می‌شد، سرِ ایشان می‌افتاد بیرون.
+   */
+  object-position: var(--sm-shot-focus, center);
+  transition: scale .6s cubic-bezier(.2, .7, .3, 1);
 }
 
-.sm-nmshot__link:hover img { transform: scale(1.05); }
+.sm-nmshot__link:hover img { scale: 1.07; }
+
+/* پرده‌ی تیره‌ی پایینِ عکس، فقط هنگامِ هاور */
+.sm-nmshot__cap {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  padding: 2.2rem .9rem .75rem;
+  font-family: var(--nm-sans);
+  font-size: .78rem;
+  line-height: 1.5;
+  color: #fff;
+  background: linear-gradient(to top, rgba(5, 15, 26, .88), transparent);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity .3s ease, transform .3s ease;
+  pointer-events: none;
+}
+
+.sm-nmshot__link:hover .sm-nmshot__cap,
+.sm-nmshot__link:focus-visible .sm-nmshot__cap {
+  opacity: 1;
+  transform: none;
+}
 
 
 /* ---------- CTA ---------- */
 
 .sm-nmcta {
+  position: relative;
+  overflow: hidden;
   background: linear-gradient(150deg, var(--sm-navy-900), var(--sm-navy-700));
   color: var(--sm-text-invert);
+}
+
+.sm-nmcta::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--sm-gold-500), transparent);
 }
 
 .sm-nmcta__inner { text-align: center; }
 
 .sm-nmcta__title {
   margin: 0 0 .75rem;
-  font-size: clamp(1.25rem, 1rem + 1vw, 1.8rem);
+  font-size: clamp(1.5rem, 1.1rem + 1.4vw, 2.2rem);
+  font-weight: 600;
   color: #fff;
 }
 
 .sm-nmcta__text {
-  margin: 0 auto 1.5rem;
-  max-width: 52ch;
-  line-height: 1.7;
+  margin: 0 auto 1.6rem;
+  max-width: 54ch;
+  font-family: var(--nm-sans);
+  font-size: .95rem;
+  line-height: 1.75;
   color: var(--sm-navy-100);
+}
+
+
+/* ---------- ظاهر شدنِ پله‌کانی ----------
+   هر آیتم به‌اندازه‌ی جایگاهش کمی دیرتر می‌آید. --sm-i از خودِ
+   قالب می‌آید و اگر نباشد، صفر است یعنی همه با هم. */
+
+.sm-js .sm-page--namazi .sm-reveal {
+  transition-delay: calc(var(--sm-i, 0) * 70ms);
 }
 
 
@@ -2810,15 +2968,24 @@ a.sm-outlet__card:focus-visible {
 
 @media (max-width: 30rem) {
   .sm-nmstats { grid-template-columns: minmax(0, 1fr); }
+  .sm-nmhero::after { font-size: 30rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sm-nmhero__photo { animation: none; }
-  .sm-nmitem,
-  .sm-nmshot__link,
-  .sm-nmshot__link img { transition: none; }
-  .sm-nmitem:hover,
-  .sm-nmshot__link:hover { transform: none; }
+  .sm-page--namazi *,
+  .sm-page--namazi *::before,
+  .sm-page--namazi *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .sm-nmhero__eyebrow,
+  .sm-nmhero__name,
+  .sm-nmhero__role,
+  .sm-nmhero__tagline,
+  .sm-nmhero__media { opacity: 1; }
+  .sm-nmblock__title::after { width: 100%; }
+  .sm-nmshot__cap { opacity: 1; transform: none; }
+  .sm-nmhero__photo { transform: none; }
 }
 
 

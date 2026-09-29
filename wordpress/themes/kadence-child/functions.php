@@ -13,7 +13,7 @@
 // جلوگیری از دسترسی مستقیم به فایل
 defined( 'ABSPATH' ) || exit;
 
-define( 'SM_CHILD_VERSION', '5.7.0' );
+define( 'SM_CHILD_VERSION', '5.7.1' );
 
 // توابع کمکی و رندر بخش‌های صفحه‌ی اصلی
 require_once get_stylesheet_directory() . '/inc/helpers.php';

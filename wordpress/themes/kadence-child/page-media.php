@@ -42,35 +42,49 @@ get_header();
 
 <main id="main" class="sm-page sm-page--media" role="main">
 
-	<?php $hero = ! empty( $c['hero_image'] ) ? sm_img_src( $c['hero_image'] ) : ''; ?>
-	<section class="sm-phead sm-phead--compact<?php echo $hero ? ' sm-phead--withphoto' : ''; ?>" aria-labelledby="sm-media-title">
-		<div class="sm-phead__bg" aria-hidden="true">
-			<img src="<?php echo esc_url( sm_img( 'logo-seal.png' ) ); ?>" alt="" class="sm-phead__seal" loading="eager" decoding="async">
-		</div>
-		<div class="sm-wrap sm-phead__inner">
+	<?php
+	/*
+	 * سربرگ — دقیقاً همان الگوی صفحه‌ی اصلی و «درباره ما».
+	 *
+	 * ⚠️ قبلاً اینجا یک چیدمانِ جداگانه نوشته بودم (عکس داخلِ ستون،
+	 *    با مُهرِ لوگو در پس‌زمینه). دو مشکل داشت: هم با دو صفحه‌ی
+	 *    دیگر یکدست نبود، هم قاعده‌ی CSSاش روی عکسِ سربرگِ «درباره
+	 *    ما» هم می‌افتاد و آن را مربعی می‌کرد. حالا هر سه صفحه از
+	 *    یک الگو استفاده می‌کنند و چنین چیزی دیگر ممکن نیست.
+	 */
+	$head_src  = ! empty( $c['image'] ) ? sm_img_src( $c['image'] ) : '';
+	$head_side = ( 'left' === ( $c['text_side'] ?? 'right' ) ) ? 'left' : 'right';
+	$head_mode = ( 'overlay' === ( $c['layout'] ?? 'split' ) ) ? 'overlay' : 'split';
 
-			<div class="sm-phead__text">
-				<p class="sm-phead__eyebrow"><?php echo esc_html( $c['eyebrow'] ); ?></p>
-				<h1 id="sm-media-title" class="sm-phead__title"><?php echo esc_html( $c['title'] ); ?></h1>
-				<?php foreach ( $c['lead'] as $t ) : ?>
-					<p class="sm-phead__lead"><?php echo esc_html( $t ); ?></p>
-				<?php endforeach; ?>
+	$head_class = 'sm-phead';
+
+	if ( $head_src ) {
+		$head_class .= ' sm-phead--photo sm-phead--' . $head_mode . ' sm-phead--text-' . $head_side;
+	} else {
+		$head_class .= ' sm-phead--compact';
+	}
+
+	/*
+	 * نقطه‌ی کانونیِ عکس. وقتی عکس بریده می‌شود، این می‌گوید کدام
+	 * قسمتش حتماً بماند. خالی باشد یعنی وسط. نمونه: '64% center'
+	 */
+	$head_focus = isset( $c['image_focus'] ) ? trim( (string) $c['image_focus'] ) : '';
+	?>
+	<section class="<?php echo esc_attr( trim( $head_class ) ); ?>"
+		<?php if ( $head_focus ) : ?>style="--sm-phead-focus: <?php echo esc_attr( $head_focus ); ?>"<?php endif; ?> aria-labelledby="sm-media-title">
+		<?php if ( $head_src ) : ?>
+			<div class="sm-phead__bg">
+				<img src="<?php echo esc_url( $head_src ); ?>"
+				     alt="<?php echo esc_attr( $c['image_alt'] ?? '' ); ?>"
+				     class="sm-phead__photo" loading="eager" fetchpriority="high" decoding="async">
 			</div>
-
-			<?php if ( $hero ) : ?>
-				<?php
-				/*
-				 * عکسِ مصاحبه. عمداً loading="lazy" ندارد — بالای
-				 * صفحه است و اگر دیر بیاید، کاربر جای خالی می‌بیند.
-				 */
-				?>
-				<figure class="sm-phead__figure">
-					<img class="sm-phead__photo" src="<?php echo esc_url( $hero ); ?>"
-					     alt="<?php echo esc_attr( $c['hero_alt'] ?? '' ); ?>"
-					     width="1200" height="1200" loading="eager" decoding="async" fetchpriority="high">
-				</figure>
-			<?php endif; ?>
-
+		<?php endif; ?>
+		<div class="sm-wrap sm-phead__inner">
+			<p class="sm-phead__eyebrow"><?php echo esc_html( $c['eyebrow'] ); ?></p>
+			<h1 id="sm-media-title" class="sm-phead__title"><?php echo esc_html( $c['title'] ); ?></h1>
+			<?php foreach ( $c['lead'] as $t ) : ?>
+				<p class="sm-phead__lead"><?php echo esc_html( $t ); ?></p>
+			<?php endforeach; ?>
 		</div>
 	</section>
 
