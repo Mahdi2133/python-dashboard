@@ -540,6 +540,12 @@
 		'<button type="button" class="sm-lightbox__close" aria-label="بستن">&times;</button>' +
 		'<button type="button" class="sm-lightbox__nav sm-lightbox__nav--prev" aria-label="قبلی">&rsaquo;</button>' +
 		'<button type="button" class="sm-lightbox__nav sm-lightbox__nav--next" aria-label="بعدی">&lsaquo;</button>' +
+		'<div class="sm-lightbox__zoombar">' +
+			'<button type="button" class="sm-lightbox__zb" data-zoom="out" aria-label="کوچک‌نمایی">&minus;</button>' +
+			'<span class="sm-lightbox__pct" aria-live="polite">۱۰۰٪</span>' +
+			'<button type="button" class="sm-lightbox__zb" data-zoom="in" aria-label="بزرگ‌نمایی">+</button>' +
+			'<button type="button" class="sm-lightbox__zb sm-lightbox__zb--reset" data-zoom="reset" aria-label="اندازه‌ی اصلی">&#8634;</button>' +
+		'</div>' +
 		'<figure class="sm-lightbox__fig">' +
 			'<img class="sm-lightbox__img" alt="">' +
 			'<figcaption class="sm-lightbox__cap"></figcaption>' +
@@ -550,10 +556,148 @@
 	var cap = box.querySelector( '.sm-lightbox__cap' );
 	var prev = box.querySelector( '.sm-lightbox__nav--prev' );
 	var next = box.querySelector( '.sm-lightbox__nav--next' );
+	var pct  = box.querySelector( '.sm-lightbox__pct' );
+
+	/* ------------------------------------------------------------- *
+	 * زوم و جابه‌جاییِ تصویر
+	 * -------------------------------------------------------------
+	 * روی موبایل، مرورگر خودش با دو انگشت زوم می‌کند. روی دسکتاپ
+	 * چنین چیزی وجود ندارد و تصویرِ روزنامه در اندازه‌ی «جا شدن در
+	 * صفحه» خوانده نمی‌شود. پس زوم را خودمان می‌سازیم:
+	 *
+	 *   • چرخِ موس        →  زوم حولِ همان نقطه‌ای که نشانگر است
+	 *   • دوبار کلیک      →  رفت‌وبرگشت بین ۱۰۰٪ و ۲۵۰٪
+	 *   • درگ             →  جابه‌جایی وقتی بزرگ شده
+	 *   • + و − و ۰       →  با صفحه‌کلید
+	 *   • دو انگشت        →  روی تاچ‌پد و صفحه‌ی لمسی
+	 *
+	 * جابه‌جایی محدود می‌شود تا تصویر از کادر بیرون نرود و کاربر
+	 * صفحه‌ی خالی نبیند.
+	 * ------------------------------------------------------------- */
+
+	var MIN = 1;
+	var MAX = 6;
+	var sc = 1;
+	var tx = 0;
+	var ty = 0;
+
+	function fa( n ) {
+		return String( n ).replace( /\d/g, function ( d ) {
+			return String.fromCharCode( 0x06F0 + Number( d ) );
+		} );
+	}
+
+	function apply() {
+		img.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + sc + ')';
+		box.classList.toggle( 'is-zoomed', sc > 1 );
+		pct.textContent = fa( Math.round( sc * 100 ) ) + '٪';
+	}
+
+	function reset() {
+		sc = 1;
+		tx = 0;
+		ty = 0;
+		img.style.transition = '';
+		apply();
+	}
+
+	/* تصویر نباید آن‌قدر برود که کادرش از وسطِ صفحه خارج شود. */
+	function clamp() {
+		var r = img.getBoundingClientRect();
+		var over = function ( size, view ) {
+			return Math.max( 0, ( size - view ) / 2 );
+		};
+		var bx = over( r.width, box.clientWidth );
+		var by = over( r.height, box.clientHeight );
+		tx = Math.max( -bx, Math.min( bx, tx ) );
+		ty = Math.max( -by, Math.min( by, ty ) );
+	}
+
+	/*
+	 * زوم حولِ یک نقطه. (cx,cy) مختصاتِ صفحه است. فاصله‌ی آن نقطه
+	 * تا مرکزِ تصویر به همان نسبتِ بزرگ‌نمایی کشیده می‌شود، پس همان
+	 * نقطه زیرِ نشانگر می‌ماند.
+	 */
+	function zoomAt( next, cx, cy ) {
+		next = Math.max( MIN, Math.min( MAX, next ) );
+		if ( next === sc ) { return; }
+
+		var r  = img.getBoundingClientRect();
+		var mx = r.left + r.width / 2;
+		var my = r.top + r.height / 2;
+		var k  = next / sc;
+
+		tx = ( tx - ( cx - mx ) ) * k + ( cx - mx );
+		ty = ( ty - ( cy - my ) ) * k + ( cy - my );
+		sc = next;
+
+		if ( 1 === sc ) { tx = 0; ty = 0; }
+		apply();
+		clamp();
+		apply();
+	}
+
+	function center() {
+		var r = box.getBoundingClientRect();
+		return [ r.left + r.width / 2, r.top + r.height / 2 ];
+	}
+
+	/* ---- چرخِ موس و ژستِ دو انگشتِ تاچ‌پد ---- */
+	box.addEventListener( 'wheel', function ( e ) {
+		e.preventDefault();
+		// ctrlKey روی تاچ‌پد یعنی ژستِ pinch — قدمِ ریزتری می‌خواهد.
+		var step = e.ctrlKey ? 0.01 : 0.0022;
+		zoomAt( sc * Math.exp( -e.deltaY * step ), e.clientX, e.clientY );
+	}, { passive: false } );
+
+	/* ---- دوبار کلیک ---- */
+	img.addEventListener( 'dblclick', function ( e ) {
+		e.preventDefault();
+		img.style.transition = 'transform .25s ease';
+		zoomAt( sc > 1 ? 1 : 2.5, e.clientX, e.clientY );
+		setTimeout( function () { img.style.transition = ''; }, 280 );
+	} );
+
+	/* ---- درگ برای جابه‌جایی ---- */
+	var drag = null;
+
+	img.addEventListener( 'pointerdown', function ( e ) {
+		if ( sc <= 1 ) { return; }
+		e.preventDefault();
+		drag = { x: e.clientX, y: e.clientY, tx: tx, ty: ty };
+		img.setPointerCapture( e.pointerId );
+	} );
+
+	img.addEventListener( 'pointermove', function ( e ) {
+		if ( ! drag ) { return; }
+		tx = drag.tx + ( e.clientX - drag.x );
+		ty = drag.ty + ( e.clientY - drag.y );
+		clamp();
+		apply();
+	} );
+
+	[ 'pointerup', 'pointercancel' ].forEach( function ( evt ) {
+		img.addEventListener( evt, function () { drag = null; } );
+	} );
+
+	/* ---- دکمه‌های نوارِ زوم ---- */
+	box.querySelector( '.sm-lightbox__zoombar' ).addEventListener( 'click', function ( e ) {
+		var btn = e.target.closest( '[data-zoom]' );
+		if ( ! btn ) { return; }
+		var c = center();
+		img.style.transition = 'transform .2s ease';
+		if ( 'reset' === btn.getAttribute( 'data-zoom' ) ) {
+			reset();
+		} else {
+			zoomAt( 'in' === btn.getAttribute( 'data-zoom' ) ? sc * 1.5 : sc / 1.5, c[0], c[1] );
+		}
+		setTimeout( function () { img.style.transition = ''; }, 230 );
+	} );
 
 	function show( i ) {
 		at = ( i + items.length ) % items.length;
 		var el = items[ at ];
+		reset();
 		box.classList.add( 'is-loading' );
 		img.src = el.getAttribute( 'href' );
 		img.alt = el.getAttribute( 'data-sm-caption' ) || '';
@@ -587,10 +731,125 @@
 	} );
 
 	box.addEventListener( 'keydown', function ( e ) {
-		if ( 'ArrowLeft' === e.key ) { e.preventDefault(); show( at + 1 ); }
-		else if ( 'ArrowRight' === e.key ) { e.preventDefault(); show( at - 1 ); }
+		var c;
+
+		if ( 'ArrowLeft' === e.key ) { e.preventDefault(); show( at + 1 ); return; }
+		if ( 'ArrowRight' === e.key ) { e.preventDefault(); show( at - 1 ); return; }
+
+		if ( '+' === e.key || '=' === e.key ) {
+			e.preventDefault();
+			c = center();
+			zoomAt( sc * 1.5, c[0], c[1] );
+			return;
+		}
+
+		if ( '-' === e.key || '_' === e.key ) {
+			e.preventDefault();
+			c = center();
+			zoomAt( sc / 1.5, c[0], c[1] );
+			return;
+		}
+
+		if ( '0' === e.key ) { e.preventDefault(); reset(); }
+
+		/*
+		 * وقتی تصویر بزرگ شده، جهت‌های بالا و پایین باید تصویر را
+		 * جابه‌جا کنند نه صفحه را.
+		 */
+		if ( sc > 1 && ( 'ArrowUp' === e.key || 'ArrowDown' === e.key ) ) {
+			e.preventDefault();
+			ty += ( 'ArrowUp' === e.key ? 60 : -60 );
+			clamp();
+			apply();
+		}
 	} );
 
-	box.addEventListener( 'close', function () { img.removeAttribute( 'src' ); } );
+	box.addEventListener( 'close', function () {
+		img.removeAttribute( 'src' );
+		reset();
+	} );
+
+}() );
+
+
+/**
+ * شمارنده‌های صفحه‌ی سعید نمازی
+ * -----------------------------------------------------------------
+ * هر عنصری که data-sm-count داشته باشد، وقتی وارد صفحه شد از صفر
+ * تا عددِ خودش بالا می‌رود.
+ *
+ * چرا این شکلی:
+ *
+ *  • عددِ نهایی از همان اول داخلِ HTML هست. جاوااسکریپت فقط آن را
+ *    موقتاً صفر می‌کند و بالا می‌برد. اگر این فایل اصلاً اجرا نشود،
+ *    کاربر عددِ درست را می‌بیند — نه صفر، نه جای خالی.
+ *
+ *  • پسوند (+ یا ٪) و جداکننده‌ی هزارگان از خودِ متنِ اولیه خوانده
+ *    می‌شوند، نه از تنظیمات. پس اگر روزی متن عوض شد، شمارنده هم
+ *    خودبه‌خود همان شکل را می‌گیرد.
+ *
+ *  • اگر کاربر «کاهش حرکت» را روشن کرده باشد، هیچ شمارشی انجام
+ *    نمی‌شود و عدد ثابت می‌ماند.
+ */
+( function () {
+	'use strict';
+
+	var nodes = document.querySelectorAll( '[data-sm-count]' );
+	if ( ! nodes.length ) { return; }
+
+	var still = window.matchMedia && window.matchMedia( '(prefers-reduced-motion: reduce)' ).matches;
+	if ( still || ! window.IntersectionObserver ) { return; }
+
+	var DUR = 1400;
+
+	function run( el ) {
+		var end = parseInt( el.getAttribute( 'data-sm-count' ), 10 );
+		if ( isNaN( end ) || end <= 0 ) { return; }
+
+		// متنِ اولیه را می‌شکافیم: عددِ قالب‌بندی‌شده + هر چیزی که بعدش آمده.
+		var raw  = el.textContent.trim();
+		var tail = raw.replace( /^[\d.,٫٬۰-۹٠-٩\s]+/, '' );
+
+		// آیا عدد جداکننده‌ی هزارگان دارد؟ اگر بله، در شمارش هم بگذاریم.
+		var grouped = /[,٬]/.test( raw );
+		var sep     = /٬/.test( raw ) ? '٬' : ',';
+
+		// رقم‌ها فارسی‌اند یا لاتین؟ از خودِ متن می‌فهمیم.
+		var farsi = /[۰-۹]/.test( raw );
+
+		function fmt( n ) {
+			var s = String( n );
+			if ( grouped ) { s = s.replace( /\B(?=(\d{3})+(?!\d))/g, sep ); }
+			if ( farsi ) {
+				s = s.replace( /\d/g, function ( d ) {
+					return String.fromCharCode( 0x06F0 + Number( d ) );
+				} );
+			}
+			return s + tail;
+		}
+
+		var t0 = 0;
+
+		function step( now ) {
+			if ( ! t0 ) { t0 = now; }
+			var p = Math.min( 1, ( now - t0 ) / DUR );
+			// easeOutCubic — تند شروع می‌شود و نرم می‌ایستد.
+			var e = 1 - Math.pow( 1 - p, 3 );
+			el.textContent = fmt( Math.round( end * e ) );
+			if ( p < 1 ) { requestAnimationFrame( step ); }
+		}
+
+		requestAnimationFrame( step );
+	}
+
+	var io = new IntersectionObserver( function ( entries ) {
+		entries.forEach( function ( entry ) {
+			if ( ! entry.isIntersecting ) { return; }
+			io.unobserve( entry.target );
+			run( entry.target );
+		} );
+	}, { threshold: 0.4 } );
+
+	Array.prototype.forEach.call( nodes, function ( el ) { io.observe( el ); } );
 
 }() );

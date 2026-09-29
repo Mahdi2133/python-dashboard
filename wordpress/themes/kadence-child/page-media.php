@@ -4,7 +4,7 @@
  *
  * نشانی: /media/
  *
- * سه ستون: رادیو و تلویزیون · خبرگزاری‌ها · روزنامه‌ها
+ * چهار بخش: ویدئوها · خبرگزاری‌ها · بریده‌های مطبوعات · مفدا
  *
  * متن‌های خودِ صفحه در inc/content-pages.php کلید 'media' هستند.
  * فهرست مصاحبه‌ها از inc/content-home.php بخش proof → media خوانده
@@ -42,16 +42,35 @@ get_header();
 
 <main id="main" class="sm-page sm-page--media" role="main">
 
-	<section class="sm-phead sm-phead--compact" aria-labelledby="sm-media-title">
+	<?php $hero = ! empty( $c['hero_image'] ) ? sm_img_src( $c['hero_image'] ) : ''; ?>
+	<section class="sm-phead sm-phead--compact<?php echo $hero ? ' sm-phead--withphoto' : ''; ?>" aria-labelledby="sm-media-title">
 		<div class="sm-phead__bg" aria-hidden="true">
 			<img src="<?php echo esc_url( sm_img( 'logo-seal.png' ) ); ?>" alt="" class="sm-phead__seal" loading="eager" decoding="async">
 		</div>
 		<div class="sm-wrap sm-phead__inner">
-			<p class="sm-phead__eyebrow"><?php echo esc_html( $c['eyebrow'] ); ?></p>
-			<h1 id="sm-media-title" class="sm-phead__title"><?php echo esc_html( $c['title'] ); ?></h1>
-			<?php foreach ( $c['lead'] as $t ) : ?>
-				<p class="sm-phead__lead"><?php echo esc_html( $t ); ?></p>
-			<?php endforeach; ?>
+
+			<div class="sm-phead__text">
+				<p class="sm-phead__eyebrow"><?php echo esc_html( $c['eyebrow'] ); ?></p>
+				<h1 id="sm-media-title" class="sm-phead__title"><?php echo esc_html( $c['title'] ); ?></h1>
+				<?php foreach ( $c['lead'] as $t ) : ?>
+					<p class="sm-phead__lead"><?php echo esc_html( $t ); ?></p>
+				<?php endforeach; ?>
+			</div>
+
+			<?php if ( $hero ) : ?>
+				<?php
+				/*
+				 * عکسِ مصاحبه. عمداً loading="lazy" ندارد — بالای
+				 * صفحه است و اگر دیر بیاید، کاربر جای خالی می‌بیند.
+				 */
+				?>
+				<figure class="sm-phead__figure">
+					<img class="sm-phead__photo" src="<?php echo esc_url( $hero ); ?>"
+					     alt="<?php echo esc_attr( $c['hero_alt'] ?? '' ); ?>"
+					     width="1200" height="1200" loading="eager" decoding="async" fetchpriority="high">
+				</figure>
+			<?php endif; ?>
+
 		</div>
 	</section>
 
@@ -62,65 +81,106 @@ get_header();
 				<p class="sm-empty"><?php echo esc_html( $c['empty_text'] ); ?></p>
 			<?php else : ?>
 
-				<div class="sm-mediacols">
-					<?php foreach ( $c['groups'] as $g ) : ?>
-						<?php $items = isset( $buckets[ $g['key'] ] ) ? $buckets[ $g['key'] ] : array(); ?>
-						<section class="sm-mediacol sm-mediacol--<?php echo esc_attr( $g['key'] ); ?>" aria-labelledby="sm-mg-<?php echo esc_attr( $g['key'] ); ?>">
+				<?php foreach ( $c['groups'] as $g ) : ?>
+					<?php
+					$items = isset( $buckets[ $g['key'] ] ) ? $buckets[ $g['key'] ] : array();
+					// «ویدئو» کارتِ بزرگ با تصویر می‌گیرد، بقیه کارتِ هم‌اندازه‌ی لوگودار.
+					$is_video = ( 'video' === $g['key'] );
+					?>
+					<section class="sm-mediagroup sm-mediagroup--<?php echo esc_attr( $g['key'] ); ?>" aria-labelledby="sm-mg-<?php echo esc_attr( $g['key'] ); ?>">
 
-							<h2 class="sm-mediacol__title" id="sm-mg-<?php echo esc_attr( $g['key'] ); ?>">
-								<?php echo esc_html( $g['title'] ); ?>
-								<?php if ( $items ) : ?>
-									<span class="sm-mediacol__count"><?php echo esc_html( sm_fa_digits( count( $items ) ) ); ?></span>
-								<?php endif; ?>
-							</h2>
+						<h2 class="sm-mediagroup__title" id="sm-mg-<?php echo esc_attr( $g['key'] ); ?>">
+							<?php echo esc_html( $g['title'] ); ?>
+							<?php if ( $items ) : ?>
+								<span class="sm-mediagroup__count"><?php echo esc_html( sm_fa_digits( count( $items ) ) ); ?></span>
+							<?php endif; ?>
+						</h2>
 
-							<?php if ( empty( $items ) ) : ?>
-								<p class="sm-mediacol__empty"><?php echo esc_html( $g['empty'] ); ?></p>
-							<?php else : ?>
-								<ul class="sm-mediacol__list">
-									<?php foreach ( $items as $m ) : ?>
-										<?php
-										/*
-										 * موردی که هنوز لینک ندارد (مثل برنامه‌های
-										 * رادیویی تا وقتی در آپارات آپلود نشده‌اند)
-										 * به‌صورت کارتِ ساده و غیرقابلِ کلیک می‌آید،
-										 * نه لینکِ مرده. لینکِ مرده هم کاربر را
-										 * سرگردان می‌کند هم برای گوگل بد است.
-										 */
-										$has_url = ! empty( $m['url'] );
-										$shot    = ! empty( $m['image'] ) ? sm_img_src( 'media/' . $m['image'] ) : '';
-										$tag     = $has_url ? 'a' : 'div';
-										?>
-										<li class="sm-media__item sm-reveal">
-											<<?php echo $tag; // phpcs:ignore ?> class="sm-media__card<?php echo $shot ? ' sm-media__card--shot' : ''; ?><?php echo $has_url ? '' : ' is-soon'; ?>"
-												<?php if ( $has_url ) : ?>
-													href="<?php echo esc_url( $m['url'] ); ?>" target="_blank" rel="noopener noreferrer"
-												<?php endif; ?>>
+						<?php if ( empty( $items ) ) : ?>
+							<p class="sm-mediagroup__empty"><?php echo esc_html( $g['empty'] ); ?></p>
+
+						<?php elseif ( $is_video ) : ?>
+							<ul class="sm-videos">
+								<?php foreach ( $items as $m ) : ?>
+									<?php
+									$has_url = ! empty( $m['url'] );
+									$shot    = ! empty( $m['image'] ) ? sm_img_src( 'media/' . $m['image'] ) : '';
+									$tag     = $has_url ? 'a' : 'div';
+									?>
+									<li class="sm-video sm-reveal">
+										<<?php echo $tag; // phpcs:ignore ?> class="sm-video__card<?php echo $has_url ? '' : ' is-soon'; ?>"
+											<?php if ( $has_url ) : ?>
+												href="<?php echo esc_url( $m['url'] ); ?>" target="_blank" rel="noopener noreferrer"
+											<?php endif; ?>>
+
+											<span class="sm-video__thumb">
 												<?php if ( $shot ) : ?>
-													<img class="sm-media__shot" src="<?php echo esc_url( $shot ); ?>"
-													     alt="<?php echo esc_attr( $m['outlet'] ); ?>" loading="lazy" decoding="async">
-												<?php else : ?>
-													<span class="sm-media__logo"><?php sm_media_logo( $m ); ?></span>
+													<img src="<?php echo esc_url( $shot ); ?>"
+													     alt="<?php echo esc_attr( $m['outlet'] ); ?>"
+													     loading="lazy" decoding="async">
 												<?php endif; ?>
-												<span class="sm-media__title"><?php echo esc_html( $m['title'] ); ?></span>
-												<span class="sm-media__outlet"><?php echo esc_html( $m['outlet'] ); ?></span>
 												<?php if ( $has_url ) : ?>
-													<span class="sm-media__cta">
-														مشاهده مطلب
+													<span class="sm-video__play" aria-hidden="true">
+														<svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
+													</span>
+												<?php endif; ?>
+											</span>
+
+											<span class="sm-video__body">
+												<span class="sm-video__outlet"><?php echo esc_html( $m['outlet'] ); ?></span>
+												<span class="sm-video__title"><?php echo esc_html( $m['title'] ); ?></span>
+												<?php if ( $has_url ) : ?>
+													<span class="sm-video__cta">
+														تماشای ویدئو
 														<span class="screen-reader-text">در <?php echo esc_html( $m['outlet'] ); ?> — در پنجره جدید باز می‌شود</span>
 													</span>
 												<?php else : ?>
-													<span class="sm-media__cta sm-media__cta--soon">لینک به‌زودی</span>
+													<span class="sm-video__cta sm-video__cta--soon">لینک به‌زودی</span>
 												<?php endif; ?>
-											</<?php echo $tag; // phpcs:ignore ?>>
-										</li>
-									<?php endforeach; ?>
-								</ul>
-							<?php endif; ?>
+											</span>
 
-						</section>
-					<?php endforeach; ?>
-				</div>
+										</<?php echo $tag; // phpcs:ignore ?>>
+									</li>
+								<?php endforeach; ?>
+							</ul>
+
+						<?php else : ?>
+							<ul class="sm-outlets">
+								<?php foreach ( $items as $m ) : ?>
+									<?php $has_url = ! empty( $m['url'] ); ?>
+									<?php $tag = $has_url ? 'a' : 'div'; ?>
+									<li class="sm-outlet sm-reveal">
+										<<?php echo $tag; // phpcs:ignore ?> class="sm-outlet__card<?php echo $has_url ? '' : ' is-soon'; ?>"
+											<?php if ( $has_url ) : ?>
+												href="<?php echo esc_url( $m['url'] ); ?>" target="_blank" rel="noopener noreferrer"
+											<?php endif; ?>>
+
+											<?php
+											/*
+											 * نوارِ لوگو ارتفاعِ ثابت دارد و لوگو با
+											 * object-fit: contain داخلش می‌نشیند. به این
+											 * ترتیب لوگوی مربعی و لوگوی کشیده هر دو یک
+											 * اندازه دیده می‌شوند و کارت‌ها هم‌قد می‌مانند.
+											 */
+											?>
+											<span class="sm-outlet__logo"><?php sm_media_logo( $m ); ?></span>
+											<span class="sm-outlet__title"><?php echo esc_html( $m['title'] ); ?></span>
+											<span class="sm-outlet__foot">
+												<span class="sm-outlet__name"><?php echo esc_html( $m['outlet'] ); ?></span>
+												<?php if ( $has_url ) : ?>
+													<span class="sm-outlet__cta" aria-hidden="true">مشاهده مطلب</span>
+													<span class="screen-reader-text">مشاهده مطلب در <?php echo esc_html( $m['outlet'] ); ?> — در پنجره جدید باز می‌شود</span>
+												<?php endif; ?>
+											</span>
+
+										</<?php echo $tag; // phpcs:ignore ?>>
+									</li>
+								<?php endforeach; ?>
+							</ul>
+						<?php endif; ?>
+
+					</section>
+				<?php endforeach; ?>
 
 			<?php endif; ?>
 
@@ -182,7 +242,15 @@ get_header();
 						<p class="sm-eyebrow"><?php echo esc_html( $min['eyebrow'] ); ?></p>
 					<?php endif; ?>
 
-					<h2 id="sm-ministry-title" class="sm-ministry__title"><?php echo esc_html( $min['title'] ); ?></h2>
+					<?php $mlogo = ! empty( $min['logo'] ) ? sm_img_src( 'media/' . $min['logo'] ) : ''; ?>
+					<div class="sm-ministry__head">
+						<?php if ( $mlogo ) : ?>
+							<span class="sm-ministry__logo">
+								<img src="<?php echo esc_url( $mlogo ); ?>" alt="" loading="lazy" decoding="async">
+							</span>
+						<?php endif; ?>
+						<h2 id="sm-ministry-title" class="sm-ministry__title"><?php echo esc_html( $min['title'] ); ?></h2>
+					</div>
 
 					<?php if ( ! empty( $min['text'] ) ) : ?>
 						<p class="sm-ministry__text"><?php echo esc_html( $min['text'] ); ?></p>

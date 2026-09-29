@@ -95,51 +95,15 @@ get_header();
 		</div>
 	</section>
 
-	<?php /* ============ همکاران آکادمی ============ */ ?>
-	<?php $team = isset( $c['team'] ) ? $c['team'] : array(); ?>
-	<?php if ( ! empty( $team['enabled'] ) && ! empty( $team['people'] ) ) : ?>
-		<section class="sm-section sm-team" aria-labelledby="sm-team-title">
-			<div class="sm-wrap">
-				<header class="sm-section__head sm-section__head--center">
-					<h2 id="sm-team-title" class="sm-section__title"><?php echo esc_html( $team['title'] ); ?></h2>
-					<?php if ( ! empty( $team['text'] ) ) : ?>
-						<p class="sm-section__lead"><?php echo esc_html( $team['text'] ); ?></p>
-					<?php endif; ?>
-				</header>
-
-				<?php foreach ( $team['people'] as $person ) : ?>
-					<?php $psrc = ! empty( $person['photo'] ) ? sm_img_src( 'resume/' . $person['photo'] ) : ''; ?>
-					<article class="sm-teamcard sm-reveal">
-						<?php if ( $psrc ) : ?>
-							<img class="sm-teamcard__photo" src="<?php echo esc_url( $psrc ); ?>"
-							     alt="<?php echo esc_attr( $person['name'] ); ?>"
-							     <?php if ( ! empty( $person['focus'] ) ) : ?>
-								     style="object-position: <?php echo esc_attr( $person['focus'] ); ?> center;"
-							     <?php endif; ?>
-							     loading="lazy" decoding="async">
-						<?php endif; ?>
-						<div class="sm-teamcard__body">
-							<h3 class="sm-teamcard__name"><?php echo esc_html( $person['name'] ); ?></h3>
-							<?php if ( ! empty( $person['en'] ) ) : ?>
-								<p class="sm-teamcard__en" dir="ltr"><?php echo esc_html( $person['en'] ); ?></p>
-							<?php endif; ?>
-							<p class="sm-teamcard__role"><?php echo esc_html( $person['role'] ); ?></p>
-							<?php foreach ( (array) ( isset( $person['text'] ) ? $person['text'] : array() ) as $t ) : ?>
-								<p class="sm-teamcard__text"><?php echo esc_html( $t ); ?></p>
-							<?php endforeach; ?>
-							<?php if ( ! empty( $person['points'] ) ) : ?>
-								<ul class="sm-ticklist sm-teamcard__points">
-									<?php foreach ( $person['points'] as $pt ) : ?>
-										<li><?php echo esc_html( $pt ); ?></li>
-									<?php endforeach; ?>
-								</ul>
-							<?php endif; ?>
-						</div>
-					</article>
-				<?php endforeach; ?>
-			</div>
-		</section>
-	<?php endif; ?>
+	<?php
+	/*
+	 * سکشنِ «همکاران آکادمی» از اینجا برداشته شد.
+	 *
+	 * رزومه‌ی سعید نمازی حالا صفحه‌ی مستقلِ خودش را دارد:
+	 *     page-namazi.php  →  /saeednamazi/
+	 * و از منوی سربرگ باز می‌شود، نه از میانه‌ی این صفحه.
+	 */
+	?>
 
 	<?php /* ============ مدارک و گواهی‌نامه‌ها ============ */ ?>
 	<?php $certs = isset( $c['certs'] ) ? $c['certs'] : array(); ?>

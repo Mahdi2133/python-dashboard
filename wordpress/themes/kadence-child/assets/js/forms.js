@@ -261,51 +261,88 @@
 			return;
 		}
 
-		var sum     = 0;
-		var max     = 0;
-		var rhythm  = 0;
-		var glucose = 0;
+		/* ------------------------------------------------------------- *
+		 * نمره‌گذاری
+		 * -------------------------------------------------------------
+		 * فقط پرسش‌های data-axis="friction" نمره دارند — پنج پرسشِ
+		 * بخشِ دوم، هرکدام ۰ تا ۲، یعنی حداکثر ۱۰.
+		 *
+		 * دو پرسشِ بخشِ اول (context) و پرسشِ بخشِ سوم (time) عمداً
+		 * نمره نمی‌گیرند: اولی‌ها جنسِ کار را مشخص می‌کنند و سومی
+		 * فقط تعیین می‌کند راهکار در چه اندازه‌ای از تقویم جا شود.
+		 * ------------------------------------------------------------- */
+
+		var sum      = 0;
+		var max      = 0;
+		var timePick = null;
+		var trail    = [];
 
 		Array.prototype.forEach.call( quiz.querySelectorAll( '.sm-quiz__q' ), function ( q ) {
 
 			var picked = q.querySelector( 'input[type="radio"]:checked' );
-
 			if ( ! picked ) { return; }
 
-			var v = parseInt( picked.value, 10 ) || 0;
+			var v  = parseInt( picked.value, 10 ) || 0;
+			var no = parseInt( q.dataset.no, 10 ) || 0;
 
-			sum += v;
-			max += 3;
+			trail.push( no + ':' + v );
 
-			if ( 'rhythm' === q.dataset.axis )  { rhythm  += v; }
-			if ( 'glucose' === q.dataset.axis ) { glucose += v; }
+			if ( 'friction' === q.dataset.axis ) {
+				sum += v;
+				// بیشترین مقدارِ ممکنِ همین پرسش، نه یک عددِ ثابت.
+				max += q.querySelectorAll( 'input[type="radio"]' ).length - 1;
+			}
+
+			if ( 'time' === q.dataset.axis ) { timePick = v; }
 		} );
 
+		var zone = sum >= TEXT.cutRed ? 'red' : ( sum >= TEXT.cutAmber ? 'amber' : 'green' );
 		var pct  = max ? Math.round( ( sum / max ) * 100 ) : 0;
-		var zone = pct < 34 ? 'green' : ( pct < 62 ? 'amber' : 'red' );
-
-		// اگر اختلاف دو کفه کمتر از ۲۰٪ باشد، «ترکیبی» است
-		var leak = 'both';
-		var gap  = Math.abs( rhythm - glucose );
-
-		if ( gap > Math.max( rhythm, glucose ) * 0.2 ) {
-			leak = rhythm > glucose ? 'rhythm' : 'glucose';
-		}
-
-		var z = TEXT.zones[ zone ];
-		var l = TEXT.leaks[ leak ];
+		var z    = TEXT.zones[ zone ];
 
 		set( 'sm-result-badge', z.label );
 		set( 'sm-result-title', z.title );
 		set( 'sm-result-text', z.text );
-		set( 'sm-result-leaktitle', l.title );
-		set( 'sm-result-leaktext', l.text );
-		set( 'sm-result-book', l.book );
+		set( 'sm-result-num', 'شاخص اصطکاک متابولیک: ' + fa( sum ) + ' از ' + fa( max ) );
+
+		// «گام بعدی» فقط در وضعیت قرمز متن دارد.
+		var nextEl = document.getElementById( 'sm-result-next' );
+
+		if ( nextEl ) {
+			nextEl.textContent = z.next || '';
+			nextEl.hidden = ! z.next;
+		}
+
+		// جمله‌ی پایانی بر اساس گلوگاه زمانی
+		var timeEl = document.getElementById( 'sm-result-time' );
+
+		if ( timeEl ) {
+			var note = ( null !== timePick && TEXT.timeNotes ) ? TEXT.timeNotes[ String( timePick ) ] : '';
+			timeEl.textContent = note || '';
+			timeEl.hidden = ! note;
+		}
 
 		result.className = 'sm-result sm-result--' + zone;
 
 		var fill = document.getElementById( 'sm-result-fill' );
 		if ( fill ) { fill.style.width = pct + '%'; }
+
+		/*
+		 * نتیجه را به فرمِ تماس هم می‌دهیم تا وقتی کاربر فرم را فرستاد،
+		 * ثبت شود که با چه وضعیتی تماس گرفته است.
+		 */
+		fill = document.getElementById( 'sm-audit-zone' );
+		if ( fill ) { fill.value = zone; }
+
+		fill = document.getElementById( 'sm-audit-score' );
+		if ( fill ) { fill.value = String( sum ); }
+
+		fill = document.getElementById( 'sm-audit-answers' );
+		if ( fill ) { fill.value = trail.join( '|' ); }
+
+		// دکمه‌ی فرم، متنِ همان وضعیت را می‌گیرد.
+		var btn = document.getElementById( 'sm-audit-submit' );
+		if ( btn && z.cta ) { btn.textContent = z.cta; }
 
 		result.hidden = false;
 		result.focus();

@@ -920,3 +920,142 @@
   outline-offset: 3px;
   border-radius: var(--sm-radius-sm);
 }
+
+
+/* ==========================================================================
+   ممیزی متابولیک اجرایی  —  /smp/check/
+   ========================================================================== */
+
+/* نامِ انگلیسیِ صفحه، زیرِ عنوانِ فارسی */
+.sm-phead__en {
+  margin: .35rem 0 .9rem;
+  font-size: .78rem;
+  font-weight: 600;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--sm-gold-300);
+  unicode-bidi: embed;
+}
+
+/* نامِ انگلیسیِ هر بخش، کنارِ عنوانِ فارسی */
+.sm-quiz__gen {
+  margin-inline-start: .6rem;
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--sm-text-muted);
+  unicode-bidi: embed;
+}
+
+/* شماره‌ی پرسش */
+.sm-quiz__qno {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.45rem;
+  height: 1.45rem;
+  margin-inline-end: .5rem;
+  border-radius: 50%;
+  background: var(--sm-navy-50);
+  border: 1px solid var(--sm-navy-100);
+  font-size: .74rem;
+  font-weight: 700;
+  color: var(--sm-navy-600);
+  vertical-align: middle;
+}
+
+
+/* ---------- نتیجه ---------- */
+
+/*
+ * «گام بعدی» فقط در وضعیت قرمز متن دارد؛ نوارِ کناری‌اش هم
+ * همان رنگِ وضعیت است تا از متنِ بالایی جدا دیده شود.
+ */
+.sm-result__next {
+  margin: 0 0 1.25rem;
+  padding: .85rem 1rem;
+  border-inline-start: 3px solid currentColor;
+  border-radius: var(--sm-radius-sm);
+  background: rgba(181, 55, 43, .06);
+  font-size: .95rem;
+  font-weight: 600;
+  line-height: 2;
+  color: var(--sm-error);
+}
+
+.sm-result__score {
+  display: flex;
+  align-items: center;
+  gap: .9rem;
+  flex-wrap: wrap;
+  margin-block-end: 1.1rem;
+}
+
+.sm-result__score .sm-result__meter { flex: 1 1 12rem; margin: 0; }
+
+.sm-result__num {
+  margin: 0;
+  font-size: .85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--sm-navy-800);
+  white-space: nowrap;
+}
+
+.sm-result__time {
+  margin: 0 0 1.4rem;
+  padding-block-start: .9rem;
+  border-block-start: 1px dashed var(--sm-rule);
+  font-size: .9rem;
+  line-height: 2;
+  color: var(--sm-text-soft);
+}
+
+
+/* ---------- فرمِ تماسِ زیرِ نتیجه ---------- */
+
+.sm-auditform {
+  margin: 0 0 1.6rem;
+  padding: 1.35rem 1.25rem;
+  border: 1px solid var(--sm-rule);
+  border-radius: var(--sm-radius-lg);
+  background: var(--sm-surface);
+}
+
+.sm-auditform__title {
+  margin: 0 0 .45rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--sm-navy-800);
+}
+
+.sm-auditform__text {
+  margin: 0 0 1.2rem;
+  font-size: .92rem;
+  line-height: 2;
+  color: var(--sm-text-muted);
+}
+
+.sm-auditform__grid {
+  display: grid;
+  gap: 0 1rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/*
+ * عمداً تک‌ستونی است. دو ستون امتحان شد و خوب نشد: نشانیِ لینکدین
+ * در نصفِ عرض بریده می‌شد، و هر چیدمانی که آن را تمام‌عرض می‌کرد،
+ * ترتیبِ دیداری را با ترتیبِ Tab ناهماهنگ می‌کرد.
+ */
+
+.sm-formok {
+  margin: 0;
+  padding: .95rem 1.15rem;
+  border: 1px solid var(--sm-leaf-200);
+  border-inline-start: 3px solid var(--sm-leaf-600);
+  border-radius: var(--sm-radius);
+  background: var(--sm-leaf-50);
+  font-size: .95rem;
+  font-weight: 600;
+  line-height: 1.95;
+  color: var(--sm-leaf-800);
+}

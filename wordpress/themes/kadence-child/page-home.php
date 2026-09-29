@@ -142,7 +142,7 @@ get_header();
 	</section>
 
 
-	<?php /* ============ ۵ — برنامه ۱۲ هفته‌ای ============ */ ?>
+	<?php /* ============ ۵ — برنامه ۱۰۰ روزه ============ */ ?>
 	<section class="sm-section sm-weeks" aria-labelledby="sm-weeks-title">
 		<div class="sm-wrap">
 			<header class="sm-section__head sm-section__head--center">

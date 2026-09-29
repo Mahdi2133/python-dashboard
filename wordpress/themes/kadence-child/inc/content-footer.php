@@ -37,6 +37,8 @@ return array(
 			array( 'label' => 'کتاب معماری متابولیک', 'url' => '/book/' ),
 			array( 'label' => 'درباره آکادمی',        'url' => '/about/' ),
 			array( 'label' => 'رسانه‌ها',              'url' => '/media/' ),
+			array( 'label' => 'پرونده‌های بالینی',     'url' => '/cases/' ),
+			array( 'label' => 'Saeed Namazi',        'url' => '/saeednamazi/' ),
 			array( 'label' => 'سؤالات متداول',        'url' => '/faq/' ),
 			array( 'label' => 'شروع ارزیابی',         'url' => '/smp/start/' ),
 			array( 'label' => 'قوانین و مقررات',      'url' => '/terms/' ),
@@ -100,7 +102,7 @@ return array(
 			),
 			array(
 				'label' => 'دوره اختصاصی VIP',
-				'meta'  => 'برنامه ۱۲ هفته‌ای فردمحور',
+				'meta'  => 'برنامه ۱۰۰ روزه فردمحور',
 				'url'   => '/smp/start/',
 			),
 		),

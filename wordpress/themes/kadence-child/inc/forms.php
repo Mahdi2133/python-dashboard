@@ -199,6 +199,171 @@ add_action( 'template_redirect', 'sm_handle_lead_submit' );
 
 
 /**
+ * فرمِ «ممیزی متابولیک اجرایی» (/smp/check/) را ذخیره می‌کند.
+ * ---------------------------------------------------------------------------
+ *
+ * همان نوعِ نوشته‌ی sm_lead را می‌سازد، فقط با _sm_source = 'audit' تا در
+ * پیشخوان از درخواست‌های فرمِ /smp/start/ قابلِ تفکیک باشد.
+ *
+ * ⚠️ خودِ پاسخ‌های پرسشنامه در مرورگر محاسبه می‌شوند و تا وقتی کاربر این
+ *    فرم را نفرستد، هیچ‌جا ثبت نمی‌شوند. با فرستادنِ فرم، پاسخ‌ها هم
+ *    همراهشان ذخیره می‌شود — چون بدونِ آن‌ها، خودِ تماس بی‌معنی است.
+ */
+function sm_handle_audit_submit() {
+
+	if ( 'POST' !== ( isset( $_SERVER['REQUEST_METHOD'] ) ? $_SERVER['REQUEST_METHOD'] : '' ) ) {
+		return;
+	}
+
+	if ( ! isset( $_POST['sm_audit_form'] ) ) {
+		return;
+	}
+
+	$redirect = wp_get_referer() ? wp_get_referer() : home_url( '/smp/check/' );
+	$redirect = remove_query_arg( array( 'sm_audit' ), $redirect );
+
+	$fail = function () use ( $redirect ) {
+		wp_safe_redirect( add_query_arg( 'sm_audit', 'err', $redirect ) . '#sm-result' );
+		exit;
+	};
+
+	// ---------- بررسی‌های امنیتی ----------
+
+	$nonce = isset( $_POST['sm_audit_nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['sm_audit_nonce'] ) ) : '';
+
+	if ( ! wp_verify_nonce( $nonce, 'sm_audit_submit' ) ) {
+		$fail();
+	}
+
+	// تله‌ی ربات — نامرئی است، پس باید خالی بماند.
+	if ( ! empty( $_POST['sm_website'] ) ) {
+		wp_safe_redirect( add_query_arg( 'sm_audit', 'ok', $redirect ) . '#sm-result' );
+		exit;
+	}
+
+	$started = isset( $_POST['sm_t'] ) ? (int) $_POST['sm_t'] : 0;
+
+	if ( $started && ( time() - $started ) < 3 ) {
+		wp_safe_redirect( add_query_arg( 'sm_audit', 'ok', $redirect ) . '#sm-result' );
+		exit;
+	}
+
+	if ( empty( $_POST['sm_consent'] ) ) {
+		$fail();
+	}
+
+	// ---------- مقادیر ----------
+
+	$c      = sm_form_content( 'check' );
+	$fields = isset( $c['form']['fields'] ) ? $c['form']['fields'] : array();
+	$values = array();
+
+	foreach ( $fields as $f ) {
+		$raw = isset( $_POST[ 'sm_' . $f['name'] ] ) ? wp_unslash( $_POST[ 'sm_' . $f['name'] ] ) : '';
+		$val = sanitize_text_field( $raw );
+
+		if ( ! empty( $f['req'] ) && '' === trim( $val ) ) {
+			$fail();
+		}
+
+		$values[ $f['name'] ] = array(
+			'label' => $f['label'],
+			'value' => $val,
+		);
+	}
+
+	// ---------- نتیجه‌ی پرسشنامه ----------
+
+	$zone = isset( $_POST['sm_audit_zone'] ) ? sanitize_key( wp_unslash( $_POST['sm_audit_zone'] ) ) : '';
+
+	if ( ! in_array( $zone, array( 'green', 'amber', 'red' ), true ) ) {
+		$zone = '';
+	}
+
+	$score = isset( $_POST['sm_audit_score'] ) ? (int) $_POST['sm_audit_score'] : -1;
+	$score = ( $score >= 0 && $score <= 10 ) ? $score : -1;
+
+	/*
+	 * پاسخ‌ها به شکل «۱:۲|۲:۰|…» می‌آیند. هر چیزِ دیگری دور ریخته
+	 * می‌شود تا رشته‌ی دلخواهِ کسی داخل دیتابیس ننشیند.
+	 */
+	$answers = isset( $_POST['sm_audit_answers'] ) ? wp_unslash( $_POST['sm_audit_answers'] ) : '';
+	$answers = preg_replace( '/[^0-9:|]/', '', (string) $answers );
+	$answers = substr( $answers, 0, 200 );
+
+	// ---------- ذخیره ----------
+
+	$name  = $values['audit_name']['value'] ?? 'بدون نام';
+	$phone = $values['audit_phone']['value'] ?? '';
+
+	$post_id = wp_insert_post(
+		array(
+			'post_type'   => 'sm_lead',
+			'post_status' => 'publish',
+			'post_title'  => trim( $name . ( $phone ? ' — ' . $phone : '' ) ),
+		),
+		true
+	);
+
+	if ( is_wp_error( $post_id ) ) {
+		$fail();
+	}
+
+	foreach ( $values as $key => $item ) {
+		update_post_meta( $post_id, '_sm_' . $key, $item['value'] );
+	}
+
+	update_post_meta( $post_id, '_sm_source', 'audit' );
+	update_post_meta( $post_id, '_sm_zone', $zone );
+	update_post_meta( $post_id, '_sm_score', $score );
+	update_post_meta( $post_id, '_sm_answers', $answers );
+	update_post_meta( $post_id, '_sm_ip_hash', substr( wp_hash( sm_client_ip() ), 0, 16 ) );
+
+	sm_notify_new_audit( $post_id, $values, $zone, $score );
+
+	wp_safe_redirect( add_query_arg( 'sm_audit', 'ok', $redirect ) . '#sm-result' );
+	exit;
+}
+add_action( 'template_redirect', 'sm_handle_audit_submit' );
+
+
+/**
+ * به مدیر خبر می‌دهد یک ممیزی تازه ثبت شده است.
+ *
+ * @param int    $post_id شناسه‌ی درخواست.
+ * @param array  $values  فیلدهای تماس.
+ * @param string $zone    green | amber | red
+ * @param int    $score   نمره‌ی اصطکاک، یا ۱- اگر نامعلوم باشد.
+ */
+function sm_notify_new_audit( $post_id, $values, $zone, $score ) {
+
+	$c     = sm_form_content( 'check' );
+	$label = isset( $c['zones'][ $zone ]['label'] ) ? $c['zones'][ $zone ]['label'] : 'نامشخص';
+
+	$lines = array(
+		'یک ممیزی متابولیک اجرایی تازه ثبت شد.',
+		'',
+		'وضعیت: ' . $label,
+		'نمره‌ی اصطکاک: ' . ( $score >= 0 ? $score . ' از ۱۰' : 'نامشخص' ),
+		'',
+	);
+
+	foreach ( $values as $item ) {
+		$lines[] = $item['label'] . ': ' . $item['value'];
+	}
+
+	$lines[] = '';
+	$lines[] = 'مشاهده در پیشخوان: ' . admin_url( 'post.php?post=' . (int) $post_id . '&action=edit' );
+
+	sm_mail(
+		get_option( 'admin_email' ),
+		'[' . wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ) . '] ممیزی متابولیک — ' . $label,
+		implode( "\n", $lines )
+	);
+}
+
+
+/**
  * نشانی IP بازدیدکننده.
  *
  * فقط برای ساختن یک اثر انگشتِ درهم‌شده استفاده می‌شود تا اگر روزی
@@ -367,6 +532,19 @@ add_action( 'add_meta_boxes', 'sm_lead_meta_box' );
  */
 function sm_render_lead_detail( $post ) {
 
+	/*
+	 * دو جور درخواست در این فهرست می‌نشیند و فیلدهایشان یکی نیست:
+	 *
+	 *     فرمِ /smp/start/   ← فیلدهای 'start'
+	 *     فرمِ /smp/check/   ← فیلدهای 'check' → form، به‌علاوه‌ی نتیجه
+	 *
+	 * پس اول می‌بینیم کدام است، بعد جدول را می‌سازیم.
+	 */
+	if ( 'audit' === get_post_meta( $post->ID, '_sm_source', true ) ) {
+		sm_render_audit_detail( $post );
+		return;
+	}
+
 	$content = sm_form_content( 'start' );
 	?>
 	<table class="widefat striped" dir="rtl" style="text-align:right">
@@ -385,6 +563,90 @@ function sm_render_lead_detail( $post ) {
 	</table>
 	<p style="margin-top:1rem;color:#666">
 		این اطلاعات از فرم <code>/smp/start/</code> آمده است و فقط برای شما قابل مشاهده است.
+	</p>
+	<?php
+}
+
+
+/**
+ * جزئیاتِ یک «ممیزی متابولیک اجرایی».
+ *
+ * @param WP_Post $post درخواست.
+ */
+function sm_render_audit_detail( $post ) {
+
+	$c      = sm_form_content( 'check' );
+	$fields = isset( $c['form']['fields'] ) ? $c['form']['fields'] : array();
+
+	$zone  = get_post_meta( $post->ID, '_sm_zone', true );
+	$score = get_post_meta( $post->ID, '_sm_score', true );
+	$label = isset( $c['zones'][ $zone ]['label'] ) ? $c['zones'][ $zone ]['label'] : 'نامشخص';
+
+	/* رنگِ همان وضعیت، تا در نگاهِ اول معلوم باشد. */
+	$colors = array( 'green' => '#285A32', 'amber' => '#A8843C', 'red' => '#B5372B' );
+	$color  = isset( $colors[ $zone ] ) ? $colors[ $zone ] : '#5C6873';
+	?>
+	<table class="widefat striped" dir="rtl" style="text-align:right">
+		<tbody>
+			<tr>
+				<th style="width:16rem">وضعیت</th>
+				<td><strong style="color:<?php echo esc_attr( $color ); ?>"><?php echo esc_html( $label ); ?></strong></td>
+			</tr>
+			<tr>
+				<th>نمره‌ی اصطکاک</th>
+				<td><?php echo '' !== $score && (int) $score >= 0 ? esc_html( $score . ' از ۱۰' ) : '—'; ?></td>
+			</tr>
+			<?php foreach ( $fields as $f ) : ?>
+				<?php $val = get_post_meta( $post->ID, '_sm_' . $f['name'], true ); ?>
+				<?php if ( '' === trim( (string) $val ) ) { continue; } ?>
+				<tr>
+					<th><?php echo esc_html( $f['label'] ); ?></th>
+					<td style="white-space:pre-wrap"><?php echo esc_html( $val ); ?></td>
+				</tr>
+			<?php endforeach; ?>
+		</tbody>
+	</table>
+
+	<?php
+	/*
+	 * پاسخ‌های خام. به شکل «شماره‌ی پرسش : شماره‌ی گزینه» ذخیره شده‌اند
+	 * و اینجا به متنِ خودِ پرسش و گزینه برگردانده می‌شوند.
+	 */
+	$raw = (string) get_post_meta( $post->ID, '_sm_answers', true );
+	?>
+	<?php if ( $raw ) : ?>
+		<?php
+		$picked = array();
+
+		foreach ( explode( '|', $raw ) as $pair ) {
+			$bits = explode( ':', $pair );
+			if ( 2 === count( $bits ) ) {
+				$picked[ (int) $bits[0] ] = (int) $bits[1];
+			}
+		}
+
+		$n = 0;
+		?>
+		<h4 style="margin:1.25rem 0 .5rem">پاسخ‌های پرسشنامه</h4>
+		<table class="widefat striped" dir="rtl" style="text-align:right">
+			<tbody>
+				<?php foreach ( $c['groups'] as $g ) : ?>
+					<?php foreach ( $g['items'] as $item ) : ?>
+						<?php ++$n; ?>
+						<?php if ( ! isset( $picked[ $n ] ) ) { continue; } ?>
+						<?php $i = $picked[ $n ]; ?>
+						<tr>
+							<th style="width:22rem"><?php echo esc_html( $item['q'] ); ?></th>
+							<td><?php echo isset( $item['a'][ $i ] ) ? esc_html( $item['a'][ $i ] ) : '—'; ?></td>
+						</tr>
+					<?php endforeach; ?>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+	<?php endif; ?>
+
+	<p style="margin-top:1rem;color:#666">
+		این اطلاعات از فرم <code>/smp/check/</code> آمده است و فقط برای شما قابل مشاهده است.
 	</p>
 	<?php
 }

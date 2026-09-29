@@ -187,7 +187,7 @@ function sm_biometric_panel() {
 				<path d="M2 46C22 44 34 38 52 30S86 12 106 14s30 16 48 18 42-8 60-20 24-8 24-8"
 				      stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
 			</svg>
-			<span class="sm-biopanel__caption">روند ۱۲ هفته‌ای پروتکل SMP</span>
+			<span class="sm-biopanel__caption">روند ۱۰۰ روزه پروتکل SMP</span>
 		</div>
 	</div>
 	<?php
@@ -241,7 +241,7 @@ function sm_page_content( $key ) {
 	if ( null === $all ) {
 		$all = array();
 
-		foreach ( array( 'content-pages.php', 'content-book.php', 'content-legal.php', 'content-cases.php' ) as $name ) {
+		foreach ( array( 'content-pages.php', 'content-book.php', 'content-legal.php', 'content-cases.php', 'content-namazi.php' ) as $name ) {
 			$file = get_stylesheet_directory() . '/inc/' . $name;
 			if ( file_exists( $file ) ) {
 				$all = array_merge( $all, (array) require $file );
@@ -551,5 +551,156 @@ function sm_cover3d( $cfg ) {
 		</div>
 
 	</div>
+	<?php
+}
+
+
+/**
+ * بلوکِ «دستاوردهای کلیدی» یک پرونده‌ی بالینی.
+ * ---------------------------------------------------------------------------
+ *
+ * سه نوع المان می‌شناسد و بر اساس 'type' یکی را می‌سازد:
+ *
+ *     bar    میله‌ی افقی با محورِ مدرج   — برای تغییرِ عددیِ مطلق
+ *     rise   میله‌ی عمودی با محورِ مدرج  — برای «بالا رفتن» (قد)
+ *     state  کارتِ دووضعیتی              — برای شاخصِ کیفی، بدون عدد
+ *
+ * ⚠️ چرا محورها از صفر شروع می‌شوند و نه از عددِ واقعیِ فرد:
+ *
+ *     از این پرونده فقط «اندازه‌ی تغییر» در دست است (+۵ کیلو، +۳ سانت)
+ *     نه عددِ مطلقِ ورود و خروج. اگر محور را ۰ تا ۱۰۰ می‌کشیدیم، باید
+ *     یک عددِ شروعِ ساختگی می‌گذاشتیم. پس محور همان چیزی را نشان
+ *     می‌دهد که واقعاً اندازه‌گیری شده: خودِ تغییر.
+ *
+ * همه‌چیز SVG و CSS است — نه تصویر، نه کتابخانه‌ی نمودار. صفحه‌ی
+ * پرونده‌ها با این کار حتی یک کیلوبایت هم سنگین‌تر نمی‌شود.
+ *
+ * @param array $viz بلوکِ 'viz' یک پرونده.
+ */
+function sm_case_viz( $viz ) {
+
+	if ( empty( $viz['items'] ) ) {
+		return;
+	}
+	?>
+	<section class="sm-viz" aria-labelledby="sm-viz-<?php echo esc_attr( md5( $viz['title'] ) ); ?>">
+
+		<h3 class="sm-viz__title" id="sm-viz-<?php echo esc_attr( md5( $viz['title'] ) ); ?>">
+			<?php echo esc_html( $viz['title'] ); ?>
+		</h3>
+
+		<div class="sm-viz__grid">
+			<?php foreach ( $viz['items'] as $item ) : ?>
+				<?php
+				$type = isset( $item['type'] ) ? $item['type'] : 'state';
+				$val  = isset( $item['value'] ) ? (float) $item['value'] : 0;
+				$max  = isset( $item['max'] ) && $item['max'] > 0 ? (float) $item['max'] : 1;
+				$pct  = max( 0, min( 100, ( $val / $max ) * 100 ) );
+				?>
+				<figure class="sm-vizcard sm-vizcard--<?php echo esc_attr( $type ); ?>">
+
+					<figcaption class="sm-vizcard__head">
+						<span class="sm-vizcard__label"><?php echo esc_html( $item['label'] ); ?></span>
+						<?php if ( ! empty( $item['en'] ) ) : ?>
+							<span class="sm-vizcard__en" dir="ltr"><?php echo esc_html( $item['en'] ); ?></span>
+						<?php endif; ?>
+					</figcaption>
+
+					<?php if ( 'state' === $type ) : ?>
+
+						<?php /* ---------- کارتِ دووضعیتی ---------- */ ?>
+						<div class="sm-vizstate">
+							<div class="sm-vizstate__node sm-vizstate__node--a">
+								<span class="sm-vizstate__dot" aria-hidden="true"></span>
+								<span class="sm-vizstate__cap">نقطه‌ی ورود</span>
+								<span class="sm-vizstate__txt"><?php echo esc_html( $item['before'] ); ?></span>
+							</div>
+
+							<span class="sm-vizstate__arrow" aria-hidden="true">
+								<svg viewBox="0 0 40 12" width="40" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+									<path d="M38 6H4M10 1 4 6l6 5"/>
+								</svg>
+							</span>
+
+							<div class="sm-vizstate__node sm-vizstate__node--b">
+								<span class="sm-vizstate__dot" aria-hidden="true"></span>
+								<span class="sm-vizstate__cap">پایان پروتکل</span>
+								<span class="sm-vizstate__txt"><?php echo esc_html( $item['after'] ); ?></span>
+							</div>
+						</div>
+
+						<?php if ( ! empty( $item['badge'] ) ) : ?>
+							<p class="sm-vizcard__badge"><?php echo esc_html( $item['badge'] ); ?></p>
+						<?php endif; ?>
+
+					<?php else : ?>
+
+						<?php
+						/*
+						 * عددِ درشت. خودِ عدد، نه میله، چیزی است که خوانده
+						 * می‌شود؛ میله فقط کمک می‌کند اندازه‌اش حس شود.
+						 */
+						?>
+						<p class="sm-vizcard__big">
+							<span class="sm-vizcard__plus" aria-hidden="true">+</span><?php echo esc_html( sm_fa_digits( $val ) ); ?><span class="sm-vizcard__unit"><?php echo esc_html( $item['unit'] ); ?></span>
+						</p>
+
+						<?php if ( 'rise' === $type ) : ?>
+
+							<?php /* ---------- رنج‌بارِ عمودی ---------- */ ?>
+							<div class="sm-vizrise" role="img"
+							     aria-label="<?php echo esc_attr( sprintf( '%s: %s %s افزایش نسبت به خط مبنا', $item['label'], sm_fa_digits( $val ), $item['unit'] ) ); ?>">
+								<ul class="sm-vizrise__axis" aria-hidden="true">
+									<?php foreach ( array_reverse( (array) $item['ticks'] ) as $t ) : ?>
+										<li><?php echo esc_html( sm_fa_digits( $t ) ); ?></li>
+									<?php endforeach; ?>
+								</ul>
+								<div class="sm-vizrise__track">
+									<div class="sm-vizrise__fill" style="--sm-viz-pct: <?php echo esc_attr( round( $pct, 2 ) ); ?>%;">
+										<span class="sm-vizrise__tip" dir="ltr">+<?php echo esc_html( sm_fa_digits( $val ) ); ?> <?php echo esc_html( $item['unit_en'] ?? '' ); ?></span>
+									</div>
+									<span class="sm-vizrise__base">خط مبنا</span>
+								</div>
+							</div>
+
+						<?php else : ?>
+
+							<?php /* ---------- میله‌ی افقی ---------- */ ?>
+							<div class="sm-vizbar" role="img"
+							     aria-label="<?php echo esc_attr( sprintf( '%s: %s %s افزایش نسبت به خط مبنا', $item['label'], sm_fa_digits( $val ), $item['unit'] ) ); ?>">
+								<div class="sm-vizbar__track">
+									<div class="sm-vizbar__fill" style="--sm-viz-pct: <?php echo esc_attr( round( $pct, 2 ) ); ?>%;">
+										<span class="sm-vizbar__tip" dir="ltr">+<?php echo esc_html( sm_fa_digits( $val ) ); ?> <?php echo esc_html( $item['unit_en'] ?? '' ); ?></span>
+									</div>
+								</div>
+								<ul class="sm-vizbar__axis" aria-hidden="true">
+									<?php foreach ( (array) $item['ticks'] as $t ) : ?>
+										<li><?php echo esc_html( sm_fa_digits( $t ) ); ?></li>
+									<?php endforeach; ?>
+								</ul>
+							</div>
+
+						<?php endif; ?>
+
+						<dl class="sm-vizcard__pair">
+							<div><dt>پیش از پروتکل</dt><dd><?php echo esc_html( $item['before'] ); ?></dd></div>
+							<div><dt>پس از مداخله</dt><dd><?php echo esc_html( $item['after'] ); ?></dd></div>
+						</dl>
+
+					<?php endif; ?>
+
+					<?php if ( ! empty( $item['note'] ) ) : ?>
+						<p class="sm-vizcard__note"><?php echo esc_html( $item['note'] ); ?></p>
+					<?php endif; ?>
+
+				</figure>
+			<?php endforeach; ?>
+		</div>
+
+		<?php if ( ! empty( $viz['note'] ) ) : ?>
+			<p class="sm-viz__note"><?php echo esc_html( $viz['note'] ); ?></p>
+		<?php endif; ?>
+
+	</section>
 	<?php
 }
