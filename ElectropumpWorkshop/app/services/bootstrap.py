@@ -296,10 +296,82 @@ def _localise_timestamps(fresh_database: bool) -> dict:
     return {"converted": True, "offset_seconds": seconds, "columns": shifted}
 
 
+def _inspect_copy(path, wal_mode=False):
+    """The tables of a (throw-away copy of a) database, or None if it does not
+    read cleanly — opened the way the app opens it (WAL mode) when asked."""
+    try:
+        con = sqlite3.connect(str(path))
+        try:
+            if wal_mode:
+                con.execute("PRAGMA journal_mode=WAL")
+            if con.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                return None
+            return {r[0] for r in con.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+        finally:
+            con.close()
+    except sqlite3.DatabaseError:
+        return None
+
+
+def set_aside_foreign_wal(path) -> list:
+    """Move a leftover «-wal»/«-shm» pair that belongs to another database.
+
+    Replacing ``wells.db`` while the old ``wells.db-wal`` and ``wells.db-shm``
+    stay beside it makes SQLite replay the old database's pending pages onto
+    the new file — «database disk image is malformed». When the database is
+    broken *with* its WAL but healthy *without* it, the WAL is not its own:
+    the pair is renamed (never deleted) and the database opens as it is.
+    Returns the names the files were moved to.
+    """
+    import shutil
+    import tempfile
+    from pathlib import Path
+    path = Path(path)
+    wal = path.with_name(path.name + "-wal")
+    shm = path.with_name(path.name + "-shm")
+    if not path.exists() or not wal.exists() or wal.stat().st_size == 0:
+        return []
+    # Judged on copies only: opening the real file with a foreign WAL would
+    # replay it into the database, which is the damage this is here to avoid.
+    with tempfile.TemporaryDirectory() as tmp:
+        alone = Path(tmp) / "alone" / path.name
+        alone.parent.mkdir()
+        shutil.copy2(path, alone)
+        own_tables = _inspect_copy(alone)
+        if own_tables is None:
+            return []                  # the database itself is damaged: leave it
+        together = Path(tmp) / "with" / path.name
+        together.parent.mkdir()
+        for src in (path, wal, shm):
+            if src.exists():
+                shutil.copy2(src, together.parent / src.name)
+        replayed = _inspect_copy(together, wal_mode=True)
+        # A WAL of its own reads cleanly and never loses a table the file has
+        # (this app only ever adds tables); another database's WAL does either.
+        if replayed is not None and own_tables <= replayed:
+            return []
+    stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    moved = []
+    for extra in (wal, shm):
+        if extra.exists():
+            target = extra.with_name(f"{extra.name}.stale-{stamp}")
+            extra.rename(target)
+            moved.append(target.name)
+    log.warning("Leftover WAL files that did not belong to %s were set aside: %s",
+                path.name, ", ".join(moved))
+    return moved
+
+
 def ensure_database(app) -> dict:
     path = database_file()
+    # the file actually being opened (reading the URL does not connect)
+    url = db.engine.url
+    stale = set_aside_foreign_wal(url.database if url.get_backend_name() == "sqlite"
+                                  and url.database and url.database != ":memory:" else path)
     existed = path.exists() and path.stat().st_size > 0
-    status = {"path": str(path), "existed": existed, "created": False, "seeded": False}
+    status = {"path": str(path), "existed": existed, "created": False, "seeded": False,
+              "stale_wal_moved": stale}
 
     insp = inspect(db.engine)
     tables = set(insp.get_table_names())

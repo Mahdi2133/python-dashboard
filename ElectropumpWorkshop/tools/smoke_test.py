@@ -2637,6 +2637,43 @@ def main():
     rr = c.post(A + f"/reports/{rid}/export/pdf", json={})
     check("با reportlab، PDF ساخته می‌شود", rr.status_code == 200 and rr.data[:4] == b"%PDF")
 
+    print("\n— فایل‌های WAL جامانده از پایگاه داده‌ی قبلی —")
+    import shutil as _sh
+    import sqlite3 as _sq
+    import tempfile as _tf
+    from app.services.bootstrap import set_aside_foreign_wal
+    _d = _tf.mkdtemp()
+    _a = _sq.connect(_d + "/old.db")
+    _a.execute("PRAGMA journal_mode=WAL")
+    _a.execute("PRAGMA wal_autocheckpoint=0")
+    _a.execute("CREATE TABLE t(x)")
+    _a.executemany("INSERT INTO t VALUES (?)", [(str(i) * 20,) for i in range(3000)])
+    _a.commit()
+    _new = _sq.connect(_d + "/wells.db")
+    _new.execute("CREATE TABLE q(y)")
+    _new.executemany("INSERT INTO q VALUES (?)", [(i,) for i in range(50)])
+    _new.commit()
+    _new.close()
+    _sh.copy(_d + "/old.db-wal", _d + "/wells.db-wal")     # the old pair left behind
+    _sh.copy(_d + "/old.db-shm", _d + "/wells.db-shm")
+    _a.close()
+    moved = set_aside_foreign_wal(_d + "/wells.db")
+    _ok = _sq.connect(_d + "/wells.db")
+    check("WAL جامانده‌ی پایگاه داده‌ی دیگر کنار گذاشته می‌شود (حذف نمی‌شود)",
+          len(moved) == 2 and all(".stale-" in m for m in moved)
+          and _ok.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+          and _ok.execute("SELECT count(*) FROM q").fetchone()[0] == 50, str(moved))
+    _ok.close()
+    _own = _sq.connect(_d + "/own.db")
+    _own.execute("PRAGMA journal_mode=WAL")
+    _own.execute("PRAGMA wal_autocheckpoint=0")
+    _own.execute("CREATE TABLE z(x)")
+    _own.execute("INSERT INTO z VALUES (1)")
+    _own.commit()
+    check("WAL خودِ پایگاه داده دست نمی‌خورد", set_aside_foreign_wal(_d + "/own.db") == [])
+    _own.close()
+    _sh.rmtree(_d, ignore_errors=True)
+
     print("\n— مرتب‌سازی رکوردها و به‌روز بودن گزارش‌ها —")
     for key in ("center_id", "well", "well_pm_code", "op_date", "pump_curr_id", "total_head"):
         for d in ("asc", "desc"):

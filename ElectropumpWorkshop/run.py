@@ -92,6 +92,12 @@ def main() -> int:
     except Exception as exc:                       # startup must explain itself
         print("\n[X] برنامه اجرا نشد.")
         print(f"    {exc}")
+        if "malformed" in str(exc) or "not a database" in str(exc):
+            db = database_file(cfg)
+            print(f"\n    فایل پایگاه داده آسیب دیده است: {db}")
+            print("    اگر wells.db را جایگزین کرده‌اید، برنامه را ببندید، فایل‌های")
+            print(f"    «{db.name}-wal» و «{db.name}-shm» را از همان پوشه پاک کنید و")
+            print("    wells.db سالم (یا آخرین نسخه‌ی پوشه‌ی backups) را دوباره کپی کنید.")
         print(f"    جزئیات کامل در: {logs_dir() / 'app.log'}")
         input("\nبرای بستن این پنجره Enter را بزنید...")
         return 1
