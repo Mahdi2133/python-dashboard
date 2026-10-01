@@ -9,7 +9,8 @@
     jalali_date: 'تاریخ شمسی', select: 'لیست کشویی', radio: 'تک‌انتخابی',
     checkbox: 'چندانتخابی', multiselect: 'چندانتخابی (لیست)',
     autocomplete: 'جستجوی خودکار', checklist: 'چک‌لیست',
-    file: 'مستند (بارگذاری فایل)', formula: 'محاسباتی (فرمول)', mirror: 'فیلد مشترک'
+    file: 'مستند (بارگذاری فایل)', formula: 'محاسباتی (فرمول)', mirror: 'فیلد مشترک',
+    numbers: 'چند مقدار عددی (مثلاً فاز ۱/۲/۳)', chart: 'نمودار'
   };
 
   /* Show the settings panel of the chosen special type only. */
@@ -67,8 +68,16 @@
           || field.field_type) + '</span>'
       + (field.field_type === 'mirror' ? '<span class="badge">🔗 ' + A.esc(field.mirror_of || '?') + '</span>' : '')
       + (field.field_type === 'formula' ? '<span class="badge mono" dir="ltr">= ' + A.esc((field.formula || '').slice(0, 40)) + '</span>' : '')
-      + ((field.approval_options || []).length && field.approval_user_id
-          ? '<span class="badge warn" title="' + A.esc(field.approval_options.join('، ')) + '">✅ تأیید گزینه</span>' : '')
+      + ((field.approval_rules || []).length
+          ? '<span class="badge warn" title="' + A.esc(field.approval_rules.map(function (r) {
+              return r.options.join('، ') + ' ← ' + userNames(r.approvers);
+            }).join(' | ')) + '">✅ ارجاع تأیید' + (field.approval_rules.length > 1
+              ? ' (' + J.toFaDigits(field.approval_rules.length) + ')' : '') + '</span>' : '')
+      + ((field.block_options || []).length
+          ? '<span class="badge danger" title="' + A.esc(field.block_options.join('، ')) + '">⛔ مانع ارسال</span>' : '')
+      + (field.field_type === 'numbers' && field.part_labels
+          ? '<span class="badge">' + A.esc(field.part_labels.join(' / ')) + '</span>' : '')
+      + (field.field_type === 'formula' && field.result_type === 'text' ? '<span class="badge">نتیجه‌ی متنی</span>' : '')
       + ((field.fill_stage_ids || []).length ? '<span class="badge">🖊 ' + stageNames(field.fill_stage_ids) + '</span>' : '')
       + '<span class="badge muted mono">' + A.esc(field.field_name) + '</span>'
       + (field.is_builtin ? '<span class="badge">پایه</span>'
@@ -83,6 +92,13 @@
       + '" title="انتقال یا کپی به بخش دیگر">📦 انتقال / کپی</button>'
       + '<button class="btn-sm btn-edit" data-edit-field="' + field.id + '">ویرایش</button>'
       + '</div>';
+  }
+
+  function userNames(ids) {
+    return (ids || []).map(function (id) {
+      var u = (schema.users || []).find(function (x) { return x.id === id; });
+      return u ? u.name : '#' + id;
+    }).join('، ');
   }
 
   function stageNames(ids) {
@@ -102,6 +118,10 @@
   function renderOptions() {
     drawOptions();
     renderApprovalOptions();
+  }
+  function syncApprovalBox() {
+    var t = A.qs('#fb-type').value;
+    A.qs('#fb-approval-box').classList.toggle('hidden', t === 'numbers');
   }
 
   function drawOptions() {
@@ -147,13 +167,22 @@
     A.qs('#fb-options-bulk').value = '';
 
     var choiceTypes = ['select', 'radio', 'checkbox', 'multiselect',
-                       'autocomplete', 'checklist'];
+                       'autocomplete', 'checklist', 'numbers'];
+    syncApprovalBox();
     if (!field) {
       /* New field: options are typed in before the field exists. */
-      wrap.classList.toggle('hidden', !choiceTypes.includes(A.qs('#fb-type').value));
+      var t = A.qs('#fb-type').value;
+      wrap.classList.toggle('hidden', !choiceTypes.includes(t));
       optionState.source = 'own';
-      note.innerHTML = '<div class="alert info small">این گزینه‌ها مخصوص همین فیلد '
-        + 'خواهند بود.</div>';
+      if (t === 'numbers') {
+        /* «چند مقدار عددی»: the options name the parts */
+        optionState.rows = ['فاز ۱', 'فاز ۲', 'فاز ۳'].map(function (v) {
+          return { value: v, label: v, icon: '', is_active: true };
+        });
+      }
+      note.innerHTML = '<div class="alert info small">' + (t === 'numbers'
+        ? 'هر گزینه نام یک خانه‌ی عددی است (مثلاً فاز ۱، فاز ۲، فاز ۳)؛ کاربر برای هر کدام یک عدد وارد می‌کند.'
+        : 'این گزینه‌ها مخصوص همین فیلد خواهند بود.') + '</div>';
       renderOptions();
       return;
     }
@@ -184,6 +213,9 @@
               : '.')
           + ' گزینه‌ای که از فهرست بردارید <b>حذف نمی‌شود</b>، فقط غیرفعال می‌گردد تا '
           + 'رکوردهای قبلی سالم بمانند.</div>';
+      } else if (field.field_type === 'numbers') {
+        note.innerHTML = '<div class="alert info small">هر گزینه نام یک خانه‌ی عددی است (مثلاً فاز ۱، فاز ۲، فاز ۳). '
+          + 'بدون گزینه، سه خانه‌ی فاز ۱ تا ۳ نشان داده می‌شود.</div>';
       } else {
         note.innerHTML = '<div class="alert info small">این گزینه‌ها مخصوص همین فیلد است.'
           + ' گزینه‌ی برداشته‌شده غیرفعال می‌شود، نه حذف.</div>';
@@ -308,6 +340,8 @@
     A.qs('#fb-formula').value = field && field.formula ? field.formula : '';
     A.qs('#fb-formula-status').textContent = '';
     A.qs('#fb-mirror').value = field && field.mirror_of ? field.mirror_of : '';
+    A.qs('#fb-result-type').value = field && field.result_type === 'text' ? 'text' : 'number';
+    fillChart(field);
     fillApproval(field);
     fillStages(field);
     toggleSpecial();
@@ -347,50 +381,206 @@
       file_multiple: A.qs('#fb-multiple').value === '1',
       formula: A.qs('#fb-formula').value.trim(),
       mirror_of: A.qs('#fb-mirror').value,
-      approval_options: approvers().length ? approvalPicked.slice() : [],
-      approval_user_ids: approvalPicked.length ? approvers() : [],
-      approval_answer_field: approvalPicked.length ? A.qs('#fb-approval-answer').value : '',
+      approval_rules: collectRules(),
+      block_options: blockPicked.slice(),
+      result_type: A.qs('#fb-result-type').value,
+      chart_config: A.qs('#fb-type').value === 'chart' ? collectChart() : undefined,
       fill_stage_ids: A.qsa('#fb-fill-stages select').map(function (s) { return s.value; })
         .filter(Boolean).map(Number),
       options: collectOptions()
     };
   }
 
-  /* «تأیید گزینه»: tick the answers that need approval, name the approver. */
-  var approvalPicked = [];
+  /* «تأیید گزینه»: several rules, each its own answers → its own approvers
+     (and, optionally, the question the approver answers). The same rules are
+     shown and edited in «فرایندساز» under «ارجاعات برای تأیید». */
+  var rulesState = [], blockPicked = [], editingAnswerOpts = '';
   function fillApproval(field) {
-    approvalPicked = (field && field.approval_options || []).slice();
-    var mine = (field && field.approval_user_ids) || [];
-    A.qs('#fb-approval-user').innerHTML = (schema.users || []).map(function (u) {
-      return '<option value="' + u.id + '"' + (mine.indexOf(u.id) !== -1 ? ' selected' : '') + '>'
-        + A.esc(u.name) + '</option>';
-    }).join('');
-    /* the question the approver answers: any other choice field */
-    var answer = field && field.approval_answer_field;
-    var opts = '';
+    rulesState = ((field && field.approval_rules) || []).map(function (r) {
+      return { options: (r.options || []).map(String), approvers: (r.approvers || []).slice(),
+               answer_field: r.answer_field || '' };
+    });
+    blockPicked = ((field && field.block_options) || []).map(String);
+    editingAnswerOpts = '';
     (schema.sections || []).forEach(function (sec) {
       (sec.fields || []).forEach(function (f) {
         if (!f.is_choice || (field && f.field_name === field.field_name)) return;
-        opts += '<option value="' + A.esc(f.field_name) + '"' + (f.field_name === answer ? ' selected' : '') + '>'
-          + A.esc(f.label) + ' — ' + A.esc(sec.title) + '</option>';
+        editingAnswerOpts += '<option value="' + A.esc(f.field_name) + '">' + A.esc(f.label)
+          + ' — ' + A.esc(sec.title) + '</option>';
       });
     });
-    A.qs('#fb-approval-answer').innerHTML = '<option value="">— فقط تأیید / عدم تأیید —</option>' + opts;
     renderApprovalOptions();
   }
-  function approvers() {
-    return Array.prototype.slice.call(A.qs('#fb-approval-user').selectedOptions)
-      .map(function (o) { return Number(o.value); });
-  }
+  function optionRows() { return optionState.rows.filter(function (o) { return o.value; }); }
   function renderApprovalOptions() {
-    var box = A.qs('#fb-approval-options');
+    var box = A.qs('#fb-approval-rules');
     if (!box) return;
-    var rows = optionState.rows.filter(function (o) { return o.value; });
-    box.innerHTML = rows.length ? rows.map(function (o) {
-      var on = approvalPicked.indexOf(String(o.value)) !== -1;
-      return '<label class="mini-check' + (on ? ' on' : '') + '"><input type="checkbox" class="fb-approval-opt" value="'
+    var rows = optionRows();
+    if (!rows.length) {
+      box.innerHTML = '<span class="muted small">اول گزینه‌های فیلد را تعریف کنید.</span>';
+      A.qs('#fb-block-options').innerHTML = '';
+      return;
+    }
+    box.innerHTML = rulesState.length ? rulesState.map(function (r, i) {
+      return '<div class="fb-rule" data-rule="' + i + '">'
+        + '<div class="fb-rule-head"><b>قانون ' + J.toFaDigits(i + 1) + '</b>'
+        + '<button type="button" class="btn-sm btn-del fb-rule-del" title="حذف قانون">✕</button></div>'
+        + '<div class="fb-approval-options">' + rows.map(function (o) {
+            var on = r.options.indexOf(String(o.value)) !== -1;
+            return '<label class="mini-check' + (on ? ' on' : '') + '"><input type="checkbox" class="fb-rule-opt" value="'
+              + A.esc(o.value) + '"' + (on ? ' checked' : '') + '> ' + A.esc(o.label || o.value) + '</label>';
+          }).join('') + '</div>'
+        + '<div class="fb-inline"><label>تأییدکننده‌ها</label><select class="fb-rule-users" multiple size="4">'
+        + (schema.users || []).map(function (u) {
+            return '<option value="' + u.id + '"' + (r.approvers.indexOf(u.id) !== -1 ? ' selected' : '') + '>'
+              + A.esc(u.name) + '</option>';
+          }).join('') + '</select></div>'
+        + '<div class="fb-inline"><label>پاسخ تأییدکننده</label><select class="fb-rule-answer">'
+        + '<option value="">— فقط تأیید / عدم تأیید —</option>'
+        + editingAnswerOpts.replace('value="' + A.esc(r.answer_field) + '"',
+                                    'value="' + A.esc(r.answer_field) + '" selected')
+        + '</select></div></div>';
+    }).join('') : '<span class="muted small">قانون تأییدی تعریف نشده؛ پاسخ‌های این فیلد تأیید نمی‌خواهند.</span>';
+    A.qs('#fb-block-options').innerHTML = rows.map(function (o) {
+      var on = blockPicked.indexOf(String(o.value)) !== -1;
+      return '<label class="mini-check' + (on ? ' on' : '') + '"><input type="checkbox" class="fb-block-opt" value="'
         + A.esc(o.value) + '"' + (on ? ' checked' : '') + '> ' + A.esc(o.label || o.value) + '</label>';
-    }).join('') : '<span class="muted small">اول گزینه‌های فیلد را تعریف کنید.</span>';
+    }).join('');
+  }
+  function collectRules() {
+    return rulesState.filter(function (r) { return r.options.length || r.approvers.length; });
+  }
+  function bindApproval() {
+    var box = A.qs('#fb-approval-rules');
+    box.addEventListener('change', function (ev) {
+      var row = ev.target.closest('[data-rule]');
+      if (!row) return;
+      var r = rulesState[+row.dataset.rule];
+      if (ev.target.classList.contains('fb-rule-opt')) {
+        var v = String(ev.target.value);
+        r.options = r.options.filter(function (x) { return x !== v; });
+        if (ev.target.checked) r.options.push(v);
+        ev.target.closest('label').classList.toggle('on', ev.target.checked);
+      } else if (ev.target.classList.contains('fb-rule-users')) {
+        r.approvers = Array.prototype.slice.call(ev.target.selectedOptions).map(function (o) { return Number(o.value); });
+      } else if (ev.target.classList.contains('fb-rule-answer')) {
+        r.answer_field = ev.target.value;
+      }
+    });
+    box.addEventListener('click', function (ev) {
+      var del = ev.target.closest('.fb-rule-del');
+      if (!del) return;
+      rulesState.splice(+del.closest('[data-rule]').dataset.rule, 1);
+      renderApprovalOptions();
+    });
+    A.qs('#fb-rule-add').addEventListener('click', function () {
+      rulesState.push({ options: [], approvers: [], answer_field: '' });
+      renderApprovalOptions();
+    });
+    A.qs('#fb-block-options').addEventListener('change', function (ev) {
+      if (!ev.target.classList.contains('fb-block-opt')) return;
+      var v = String(ev.target.value);
+      blockPicked = blockPicked.filter(function (x) { return x !== v; });
+      if (ev.target.checked) blockPicked.push(v);
+      ev.target.closest('label').classList.toggle('on', ev.target.checked);
+    });
+  }
+
+  /* «نمودار»: series of X/Y fields of the form, each with its axis and trend. */
+  var chartState = [];
+  var TRENDS = { '': 'بدون خط روند', poly2_0: 'درجه ۲ از مبدأ (aQ² + bQ)', poly2: 'درجه ۲',
+                 power: 'توانی', linear: 'خطی' };
+  function numericFieldOptions() {
+    var html = '';
+    (schema.sections || []).forEach(function (sec) {
+      var g = '';
+      (sec.fields || []).forEach(function (f) {
+        if (['number', 'formula', 'mirror'].indexOf(f.field_type) === -1) return;
+        g += '<option value="' + A.esc(f.field_name) + '">' + A.esc(f.label) + ' (' + A.esc(f.field_name) + ')</option>';
+      });
+      if (g) html += '<optgroup label="' + A.esc(sec.title) + '">' + g + '</optgroup>';
+    });
+    return html;
+  }
+  function fillChart(field) {
+    var cfg = (field && field.chart_config) || {};
+    chartState = (cfg.series || []).map(function (sr) {
+      return { label: sr.label || '', x: (sr.x || []).slice(), y: (sr.y || []).slice(),
+               axis: sr.axis || 'left', trend: sr.trend || '' };
+    });
+    if (!chartState.length) chartState.push({ label: '', x: [], y: [], axis: 'left', trend: '' });
+    A.qs('#fb-chart-xl').value = cfg.x_label || '';
+    A.qs('#fb-chart-yl').value = cfg.y_label || '';
+    A.qs('#fb-chart-y2l').value = cfg.y2_label || '';
+    A.qs('#fb-chart-ymax').value = cfg.y_max == null ? '' : cfg.y_max;
+    A.qs('#fb-chart-y2max').value = cfg.y2_max == null ? '' : cfg.y2_max;
+    drawChartSeries();
+  }
+  function multiSelect(cls, chosen, opts) {
+    var html = opts;
+    /* keep the chosen order: the i-th X goes with the i-th Y */
+    chosen.forEach(function (n) {
+      html = html.replace('value="' + A.esc(n) + '"', 'value="' + A.esc(n) + '" selected');
+    });
+    return '<select class="' + cls + '" multiple size="6">' + html + '</select>';
+  }
+  function drawChartSeries() {
+    var opts = numericFieldOptions();
+    A.qs('#fb-chart-series').innerHTML = chartState.map(function (sr, i) {
+      return '<div class="fb-rule" data-series="' + i + '">'
+        + '<div class="fb-rule-head"><input type="text" class="fb-cs-label" placeholder="نام سری (مثلاً افت)" value="'
+        + A.esc(sr.label) + '">'
+        + '<select class="fb-cs-axis"><option value="left">محور چپ</option><option value="right"'
+        + (sr.axis === 'right' ? ' selected' : '') + '>محور راست</option></select>'
+        + '<select class="fb-cs-trend">' + Object.keys(TRENDS).map(function (k) {
+            return '<option value="' + k + '"' + (sr.trend === k ? ' selected' : '') + '>' + TRENDS[k] + '</option>';
+          }).join('') + '</select>'
+        + '<button type="button" class="btn-sm btn-del fb-cs-del" title="حذف سری">✕</button></div>'
+        + '<div class="field-group cols-2"><div class="field"><label>X (محور افقی) — به ترتیب ردیف‌ها</label>'
+        + multiSelect('fb-cs-x', sr.x, opts) + '<span class="hint fb-cs-xl">' + A.esc(sr.x.join('، ')) + '</span></div>'
+        + '<div class="field"><label>Y (محور عمودی) — به همان ترتیب</label>'
+        + multiSelect('fb-cs-y', sr.y, opts) + '<span class="hint fb-cs-yl">' + A.esc(sr.y.join('، ')) + '</span></div></div>'
+        + '</div>';
+    }).join('');
+  }
+  function collectChart() {
+    function num(id) { var v = A.qs(id).value; return v === '' ? null : Number(v); }
+    return {
+      series: chartState, x_label: A.qs('#fb-chart-xl').value.trim(), y_label: A.qs('#fb-chart-yl').value.trim(),
+      y2_label: A.qs('#fb-chart-y2l').value.trim(), y_max: num('#fb-chart-ymax'), y2_max: num('#fb-chart-y2max')
+    };
+  }
+  function bindChart() {
+    var box = A.qs('#fb-chart-series');
+    box.addEventListener('change', function (ev) {
+      var row = ev.target.closest('[data-series]');
+      if (!row) return;
+      var sr = chartState[+row.dataset.series];
+      if (ev.target.classList.contains('fb-cs-axis')) sr.axis = ev.target.value;
+      if (ev.target.classList.contains('fb-cs-trend')) sr.trend = ev.target.value;
+      ['x', 'y'].forEach(function (k) {
+        if (!ev.target.classList.contains('fb-cs-' + k)) return;
+        var now = Array.prototype.slice.call(ev.target.selectedOptions).map(function (o) { return o.value; });
+        /* kept in the order they were picked */
+        sr[k] = sr[k].filter(function (n) { return now.indexOf(n) !== -1; })
+          .concat(now.filter(function (n) { return sr[k].indexOf(n) === -1; }));
+        row.querySelector('.fb-cs-' + k + 'l').textContent = sr[k].join('، ');
+      });
+    });
+    box.addEventListener('input', function (ev) {
+      if (!ev.target.classList.contains('fb-cs-label')) return;
+      chartState[+ev.target.closest('[data-series]').dataset.series].label = ev.target.value;
+    });
+    box.addEventListener('click', function (ev) {
+      var del = ev.target.closest('.fb-cs-del');
+      if (!del) return;
+      chartState.splice(+del.closest('[data-series]').dataset.series, 1);
+      drawChartSeries();
+    });
+    A.qs('#fb-chart-add').addEventListener('click', function () {
+      chartState.push({ label: '', x: [], y: [], axis: 'left', trend: '' });
+      drawChartSeries();
+    });
   }
 
   /* «مرحله‌ی پرکردن»: one choice per process. */
@@ -662,13 +852,8 @@
       if (!editingField) loadOptions(null);
       toggleSpecial();
     });
-    A.qs('#fb-approval-options').addEventListener('change', function (ev) {
-      if (!ev.target.classList.contains('fb-approval-opt')) return;
-      var v = String(ev.target.value);
-      approvalPicked = approvalPicked.filter(function (x) { return x !== v; });
-      if (ev.target.checked) approvalPicked.push(v);
-      ev.target.closest('label').classList.toggle('on', ev.target.checked);
-    });
+    bindApproval();
+    bindChart();
     /* an option typed or renamed in the list shows up among the approvable ones */
     A.qs('#fb-options-list').addEventListener('change', renderApprovalOptions);
     A.qs('#fb-formula-field').addEventListener('change', function () {

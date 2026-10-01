@@ -84,6 +84,12 @@
     function renderInput(field) {
       var id = 'fld-' + A.esc(field.field_name);
       var attrs = ' id="' + id + '" name="' + A.esc(field.field_name) + '"';
+      /* «مقدار پیش‌فرض» written as a formula: filled with its result while the
+         user has not typed a value of their own */
+      if (String(field.default_value || '').charAt(0) === '=') {
+        attrs += ' data-autofill="' + A.esc(field.field_name) + '"';
+        if (!field.placeholder) attrs += ' placeholder="خودکار از محاسبه — قابل ویرایش"';
+      }
       if (field.placeholder) attrs += ' placeholder="' + A.esc(field.placeholder) + '"';
       if (field.max_length) attrs += ' maxlength="' + field.max_length + '"';
       switch (field.field_type) {
@@ -171,6 +177,26 @@
       var n = Number(t);
       return isNaN(n) ? null : n;
     }
+    function qfit(vals, wantA) {
+      if (vals.length % 2) return null;
+      var n = vals.length / 2, x2 = 0, x3 = 0, x4 = 0, yx = 0, yx2 = 0, k = 0;
+      for (var q = 0; q < n; q++) {
+        var x = vals[q], y = vals[n + q];
+        if (x === null || x === 0 || y === null) continue;
+        k++; x2 += x * x; x3 += x * x * x; x4 += x * x * x * x; yx += y * x; yx2 += y * x * x;
+      }
+      var det = x4 * x2 - x3 * x3;
+      if (k < 2 || Math.abs(det) < 1e-12) return null;
+      return wantA ? (yx2 * x2 - yx * x3) / det : (x4 * yx - x3 * yx2) / det;
+    }
+    function roundTo(v, d, mode) {
+      var f = Math.pow(10, d || 0), a = Math.abs(v) * f;
+      var r = mode === 'up' ? Math.ceil(a - 1e-9) : mode === 'down' ? Math.floor(a + 1e-9)
+        : Math.round(a);
+      r = r / f;
+      return v < 0 ? -r : r;
+    }
+    function truthy(v) { return !(v === null || v === undefined || v === '' || v === 0 || v === false); }
     function evalFormula(text, lookup) {
       var toks = [], i = 0, src = String(text || '');
       while (i < src.length) {
@@ -181,76 +207,126 @@
           if (j < 0) throw 'bad';
           toks.push({ t: 'ref', v: src.slice(i + 1, j).trim() }); i = j + 1; continue;
         }
+        if (c === '"' || c === "'" || c === '«') {
+          var endq = src.indexOf(c === '«' ? '»' : c, i + 1);
+          if (endq < 0) throw 'bad';
+          toks.push({ t: 'str', v: src.slice(i + 1, endq) }); i = endq + 1; continue;
+        }
         var m = /^[0-9۰-۹]+([.٫][0-9۰-۹]+)?/.exec(src.slice(i));
         if (m) { toks.push({ t: 'num', v: toNum(m[0]) }); i += m[0].length; continue; }
-        m = /^[A-Za-z_]+/.exec(src.slice(i));
+        m = /^[A-Za-z_][A-Za-z_0-9]*/.exec(src.slice(i));
         if (m) { toks.push({ t: 'fn', v: m[0].toUpperCase() }); i += m[0].length; continue; }
-        m = /^(>=|<=|!=|<>|==|[-+*\/^()<>=,×÷])/.exec(src.slice(i));
+        m = /^(>=|<=|!=|<>|==|[-+*\/^%&()<>=,×÷])/.exec(src.slice(i));
         if (m) { toks.push({ t: 'op', v: m[0] === '×' ? '*' : m[0] === '÷' ? '/' : m[0] }); i += m[0].length; continue; }
         throw 'bad';
       }
       var p = 0;
       function peek(v) { return toks[p] && toks[p].t === 'op' && toks[p].v === v; }
-      function cmp() {
-        var a = add();
-        while (toks[p] && toks[p].t === 'op' && ['>', '<', '>=', '<=', '=', '==', '!=', '<>'].indexOf(toks[p].v) >= 0) {
-          var op = toks[p++].v, b = add();
-          if (a === null || b === null) { a = null; continue; }
-          a = { '>': a > b, '<': a < b, '>=': a >= b, '<=': a <= b, '=': a === b, '==': a === b, '!=': a !== b, '<>': a !== b }[op] ? 1 : 0;
+      function cmpVals(op, a, b) {
+        if (a === null || b === null) {
+          if (op === '=' || op === '==') return a === b ? 1 : 0;
+          if (op === '!=' || op === '<>') return a === b ? 0 : 1;
+          return null;
         }
+        var na = toNum(a), nb = toNum(b);
+        if (na !== null && nb !== null) { a = na; b = nb; } else { a = String(a); b = String(b); }
+        return { '>': a > b, '<': a < b, '>=': a >= b, '<=': a <= b, '=': a === b, '==': a === b,
+                 '!=': a !== b, '<>': a !== b }[op] ? 1 : 0;
+      }
+      function cmp() {
+        var a = cat();
+        while (toks[p] && toks[p].t === 'op' && ['>', '<', '>=', '<=', '=', '==', '!=', '<>'].indexOf(toks[p].v) >= 0) {
+          var op = toks[p++].v, b = cat();
+          a = cmpVals(op, a, b);
+        }
+        return a;
+      }
+      function cat() {
+        var a = add();
+        while (peek('&')) { p++; var b = add(); a = (a === null ? '' : String(a)) + (b === null ? '' : String(b)); }
         return a;
       }
       function add() {
         var a = mul();
         while (peek('+') || peek('-')) {
-          var op = toks[p++].v, b = mul();
+          var op = toks[p++].v, b = toNum(mul()); a = toNum(a);
           a = (a === null || b === null) ? null : (op === '+' ? a + b : a - b);
         }
         return a;
       }
       function mul() {
         var a = pow();
-        while (peek('*') || peek('/')) {
-          var op = toks[p++].v, b = pow();
+        while (peek('*') || peek('/') || peek('%')) {
+          var op = toks[p++].v, b = toNum(pow()); a = toNum(a);
           if (a === null || b === null) a = null;
           else if (op === '/') a = b === 0 ? null : a / b;
+          else if (op === '%') a = b === 0 ? null : a % b;
           else a = a * b;
         }
         return a;
       }
       function pow() {
         var a = unary();
-        if (peek('^')) { p++; var b = pow(); a = (a === null || b === null) ? null : Math.pow(a, b); }
+        if (peek('^')) {
+          p++; var b = toNum(pow()); a = toNum(a);
+          a = (a === null || b === null) ? null : Math.pow(a, b);
+          if (a !== null && !isFinite(a)) a = null;
+        }
         return a;
       }
       function unary() {
-        if (peek('-')) { p++; var v = unary(); return v === null ? null : -v; }
+        if (peek('-')) { p++; var v = toNum(unary()); return v === null ? null : -v; }
         if (peek('+')) { p++; return unary(); }
         return atom();
       }
       function atom() {
         var tk = toks[p++];
         if (!tk) throw 'bad';
-        if (tk.t === 'num') return tk.v;
-        if (tk.t === 'ref') return toNum(lookup(refName(tk.v)));
+        if (tk.t === 'num' || tk.t === 'str') return tk.v;
+        if (tk.t === 'ref') {
+          var raw = lookup(refName(tk.v));
+          if (raw === undefined || raw === '') return null;
+          var asNum = toNum(raw);
+          return asNum === null ? raw : asNum;
+        }
         if (tk.t === 'op' && tk.v === '(') { var v = cmp(); if (!peek(')')) throw 'bad'; p++; return v; }
         if (tk.t === 'fn') {
+          if (tk.v === 'TRUE') return 1;
+          if (tk.v === 'FALSE') return 0;
           if (!peek('(')) throw 'bad';
           p++;
           var args = [];
           if (!peek(')')) { args.push(cmp()); while (peek(',')) { p++; args.push(cmp()); } }
           if (!peek(')')) throw 'bad';
           p++;
-          var nums = args.filter(function (x) { return x !== null; });
+          var ns = args.map(toNum);
+          var nums = ns.filter(function (x) { return x !== null; });
+          var a0 = ns[0], d1 = ns[1] || 0;
           switch (tk.v) {
-            case 'ROUND': return args[0] === null ? null
-              : Math.round(args[0] * Math.pow(10, args[1] || 0)) / Math.pow(10, args[1] || 0);
-            case 'ABS': return args[0] === null ? null : Math.abs(args[0]);
-            case 'SQRT': return args[0] === null || args[0] < 0 ? null : Math.sqrt(args[0]);
+            case 'ROUND': return a0 === null ? null : roundTo(a0, d1);
+            case 'ROUNDUP': return a0 === null ? null : roundTo(a0, d1, 'up');
+            case 'ROUNDDOWN': return a0 === null ? null : roundTo(a0, d1, 'down');
+            case 'ABS': return a0 === null ? null : Math.abs(a0);
+            case 'SQRT': return a0 === null || a0 < 0 ? null : Math.sqrt(a0);
+            case 'POWER': return a0 === null || ns[1] === null ? null : Math.pow(a0, ns[1]);
             case 'MIN': return nums.length ? Math.min.apply(null, nums) : null;
             case 'MAX': return nums.length ? Math.max.apply(null, nums) : null;
-            case 'IF': return args[0] ? (args[1] === undefined ? null : args[1]) : (args[2] === undefined ? null : args[2]);
-            case 'COALESCE': return nums.length ? nums[0] : null;
+            case 'IF': return truthy(args[0]) ? (args[1] === undefined ? null : args[1])
+              : (args[2] === undefined ? null : args[2]);
+            case 'AND': return args.every(truthy) ? 1 : 0;
+            case 'OR': return args.some(truthy) ? 1 : 0;
+            case 'NOT': return truthy(args[0]) ? 0 : 1;
+            case 'IFERROR': return (args[0] === null || args[0] === '' || (typeof args[0] === 'number' && !isFinite(args[0])))
+              ? (args[1] === undefined ? null : args[1]) : args[0];
+            case 'COALESCE':
+              for (var q = 0; q < args.length; q++) if (args[q] !== null && args[q] !== '') return args[q];
+              return null;
+            case 'CONCAT': return args.map(function (x) { return x === null ? '' : String(x); }).join('');
+            case 'NUMBER': return a0;
+            case 'TEXT': return args[0] === null ? null : String(args[0]);
+            case 'LEN': return args[0] === null ? null : String(args[0]).length;
+            case 'QFIT_A': return qfit(ns, true);
+            case 'QFIT_B': return qfit(ns, false);
             default: throw 'bad';
           }
         }
@@ -267,6 +343,7 @@
       if (wrap) {
         var fd = fieldByName(name);
         if (fd && fd.read_only) return fd.read_only_value;
+        if (fd && fd.field_type === 'chart') return null;
         if (fd && fd.field_type === 'formula') {
           var out = qs('#fld-' + name);
           return out ? out.value : null;
@@ -287,17 +364,37 @@
     }
 
     function recomputeFormulas() {
-      for (var pass = 0; pass < 3; pass++) {
-        qsa('[data-formula]').forEach(function (out) {
+      var outs = qsa('[data-formula]');
+      for (var pass = 0; pass < Math.max(3, outs.length + 1); pass++) {
+        var changed = false;
+        outs.forEach(function (out) {
           var fd = fieldByName(out.dataset.formula);
           if (!fd) return;
           var v = null;
           try { v = evalFormula(fd.formula, contextValue); } catch (e) { v = null; }
           var dec = /^\d+$/.test(String(fd.step || '')) ? Number(fd.step) : 4;
-          out.value = (v === null || v === undefined || isNaN(v)) ? ''
-            : String(Math.round(v * Math.pow(10, dec)) / Math.pow(10, dec));
+          var text;
+          if (v === null || v === undefined || (typeof v === 'number' && !isFinite(v))) text = '';
+          else if (typeof v === 'number') text = String(Math.round(v * Math.pow(10, dec)) / Math.pow(10, dec));
+          else text = String(v);
+          if (out.value !== text) { out.value = text; changed = true; }
         });
+        if (!changed) break;
       }
+      qsa('[data-autofill]').forEach(function (inp) {
+        var fd = fieldByName(inp.dataset.autofill);
+        if (!fd) return;
+        var v = null;
+        try { v = evalFormula(String(fd.default_value).slice(1), contextValue); } catch (e) { v = null; }
+        var text = (v === null || v === undefined || (typeof v === 'number' && !isFinite(v))) ? ''
+          : typeof v === 'number' ? String(Math.round(v * 10000) / 10000) : String(v);
+        var mine = inp.value !== '' && inp.value !== inp.dataset.auto;
+        if (inp.dataset.auto === undefined && inp.value !== '' && inp.value === text) mine = false;
+        if (mine) return;                         // the user's own value stays
+        if (inp.value !== text) inp.value = text;
+        inp.dataset.auto = text;
+      });
+      drawCharts();
     }
     self.recomputeFormulas = recomputeFormulas;
 
@@ -305,7 +402,8 @@
       return '<input type="text" class="calc-output" id="fld-' + A.esc(field.field_name) + '"'
         + ' name="' + A.esc(field.field_name) + '" data-formula="' + A.esc(field.field_name) + '"'
         + ' readonly tabindex="-1" placeholder="خودکار محاسبه می‌شود">'
-        + '<span class="hint calc-formula" dir="ltr">= ' + A.esc(field.formula || '') + '</span>';
+        + '<details class="calc-formula"><summary>ƒ فرمول</summary>'
+        + '<span class="hint" dir="ltr">= ' + A.esc(field.formula || '') + '</span></details>';
     }
 
     /* ── «مستند»: upload into a named slot ─────────────────────────────── */
@@ -372,6 +470,192 @@
       } catch (err) { A.toast(err.message, 'error'); }
     });
 
+    /* ── «چند مقدار عددی»: one value per part (فاز ۱، فاز ۲، فاز ۳) ─────── */
+    function partLabels(field) {
+      return (field.part_labels && field.part_labels.length) ? field.part_labels
+        : ['فاز ۱', 'فاز ۲', 'فاز ۳'];
+    }
+    function renderNumbers(field) {
+      var name = A.esc(field.field_name);
+      return '<div class="numbers-group" data-numbers="' + name + '">'
+        + partLabels(field).map(function (lbl, i) {
+          return '<label class="num-part"><span>' + A.esc(lbl) + '</span>'
+            + '<input type="text" inputmode="decimal" dir="ltr" class="num-part-input"'
+            + ' id="fld-' + name + '__' + i + '" data-part-of="' + name + '" data-part="' + i + '"'
+            + (field.placeholder ? ' placeholder="' + A.esc(field.placeholder) + '"' : '') + '></label>';
+        }).join('') + '</div>';
+    }
+    function numbersOf(name) {
+      return qsa('[data-part-of="' + name + '"]').map(function (i) { return i.value.trim(); });
+    }
+    function splitNumbers(value) {
+      if (Array.isArray(value)) return value.map(function (v) { return v == null ? '' : String(v); });
+      if (value === null || value === undefined || value === '') return [];
+      return String(value).replace(/\(.*\)$/, '').split(/\s*[\/،,]\s*/).map(function (v) { return v.trim(); });
+    }
+
+    /* ── «نمودار»: drawn from the form's own numbers as they are typed ──── */
+    function renderChart(field) {
+      return '<div class="form-chart" data-chart="' + A.esc(field.field_name) + '"></div>'
+        + '<div class="form-chart-eq hint" data-chart-eq="' + A.esc(field.field_name) + '"></div>';
+    }
+    var echartsLoading = null;
+    function loadEcharts() {
+      if (window.echarts) return Promise.resolve(window.echarts);
+      if (echartsLoading) return echartsLoading;
+      var me = document.querySelector('script[src*="js/formengine.js"]');
+      var src = me ? me.getAttribute('src').replace(/js\/formengine\.js.*$/, 'vendor/echarts.min.js')
+        : '/static/vendor/echarts.min.js';
+      echartsLoading = new Promise(function (resolve, reject) {
+        var tag = document.createElement('script');
+        tag.src = src;
+        tag.onload = function () { resolve(window.echarts); };
+        tag.onerror = reject;
+        document.head.appendChild(tag);
+      });
+      return echartsLoading;
+    }
+    function solve3(m, v) {
+      /* Cramer's rule for the 3×3 normal equations of a full quadratic. */
+      function det(a) {
+        return a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1])
+          - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0])
+          + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
+      }
+      var d = det(m);
+      if (Math.abs(d) < 1e-12) return null;
+      return [0, 1, 2].map(function (k) {
+        var c = m.map(function (row, r) { return row.map(function (x, j) { return j === k ? v[r] : x; }); });
+        return det(c) / d;
+      });
+    }
+    function fmtC(n) {
+      var a = Math.abs(n);
+      return String(a >= 100 ? Math.round(a * 100) / 100 : a >= 1 ? Math.round(a * 10000) / 10000
+        : Number(a.toPrecision(4)));
+    }
+    function sgn(n, first) { return n < 0 ? (first ? '-' : ' - ') : (first ? '' : ' + '); }
+    function fitTrend(kind, pts) {
+      var xs = pts.map(function (q) { return q[0]; }), ys = pts.map(function (q) { return q[1]; });
+      var n = pts.length;
+      function S(f) { var t = 0; for (var q = 0; q < n; q++) t += f(xs[q], ys[q]); return t; }
+      if (kind === 'poly2_0') {
+        var flat = xs.concat(ys), a = qfit(flat, true), b = qfit(flat, false);
+        if (a === null) return null;
+        return { f: function (x) { return a * x * x + b * x; }, from0: true,
+                 eq: 'y = ' + sgn(a, true) + fmtC(a) + 'x²' + sgn(b) + fmtC(b) + 'x' };
+      }
+      if (kind === 'poly2' && n >= 3) {
+        var c = solve3([[S(function (x) { return Math.pow(x, 4); }), S(function (x) { return Math.pow(x, 3); }), S(function (x) { return x * x; })],
+                        [S(function (x) { return Math.pow(x, 3); }), S(function (x) { return x * x; }), S(function (x) { return x; })],
+                        [S(function (x) { return x * x; }), S(function (x) { return x; }), n]],
+                       [S(function (x, y) { return y * x * x; }), S(function (x, y) { return y * x; }), S(function (x, y) { return y; })]);
+        if (!c) return null;
+        return { f: function (x) { return c[0] * x * x + c[1] * x + c[2]; },
+                 eq: 'y = ' + sgn(c[0], true) + fmtC(c[0]) + 'x²' + sgn(c[1]) + fmtC(c[1]) + 'x' + sgn(c[2]) + fmtC(c[2]) };
+      }
+      if (kind === 'linear' && n >= 2) {
+        var den = n * S(function (x) { return x * x; }) - Math.pow(S(function (x) { return x; }), 2);
+        if (Math.abs(den) < 1e-12) return null;
+        var m = (n * S(function (x, y) { return x * y; }) - S(function (x) { return x; }) * S(function (x, y) { return y; })) / den;
+        var k = (S(function (x, y) { return y; }) - m * S(function (x) { return x; })) / n;
+        return { f: function (x) { return m * x + k; }, eq: 'y = ' + sgn(m, true) + fmtC(m) + 'x' + sgn(k) + fmtC(k) };
+      }
+      if (kind === 'power') {
+        var pp = pts.filter(function (q) { return q[0] > 0 && q[1] > 0; });
+        if (pp.length < 2) return null;
+        var lx = pp.map(function (q) { return Math.log(q[0]); }), ly = pp.map(function (q) { return Math.log(q[1]); });
+        var N = pp.length, sx = 0, sy = 0, sxx = 0, sxy = 0;
+        for (var q = 0; q < N; q++) { sx += lx[q]; sy += ly[q]; sxx += lx[q] * lx[q]; sxy += lx[q] * ly[q]; }
+        var dd = N * sxx - sx * sx;
+        if (Math.abs(dd) < 1e-12) return null;
+        var kk = (N * sxy - sx * sy) / dd, AA = Math.exp((sy - kk * sx) / N);
+        return { f: function (x) { return x > 0 ? AA * Math.pow(x, kk) : null; },
+                 eq: 'y = ' + fmtC(AA) + 'x^' + (kk < 0 ? '-' : '') + fmtC(kk) };
+      }
+      return null;
+    }
+    var chartInstances = {};
+    function drawCharts() {
+      var boxes = qsa('[data-chart]');
+      if (!boxes.length) return;
+      loadEcharts().then(function (ec) {
+        boxes.forEach(function (box) { drawChart(ec, box); });
+      }).catch(function () {
+        boxes.forEach(function (box) { box.innerHTML = '<div class="hint">کتابخانه‌ی نمودار بارگذاری نشد.</div>'; });
+      });
+    }
+    function drawChart(ec, box) {
+      var fd = fieldByName(box.dataset.chart);
+      if (!fd || !box.offsetParent) return;           // hidden: drawn when it opens
+      var cfg = fd.chart_config || {};
+      var palette = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed'];
+      var series = [], eqs = [], useRight = false, xmax = 0;
+      (cfg.series || []).forEach(function (sr, si) {
+        var pts = [];
+        (sr.x || []).forEach(function (xn, k) {
+          var x = toNum(contextValue(xn)), y = toNum(contextValue((sr.y || [])[k]));
+          if (x === null || y === null || (x === 0 && y === 0)) return;
+          pts.push([x, y]);
+          if (x > xmax) xmax = x;
+        });
+        pts.sort(function (p1, p2) { return p1[0] - p2[0]; });
+        var right = sr.axis === 'right';
+        if (right) useRight = true;
+        var color = palette[si % palette.length];
+        series.push({ name: sr.label || ('سری ' + (si + 1)), type: 'scatter', data: pts,
+                      yAxisIndex: right ? 1 : 0, symbolSize: 9, itemStyle: { color: color } });
+        if (sr.trend && pts.length >= 2) {
+          var fit = fitTrend(sr.trend, pts);
+          if (fit) {
+            var lo = fit.from0 ? 0 : pts[0][0], hi = pts[pts.length - 1][0];
+            var span = (hi - lo) || hi || 1, line = [];
+            for (var q = 0; q <= 40; q++) {
+              var x = lo + (span * 1.1) * q / 40, y = fit.f(x);
+              if (y !== null && isFinite(y)) line.push([Math.round(x * 10000) / 10000, Math.round(y * 10000) / 10000]);
+            }
+            series.push({ name: (sr.label || '') + ' — روند', type: 'line', data: line, showSymbol: false,
+                          yAxisIndex: right ? 1 : 0, lineStyle: { type: 'dashed', color: color, width: 1.5 },
+                          itemStyle: { color: color } });
+            eqs.push('<div style="color:' + color + '"><span>' + A.esc(sr.label || '') + ' — خط روند: </span>'
+                     + '<span dir="ltr" class="mono">' + A.esc(fit.eq) + '</span></div>');
+          }
+        }
+      });
+      var yAxis = [{ type: 'value', name: cfg.y_label || '', max: cfg.y_max ? Number(cfg.y_max) : null,
+                     position: 'left', nameTextStyle: { fontFamily: 'Vazirmatn' } }];
+      if (useRight) {
+        yAxis.push({ type: 'value', name: cfg.y2_label || '', max: cfg.y2_max ? Number(cfg.y2_max) : null,
+                     position: 'right', splitLine: { show: false }, nameTextStyle: { fontFamily: 'Vazirmatn' } });
+      }
+      var chart = chartInstances[fd.field_name];
+      if (chart && chart.getDom() !== box) { chart.dispose(); chart = null; }
+      if (!chart) {
+        chart = ec.init(box);
+        chartInstances[fd.field_name] = chart;
+        window.addEventListener('resize', function () { chart.resize(); });
+      }
+      chart.setOption({
+        textStyle: { fontFamily: 'Vazirmatn, Tahoma, sans-serif' },
+        tooltip: { trigger: 'item', formatter: function (pr) {
+          return A.esc(pr.seriesName) + '<br>' + pr.value[0] + ' ، ' + pr.value[1];
+        } },
+        legend: { top: 0, textStyle: { fontFamily: 'Vazirmatn' } },
+        grid: { left: 56, right: useRight ? 56 : 24, top: 48, bottom: 48 },
+        xAxis: { type: 'value', name: cfg.x_label || '', nameLocation: 'middle', nameGap: 28, min: 0,
+                 max: xmax ? Math.ceil(xmax * 1.15 * 100) / 100 : null },
+        yAxis: yAxis,
+        series: series,
+      }, true);
+      chart.resize();
+      var eqBox = qs('[data-chart-eq="' + fd.field_name + '"]');
+      if (eqBox) {
+        eqBox.innerHTML = eqs.length ? eqs.join('')
+          : (series.some(function (sr) { return sr.data.length; }) ? '' : 'پس از ورود داده‌ها نمودار رسم می‌شود.');
+      }
+    }
+    self.drawCharts = drawCharts;
+
     function renderField(field) {
       var body;
       if (field.field_type === 'radio') body = renderChoice(field, false);
@@ -386,13 +670,15 @@
       else if (field.field_type === 'select') body = renderSelect(field);
       else if (field.field_type === 'file') body = renderFile(field, !!field.read_only);
       else if (field.field_type === 'formula') body = renderFormula(field);
+      else if (field.field_type === 'numbers') body = renderNumbers(field);
+      else if (field.field_type === 'chart') body = renderChart(field);
       else body = renderInput(field);
 
       /* Settled upstream: shown and filled so the stage can see it, but not
          editable here — the well is chosen once, at step zero, and a checklist
          somebody already ticked is carried forward as a record of what they
          ticked rather than as a form to fill again. */
-      if (field.read_only && field.field_type !== 'file') {
+      if (field.read_only && field.field_type !== 'file' && field.field_type !== 'chart') {
         body = field.field_type === 'checklist'
           ? renderChecklist(field, true)
           : '<input type="text" id="fld-' + A.esc(field.field_name) + '"'
@@ -405,7 +691,7 @@
          buttons into a 180px column is what made the form look ragged. */
       var count = optionsFor(field).length;
       var wide = '';
-      if (field.field_type === 'textarea' || field.field_type === 'file') wide = ' span-full';
+      if (['textarea', 'file', 'chart'].includes(field.field_type)) wide = ' span-full';
       else if (['checkbox', 'multiselect'].includes(field.field_type) && count > 4) {
         wide = ' span-full';
       } else if (field.field_type === 'radio' && count > 7) {
@@ -416,6 +702,10 @@
         + A.esc(field.field_name) + '">'
         + labelHtml(field) + body
         + (field.help_text ? '<span class="hint">' + A.esc(field.help_text) + '</span>' : '')
+        + ((field.block_options || []).length && !field.read_only
+            ? '<span class="block-note hidden" data-block-note="' + A.esc(field.field_name) + '">⛔ با پاسخ «'
+              + A.esc(field.block_options.join('، ')) + '» مرحله ارسال نمی‌شود؛ پس از رفع مشکل پاسخ را اصلاح کنید.</span>'
+            : '')
         + '<span class="err hidden"></span></div>';
     }
 
@@ -445,12 +735,25 @@
       root.addEventListener('input', recomputeFormulas);
       root.addEventListener('change', recomputeFormulas);
       recomputeFormulas();
+      /* a pane that is drawn first and shown a moment later still gets its chart */
+      setTimeout(drawCharts, 250);
       return self;
     };
 
     /* «۳ مورد انتخاب شده» beside the help line, so a long list still shows at
        a glance whether anything was picked. */
+    /* «مانع ارسال»: say at once that this answer stops the stage */
+    function updateBlockNotes() {
+      qsa('[data-block-note]').forEach(function (note) {
+        var fd = fieldByName(note.dataset.blockNote);
+        var have = valuesOf(note.dataset.blockNote);
+        note.classList.toggle('hidden', !fd || !have.some(function (v) {
+          return (fd.block_options || []).indexOf(v) !== -1;
+        }));
+      });
+    }
     function updateChoiceCounts() {
+      updateBlockNotes();
       qsa('[data-count]').forEach(function (badge) {
         var name = badge.dataset.count;
         var n = qsa('input[name="' + name + '"]:checked').length;
@@ -464,7 +767,9 @@
       if (options.skipDefaults) return;
       (schema.sections || []).forEach(function (section) {
         (section.fields || []).forEach(function (field) {
-          if (field.default_value) self.setFieldValue(field, field.default_value);
+          if (field.default_value && String(field.default_value).charAt(0) !== '=') {
+            self.setFieldValue(field, field.default_value);
+          }
         });
       });
     }
@@ -487,6 +792,10 @@
 
     /* ── conditional fields ───────────────────────────────────────────── */
     function currentValueOf(name) {
+      if (qs('[data-numbers="' + name + '"]')) {
+        var parts = numbersOf(name);
+        return parts.some(function (x) { return x !== ''; }) ? parts.join(' / ') : '';
+      }
       var picked = qs('input[name="' + name + '"]:checked');
       if (picked) return picked.value;
       var input = qs('#fld-' + name);
@@ -543,16 +852,10 @@
            own heading. */
         if (!sourcesHere(rule).length) return;
         var show = ruleIsMet(rule);
+        var was = !wrap.classList.contains('hidden');
         wrap.classList.toggle('hidden', !show);
-        if (!show) {
-          qsa('input[name="' + rule.field + '"]').forEach(function (i) {
-            i.checked = false;
-          });
-          var free = qs('#fld-' + rule.field);
-          if (free) free.value = '';
-          var other = qs('[data-other="' + rule.field + '"]');
-          if (other) other.value = '';
-        }
+        if (!show) clearField(rule.field);
+        else if (!was) restoreDefault(rule.field);
       });
       if (options.onConditional) options.onConditional(self);
     };
@@ -565,17 +868,32 @@
       if (!block) return;
       if (!sourcesHere(rule).length) return;
       var show = ruleIsMet(rule);
+      var was = !block.classList.contains('hidden');
       block.classList.toggle('hidden', !show);
-      if (show) return;
-      (rule.fields || []).forEach(function (name) {
-        qsa('input[name="' + name + '"]').forEach(function (i) {
-          i.checked = false;
-        });
-        var free = qs('#fld-' + name);
-        if (free) free.value = '';
-        var other = qs('[data-other="' + name + '"]');
-        if (other) other.value = '';
-      });
+      if (show) {
+        if (!was) (rule.fields || []).forEach(restoreDefault);   // reopened: defaults back
+        return;
+      }
+      (rule.fields || []).forEach(clearField);
+    }
+
+    /* A hidden answer is dropped; a reopened field starts from its default again. */
+    function clearField(name) {
+      qsa('input[name="' + name + '"]').forEach(function (i) { i.checked = false; });
+      var free = qs('#fld-' + name);
+      if (free) free.value = '';
+      qsa('[data-part-of="' + name + '"]').forEach(function (i) { i.value = ''; });
+      var other = qs('[data-other="' + name + '"]');
+      if (other) other.value = '';
+    }
+    function restoreDefault(name) {
+      var fd = fieldByName(name);
+      if (!fd || options.skipDefaults || !fd.default_value
+          || String(fd.default_value).charAt(0) === '=') return;
+      var now = readField(fd);
+      if (now === '' || now === false || (Array.isArray(now) && !now.length)) {
+        self.setFieldValue(fd, fd.default_value);
+      }
     }
 
     function onFieldChanged(ev) {
@@ -777,6 +1095,10 @@
       if (field.field_type === 'file') {
         return (field.files || []).map(function (a) { return a.id; });
       }
+      if (field.field_type === 'numbers') {
+        var parts = numbersOf(name);
+        return parts.some(function (x) { return x !== ''; }) ? parts : [];
+      }
       if (field.field_type === 'radio') {
         var value = checkedValues(name)[0] || '';
         var other = otherValue(name);
@@ -813,7 +1135,7 @@
       if (flat) {
         var out = {};
         self.eachField(function (field) {
-          if (hidden[field.field_name] || field.read_only) return;
+          if (hidden[field.field_name] || field.read_only || field.field_type === 'chart') return;
           out[field.field_name] = readField(field);
         });
         var fOther = otherValue('failure');
@@ -823,7 +1145,7 @@
       var payload = { dynamic: {} };
       self.eachField(function (field) {
         var name = field.field_name;
-        if (hidden[name] || field.read_only) return;
+        if (hidden[name] || field.read_only || field.field_type === 'chart') return;
         var value = readField(field);
         if (field.model_attr) {
           if (name === 'op_jdate') { payload.op_jdate = value; return; }
@@ -846,7 +1168,12 @@
     self.setFieldValue = function (field, value) {
       var name = field.field_name;
       if (field.field_type === 'file') return;          // the upload list is the value
-      if (field.field_type === 'formula') { recomputeFormulas(); return; }
+      if (field.field_type === 'formula' || field.field_type === 'chart') { recomputeFormulas(); return; }
+      if (field.field_type === 'numbers') {
+        var vals = splitNumbers(value);
+        qsa('[data-part-of="' + name + '"]').forEach(function (inp, k) { inp.value = vals[k] || ''; });
+        return;
+      }
       if (field.field_type === 'radio') {
         var radio = qs('input[name="' + name + '"][value="'
                        + CSS.escape(String(value == null ? '' : value)) + '"]');
@@ -888,6 +1215,9 @@
         var name = field.field_name;
         if (!Object.prototype.hasOwnProperty.call(values, name)) return;
         if (opts.onlyEmpty && String(readField(field) || '').length) return;
+        /* nothing saved yet: the field keeps its «مقدار پیش‌فرض» */
+        if ((values[name] === null || values[name] === undefined || values[name] === '')
+            && field.default_value && String(field.default_value).charAt(0) !== '=') return;
         self.setFieldValue(field, values[name]);
         if (opts.flash) flash(qs('[data-wrap="' + name + '"]'));
       });

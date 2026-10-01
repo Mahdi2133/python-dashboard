@@ -264,8 +264,101 @@ def _special_settings(field, payload):
         field.formula = text
     elif "formula" in payload and ftype != "formula":
         field.formula = None
-    # «تأیید گزینه»: which answers need whose approval
-    if any(k in payload for k in ("approval_options", "approval_user_id", "approval_user_ids")):
+    if ftype == "formula" and "result_type" in payload:
+        field.result_type = "text" if payload.get("result_type") == "text" else None
+    if ftype == "chart":
+        problem = _chart_settings(field, payload)
+        if problem:
+            return problem
+    elif "chart_config" in payload:
+        field.chart_config = None
+    return _behaviour_settings(field, payload)
+
+
+def _chart_settings(field, payload):
+    """«نمودار»: series of x/y fields, an axis each, an optional trend line."""
+    raw = payload.get("chart_config", field.chart_spec)
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw or "{}")
+        except ValueError:
+            return "تنظیمات نمودار نامعتبر است."
+    raw = raw if isinstance(raw, dict) else {}
+    known = {f.field_name for f in FormField.query.all()}
+    series = []
+    for sr in raw.get("series") or []:
+        xs = [x for x in sr.get("x") or [] if x]
+        ys = [y for y in sr.get("y") or [] if y]
+        if not xs or not ys:
+            continue
+        missing = [n for n in xs + ys if n not in known]
+        if missing:
+            return f"فیلد «{missing[0]}» برای نمودار پیدا نشد."
+        if len(xs) != len(ys):
+            return f"در سری «{sr.get('label') or ''}» تعداد فیلدهای محور افقی و عمودی باید برابر باشد."
+        series.append({"label": normalize_text(sr.get("label")) or "سری",
+                       "x": xs, "y": ys,
+                       "axis": "right" if sr.get("axis") == "right" else "left",
+                       "trend": sr.get("trend") if sr.get("trend") in
+                       ("poly2", "poly2_0", "power", "linear") else ""})
+    if not series:
+        return "برای نمودار دست‌کم یک سری با فیلدهای محور افقی و عمودی تعریف کنید."
+    field.chart_config = json.dumps({
+        "series": series,
+        "x_label": normalize_text(raw.get("x_label")) or "",
+        "y_label": normalize_text(raw.get("y_label")) or "",
+        "y2_label": normalize_text(raw.get("y2_label")) or "",
+        "y_max": raw.get("y_max") if isinstance(raw.get("y_max"), (int, float)) else None,
+        "y2_max": raw.get("y2_max") if isinstance(raw.get("y2_max"), (int, float)) else None,
+    }, ensure_ascii=False)
+    field.is_required = False
+    return None
+
+
+def _approvers_ok(ids):
+    from ..models import AppUser
+    for pid in ids:
+        person = db.session.get(AppUser, pid)
+        if person is None or not person.is_active:
+            return False
+    return True
+
+
+def _behaviour_settings(field, payload):
+    """What a field does in a process — whose approval its answers need, which
+    answers stop the stage, where it is filled. None of it touches how the
+    answer is stored, so built-in fields («خرابی مشاهده شده») take it too."""
+    # «تأیید گزینه»: several rules, each its own answers → its own approvers
+    if "approval_rules" in payload:
+        rules = []
+        for r in payload.get("approval_rules") or []:
+            opts = list(dict.fromkeys(normalize_text(x) for x in r.get("options") or []
+                                      if normalize_text(x)))
+            who = list(dict.fromkeys(int(x) for x in r.get("approvers") or []
+                                     if str(x or "").isdigit()))
+            if not opts and not who:
+                continue
+            if not field.is_choice:
+                return "«تأیید گزینه» فقط برای فیلدهای انتخابی است."
+            if not opts:
+                return "در هر قاعده‌ی تأیید، دست‌کم یک گزینه را تیک بزنید."
+            if not who:
+                return "برای هر قاعده‌ی تأیید، تأییدکننده را انتخاب کنید."
+            if not _approvers_ok(who):
+                return "تأییدکننده پیدا نشد یا غیرفعال است."
+            answer = normalize_text(r.get("answer_field")) or None
+            if answer:
+                target = FormField.query.filter_by(field_name=answer).first()
+                if target is None or not target.is_choice or target.id == field.id:
+                    return "«پاسخ تأییدکننده» باید یک فیلد انتخابی دیگر باشد."
+            rules.append({"options": opts, "approvers": who, "answer_field": answer})
+        field.approval_rules = json.dumps(rules, ensure_ascii=False) if rules else None
+        first = rules[0] if rules else None   # the single-rule columns follow the first
+        field.approval_options = json.dumps(first["options"], ensure_ascii=False) if first else None
+        field.approval_user_id = first["approvers"][0] if first else None
+        field.approval_user_ids = ",".join(map(str, first["approvers"])) if first else None
+        field.approval_answer_field = first["answer_field"] if first else None
+    elif any(k in payload for k in ("approval_options", "approval_user_id", "approval_user_ids")):
         chosen = [normalize_text(x) for x in (payload.get("approval_options") or [])
                   if normalize_text(x)]
         # one approver or several — every one of them must approve
@@ -277,22 +370,26 @@ def _special_settings(field, payload):
             return "«تأیید گزینه» فقط برای فیلدهای انتخابی است."
         if chosen and not who:
             return "برای گزینه‌های نیازمند تأیید، تأییدکننده را انتخاب کنید."
-        if chosen:
-            from ..models import AppUser
-            for pid in who:
-                person = db.session.get(AppUser, pid)
-                if person is None or not person.is_active:
-                    return "تأییدکننده پیدا نشد یا غیرفعال است."
+        if chosen and not _approvers_ok(who):
+            return "تأییدکننده پیدا نشد یا غیرفعال است."
         answer = normalize_text(payload.get("approval_answer_field")) or None
         if chosen and answer:
             target = FormField.query.filter_by(field_name=answer).first()
             if target is None or not target.is_choice or target.id == field.id:
                 return "«پاسخ تأییدکننده» باید یک فیلد انتخابی دیگر باشد."
+        field.approval_rules = None
         field.approval_options = (json.dumps(list(dict.fromkeys(chosen)), ensure_ascii=False)
                                   if chosen else None)
         field.approval_user_id = who[0] if chosen else None
         field.approval_user_ids = ",".join(str(x) for x in who) if chosen else None
         field.approval_answer_field = answer if chosen else None
+    # «مانع ارسال»: answers with which the stage is not sent on
+    if "block_options" in payload:
+        blocked = list(dict.fromkeys(normalize_text(x) for x in payload.get("block_options") or []
+                                     if normalize_text(x)))
+        if blocked and not field.is_choice:
+            return "«مانع ارسال» فقط برای فیلدهای انتخابی است."
+        field.block_options = json.dumps(blocked, ensure_ascii=False) if blocked else None
     # «مرحله‌ی پرکردن»: at most one stage per process
     if "fill_stage_ids" in payload:
         from ..models import WorkflowStage
@@ -396,7 +493,10 @@ def update_field(field_id):
         editable = {"label", "placeholder", "help_text", "default_value", "is_required",
                     "is_active", "sort_order", "col_span", "min_value", "max_value",
                     "step", "show_in_table", "table_order", "export_header",
-                    "allow_other", "section_id", "visible_when", "prefill_from"}
+                    "allow_other", "section_id", "visible_when", "prefill_from",
+                    "approval_rules", "approval_options", "approval_user_id",
+                    "approval_user_ids", "approval_answer_field", "block_options",
+                    "fill_stage_ids"}
         payload = {k: v for k, v in payload.items() if k in editable}
     for attr in ("label", "placeholder", "help_text", "default_value", "export_header",
                  "step", "lookup_category", "field_type", "field_name", "visible_when",
@@ -414,11 +514,11 @@ def update_field(field_id):
         if attr in payload:
             setattr(field, attr, payload[attr] in (True, "true", "1", 1))
 
-    if not field.is_builtin:
-        problem = _special_settings(field, payload)
-        if problem:
-            db.session.rollback()
-            return fail(problem, 422)
+    problem = (_special_settings(field, payload) if not field.is_builtin
+               else _behaviour_settings(field, payload))
+    if problem:
+        db.session.rollback()
+        return fail(problem, 422)
 
     # Options were previously ignored here, so editing a field's choices did
     # nothing — the field came back with its original list every time.

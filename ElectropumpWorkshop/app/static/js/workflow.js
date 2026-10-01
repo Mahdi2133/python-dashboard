@@ -657,6 +657,174 @@
                   + 'اصلاح کند (یا عکس و فیلم بارگذاری کند) و دوباره بفرستد.' },
   };
 
+  /* «ارجاعات برای تأیید»: every answer asked on this stage that needs
+     somebody's approval before the stage can be sent on — which answers,
+     whose approval, and what the approver picks. The rules live on the fields
+     (the form builder edits the same thing); here the admin sees a stage's
+     referrals in one place and changes them where the process is drawn. */
+  function approvalRulesPanel(s) {
+    return '<details class="wf-refer wf-rules" data-stage-id="' + s.id + '">'
+      + '<summary>📝 ارجاعات برای تأیید (تأیید پاسخ‌ها پیش از ارسال)'
+      + '<span class="wf-refer-tag wf-rules-tag">برای دیدن باز کنید</span></summary>'
+      + '<div class="wf-rules-body"><div class="loading">در حال بارگذاری</div></div></details>';
+  }
+
+  function ruleRowHtml(field, rule, answerFields) {
+    rule = rule || { options: [], approvers: [], answer_field: null };
+    return '<div class="wf-rule">'
+      + '<div class="wf-rule-opts">' + field.options.map(function (o) {
+          var on = rule.options.indexOf(o) !== -1;
+          return '<label class="mini-check' + (on ? ' on' : '') + '"><input type="checkbox" class="r-opt" value="'
+            + A.esc(o) + '"' + (on ? ' checked' : '') + '> ' + A.esc(o) + '</label>';
+        }).join('') + '</div>'
+      + '<div class="wf-rule-row"><label>تأییدکننده‌ها</label><select class="r-who" multiple size="3">'
+      + definition.users.map(function (u) {
+          return '<option value="' + u.id + '"' + (rule.approvers.indexOf(u.id) !== -1 ? ' selected' : '') + '>'
+            + A.esc(u.full_name) + '</option>';
+        }).join('') + '</select></div>'
+      + '<div class="wf-rule-who hint">' + whoText(rule.approvers) + '</div>'
+      + '<div class="wf-rule-row"><label>پاسخ تأییدکننده</label><select class="r-answer">'
+      + '<option value="">— فقط تأیید / عدم تأیید —</option>'
+      + answerFields.filter(function (a) { return a.field_name !== field.field_name; }).map(function (a) {
+          return '<option value="' + A.esc(a.field_name) + '"' + (a.field_name === rule.answer_field ? ' selected' : '') + '>'
+            + A.esc(a.label) + (a.section_title ? ' — ' + A.esc(a.section_title) : '') + '</option>';
+        }).join('') + '</select>'
+      + '<button type="button" class="btn-sm btn-del r-del" title="حذف این قاعده">✕</button></div></div>';
+  }
+
+  function whoText(ids) {
+    var names = (ids || []).map(function (id) {
+      var u = definition.users.find(function (x) { return x.id === id; });
+      return u ? u.full_name : null;
+    }).filter(Boolean);
+    return names.length ? '✅ ' + names.map(A.esc).join('، ') : '<span class="text-danger">تأییدکننده انتخاب نشده</span>';
+  }
+
+  function ruleFieldHtml(field, answerFields) {
+    return '<div class="wf-rule-field" data-field-id="' + field.id + '">'
+      + '<div class="wf-rule-head"><b>' + A.esc(field.label) + '</b>'
+      + (field.section_title ? ' <span class="hint">— ' + A.esc(field.section_title) + '</span>' : '')
+      + '<span class="save-state r-state"></span></div>'
+      + '<div class="wf-rule-list">' + (field.rules.length ? field.rules.map(function (r) {
+          return ruleRowHtml(field, r, answerFields);
+        }).join('') : '') + '</div>'
+      + '<div class="wf-rule-block"><span class="hint">⛔ مانع ارسال مرحله:</span> ' + field.options.map(function (o) {
+          var on = (field.block_options || []).indexOf(o) !== -1;
+          return '<label class="mini-check' + (on ? ' on' : '') + '"><input type="checkbox" class="r-block" value="'
+            + A.esc(o) + '"' + (on ? ' checked' : '') + '> ' + A.esc(o) + '</label>';
+        }).join('') + '</div>'
+      + '<div class="wf-rule-actions"><button type="button" class="btn-ghost btn-sm r-add">➕ قاعده‌ی دیگر</button>'
+      + '<button type="button" class="btn-primary btn-sm r-save">💾 ذخیره</button></div></div>';
+  }
+
+  async function loadRules(box) {
+    var body = box.querySelector('.wf-rules-body');
+    try {
+      var res = await A.api.get('/api/workflow/stages/' + box.dataset.stageId + '/approval-rules');
+      var d = box._rules = res.data;
+      var count = d.fields.reduce(function (n, f) { return n + f.rules.length; }, 0);
+      box.querySelector('.wf-rules-tag').textContent = count
+        ? J.toFaDigits(count) + ' قاعده‌ی تأیید' : 'بدون ارجاع';
+      body.innerHTML = '<div class="hint">هر قاعده: اگر یکی از گزینه‌های تیک‌خورده انتخاب شود، کاربر مرحله '
+        + 'آن را با «ارجاع برای تأیید» برای این افراد می‌فرستد و تا <b>همه</b> تأیید نکنند، مرحله به بعد نمی‌رود. '
+        + 'فرم‌هایی که همان پاسخ باز کرده هم ضمیمه می‌شوند. «مانع ارسال» یعنی با آن پاسخ اصلاً نمی‌شود ارسال کرد.</div>'
+        + (d.items.length ? '<div class="hint">تأیید اجباری فرم‌ها: ' + d.items.map(function (i) {
+            return '«' + A.esc(i.section_title) + '» ← ' + A.esc(i.approver_name || '—');
+          }).join('، ') + '</div>' : '')
+        + '<div class="wf-rule-fields">' + d.fields.map(function (f) { return ruleFieldHtml(f, d.answer_fields); }).join('')
+        + '</div>'
+        + (d.others.length ? '<select class="r-addfield"><option value="">➕ قاعده برای پرسشی دیگر از این مرحله…</option>'
+            + d.others.map(function (f) {
+                return '<option value="' + f.id + '">' + A.esc(f.label)
+                  + (f.section_title ? ' — ' + A.esc(f.section_title) : '') + '</option>';
+              }).join('') + '</select>' : '');
+    } catch (err) { body.innerHTML = '<div class="alert error">' + A.esc(err.message) + '</div>'; }
+  }
+
+  function bindRules(box) {
+    if (box._bound) return;
+    box._bound = true;
+    function fieldOf(el) {
+      var holder = el.closest('.wf-rule-field');
+      var id = holder && Number(holder.dataset.fieldId);
+      var d = box._rules || { fields: [], others: [] };
+      return { holder: holder, data: d.fields.concat(d.others).find(function (f) { return f.id === id; }) };
+    }
+    box.addEventListener('change', function (ev) {
+      ev.stopPropagation();                  // a referral is saved on its own, not with the stage
+      if (ev.target.classList.contains('r-opt') || ev.target.classList.contains('r-block')) {
+        ev.target.closest('label').classList.toggle('on', ev.target.checked);
+      }
+      if (ev.target.classList.contains('r-who')) {
+        var line = ev.target.closest('.wf-rule').querySelector('.wf-rule-who');
+        if (line) line.innerHTML = whoText(Array.prototype.slice.call(ev.target.selectedOptions)
+          .map(function (o) { return Number(o.value); }));
+      }
+      if (ev.target.classList.contains('r-addfield') && ev.target.value) {
+        var d = box._rules;
+        var f = d.others.find(function (x) { return String(x.id) === ev.target.value; });
+        if (f) {
+          d.others = d.others.filter(function (x) { return x !== f; });
+          d.fields.push(f);
+          var wrap = document.createElement('div');
+          wrap.innerHTML = ruleFieldHtml(f, d.answer_fields);
+          var node = wrap.firstChild;
+          node.querySelector('.wf-rule-list').innerHTML = ruleRowHtml(f, null, d.answer_fields);
+          box.querySelector('.wf-rule-fields').appendChild(node);
+          ev.target.querySelector('option[value="' + f.id + '"]').remove();
+          ev.target.value = '';
+        }
+      }
+      var st = ev.target.closest('.wf-rule-field');
+      if (st) st.querySelector('.r-state').textContent = 'ذخیره نشده';
+    });
+    box.addEventListener('click', async function (ev) {
+      var add = ev.target.closest('.r-add');
+      if (add) {
+        var fo = fieldOf(add);
+        var wrap = document.createElement('div');
+        wrap.innerHTML = ruleRowHtml(fo.data, null, box._rules.answer_fields);
+        fo.holder.querySelector('.wf-rule-list').appendChild(wrap.firstChild);
+        return;
+      }
+      var del = ev.target.closest('.r-del');
+      if (del) {
+        var holder = del.closest('.wf-rule-field');
+        del.closest('.wf-rule').remove();
+        holder.querySelector('.r-state').textContent = 'ذخیره نشده';
+        return;
+      }
+      var save = ev.target.closest('.r-save');
+      if (save) {
+        var fs = fieldOf(save);
+        var rules = A.qsa('.wf-rule', fs.holder).map(function (row) {
+          return {
+            options: A.qsa('.r-opt:checked', row).map(function (c) { return c.value; }),
+            approvers: Array.prototype.slice.call(row.querySelector('.r-who').selectedOptions)
+              .map(function (o) { return Number(o.value); }),
+            answer_field: row.querySelector('.r-answer').value || null,
+          };
+        }).filter(function (r) { return r.options.length || r.approvers.length; });
+        var blocked = A.qsa('.r-block:checked', fs.holder).map(function (c) { return c.value; });
+        var state = fs.holder.querySelector('.r-state');
+        state.textContent = 'در حال ذخیره…';
+        try {
+          await A.api.put('/api/form-builder/fields/' + fs.data.id,
+                          { approval_rules: rules, block_options: blocked });
+          state.textContent = '✓ ذخیره شد';
+          await loadRules(box);
+        } catch (err) { state.textContent = ''; A.toast(err.message, 'error'); }
+      }
+    });
+  }
+
+  document.addEventListener('toggle', function (ev) {
+    var box = ev.target;
+    if (!box.classList || !box.classList.contains('wf-rules') || !box.open) return;
+    bindRules(box);
+    loadRules(box);
+  }, true);
+
   function actionsEditor(s) {
     var acts = s.actions || [];
     var stop = acts.find(function (a) { return a.kind === 'stop'; });
@@ -910,7 +1078,7 @@
         + (s.description ? '<div class="hint wf-stage-desc">'
             + A.esc(s.description) + '</div>' : '')
         + (zero ? '<div class="hint">این مرحله فقط نوع عملیات را می‌پرسد.</div>'
-                : referralPanel(s) + actionsEditor(s))
+                : referralPanel(s) + actionsEditor(s) + approvalRulesPanel(s))
         + '<ul class="wf-drop" data-stage="' + s.id + '">'
         + (s.items.map(itemHtml).join('')
            || '<li class="wf-drop-empty">موردی اینجا نیست — از پالت بکشید</li>')

@@ -66,8 +66,9 @@ def compute_formulas(values: dict, only: set | None = None) -> dict:
     ev = Evaluator(fields)
     row = {k: _numeric(v) for k, v in (values or {}).items()}
     out = {}
-    # formulas may use each other: a couple of passes settles short chains
-    for _ in range(3):
+    # formulas may use each other (a pump calculation chains a dozen deep):
+    # passes until nothing changes
+    for _ in range(max(3, len(targets) + 1)):
         changed = False
         for f in targets:
             try:
@@ -90,6 +91,38 @@ def compute_formulas(values: dict, only: set | None = None) -> dict:
     return {k: v for k, v in out.items()}
 
 
+def autofill_fields():
+    """Ordinary fields whose «مقدار پیش‌فرض» is a formula («=…»): filled with the
+    result while left empty, and editable like any answer."""
+    return [f for f in FormField.query.filter(FormField.is_active.is_(True),
+                                              FormField.default_value.like("=%")).all()
+            if f.field_type not in ("formula", "chart", "file", "mirror")]
+
+
+def compute_autofill(values: dict) -> dict:
+    """{field_name: value} for the formula defaults of fields sent empty."""
+    from ..analytics.formula import Evaluator, FormulaError
+    out = {}
+    targets = [f for f in autofill_fields()
+               if f.field_name in values and values.get(f.field_name) in (None, "", [])]
+    if not targets:
+        return out
+    ev = Evaluator(_field_map())
+    row = {k: _numeric(v) for k, v in values.items()}
+    for f in targets:
+        try:
+            comp = compile_field_formula(f.default_value[1:], exclude=f.field_name)
+            v = ev.row(comp["tree"], row)
+        except (FormulaError, ZeroDivisionError, TypeError, ValueError):
+            v = None
+        if v in (None, ""):
+            continue
+        if isinstance(v, float):
+            v = round(v, 4)
+        out[f.field_name] = v
+    return out
+
+
 def apply_formulas_to_payload(payload: dict) -> dict:
     """The entry page's nested shape or the workflow's flat one, with formulas filled."""
     payload = dict(payload or {})
@@ -98,14 +131,23 @@ def apply_formulas_to_payload(payload: dict) -> dict:
     if nested:
         flat.update(payload["dynamic"])
     computed = compute_formulas(flat)
-    if not computed:
+    filled = compute_autofill({**flat, **computed})
+    if filled:                                   # a filled value may feed other formulas
+        computed = compute_formulas({**flat, **filled})
+    if not computed and not filled:
         return payload
     if nested:
         dyn = dict(payload["dynamic"])
         dyn.update(computed)
+        for k, v in filled.items():
+            if k in payload and k != "dynamic":
+                payload[k] = v               # a column of the record itself
+            else:
+                dyn[k] = v
         payload["dynamic"] = dyn
     else:
         payload.update(computed)
+        payload.update(filled)
     return payload
 
 

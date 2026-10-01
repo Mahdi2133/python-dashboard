@@ -70,7 +70,9 @@
         <select id="fb-active"><option value="1">فعال</option><option value="0">غیرفعال</option></select></div>
       <div class="field"><label>نمایش در جدول رکوردها</label>
         <select id="fb-table"><option value="0">خیر</option><option value="1">بله</option></select></div>
-      <div class="field"><label>مقدار پیش‌فرض</label><input type="text" id="fb-default"></div>
+      <div class="field"><label>مقدار پیش‌فرض</label><input type="text" id="fb-default">
+        <span class="hint">با «=» شروع کنید تا فرمول باشد (مثلاً <span dir="ltr">=[fc_total_head]</span>): تا کاربر خودش
+          عددی ننوشته، نتیجه‌ی محاسبه در فیلد می‌نشیند.</span></div>
       <div class="field span-2"><label>پر شدن خودکار از سوابق همان چاه</label>
         <select id="fb-prefill"><option value="">— خیر —</option></select>
         <span class="hint">وقتی چاه انتخاب شد، این فیلد با مقداری که در
@@ -110,8 +112,15 @@
           <button class="btn-ghost btn-sm" id="fb-formula-check" type="button">✔ بررسی فرمول</button>
           <span id="fb-formula-status" class="hint"></span>
         </div>
-        <div class="hint">فیلدها داخل کروشه با نام فنی یا برچسب؛ عملگرها + − * / ^ و توابع ROUND، ABS، MIN، MAX، SQRT، IF.
-          تعداد رقم اعشار را در «گام (step)» بنویسید (مثلاً 4). مقدار همیشه خودکار محاسبه و ذخیره می‌شود و کاربر آن را تایپ نمی‌کند.</div>
+        <div class="fb-inline mt-1">
+          <label for="fb-result-type">نوع نتیجه</label>
+          <select id="fb-result-type"><option value="number">عدد</option><option value="text">متن (مثلاً «ماسه درشت»)</option></select>
+        </div>
+        <div class="hint">فیلدها داخل کروشه با نام فنی یا برچسب؛ عملگرها + − * / ^ % و &amp; (چسباندن متن)، مقایسه‌ها
+          (= &lt;&gt; &lt; &gt;)، متن داخل "…" و توابع IF، AND، OR، NOT، IFERROR، ROUND، ROUNDUP، ROUNDDOWN، ABS، MIN،
+          MAX، SQRT، POWER، COALESCE و QFIT_A / QFIT_B (ضرایب a و b خط روند درجه ۲ از مبدأ:
+          QFIT_A(x1، …، xn، y1، …، yn)). تعداد رقم اعشار را در «گام (step)» بنویسید (مثلاً 4).
+          مقدار همیشه خودکار محاسبه و ذخیره می‌شود و کاربر آن را تایپ نمی‌کند.</div>
       </div>
       <!-- «فیلد مشترک» -->
       <div class="field span-full hidden fb-special" data-for="mirror">
@@ -131,25 +140,37 @@
         </div>
         <textarea id="fb-options-bulk" class="hidden mt-1"
           placeholder="هر خط یک گزینه، به شکل  مقدار|برچسب|آیکون"></textarea>
-        <!-- «تأیید گزینه»: these answers need somebody's approval -->
+        <!-- «تأیید گزینه»: these answers need somebody's approval — one row per rule -->
         <div class="fb-approval-box" id="fb-approval-box">
-          <label>✅ گزینه‌هایی که نیاز به تأیید دارند</label>
-          <div id="fb-approval-options" class="fb-approval-options"></div>
-          <div class="fb-inline">
-            <label for="fb-approval-user">تأییدکننده‌ها</label>
-            <select id="fb-approval-user" multiple size="4"></select>
-          </div>
-          <div class="hint">با نگه‌داشتن Ctrl چند نفر را انتخاب کنید؛ <b>همه‌ی</b> آن‌ها باید تأیید کنند.</div>
-          <div class="fb-inline">
-            <label for="fb-approval-answer">پاسخ تأییدکننده</label>
-            <select id="fb-approval-answer"><option value="">— فقط تأیید / عدم تأیید —</option></select>
-          </div>
-          <div class="hint">اگر فیلدی انتخاب کنید، تأییدکننده هنگام «تأیید» یکی از گزینه‌های آن را هم انتخاب می‌کند
-            (مثلاً «کارگاه مکانیک / نصب و کشیدن / …») و انتخاب او در همان فیلد ثبت می‌شود.</div>
-          <div class="hint">اگر در هر مرحله‌ای یکی از گزینه‌های تیک‌خورده انتخاب شود، آن مرحله تا تأیید این کاربر
-            نهایی نمی‌شود. کاربرِ مرحله در کارتابل خود «📤 ارسال برای تأیید» را می‌زند؛ پس از تأیید، مرحله به مرحله‌ی بعد می‌رود.
-            اگر پاسخ بعد از تأیید عوض شود، تأیید دوباره لازم است.</div>
+          <label>✅ ارجاع برای تأیید (قانون‌های تأیید این فیلد)</label>
+          <div id="fb-approval-rules" class="fb-approval-rules"></div>
+          <button class="btn-ghost btn-sm" id="fb-rule-add" type="button">➕ قانون تأیید</button>
+          <div class="hint">در هر قانون گزینه‌ها را تیک بزنید و تأییدکننده‌ها را انتخاب کنید (با Ctrl چند نفر؛ <b>همه‌ی</b>
+            آن‌ها باید تأیید کنند). هر گزینه می‌تواند تأییدکننده‌ی خودش را داشته باشد. فرم‌هایی که با این گزینه باز
+            می‌شوند هم همراه درخواست تأیید فرستاده می‌شوند. اگر «پاسخ تأییدکننده» انتخاب شود، تأییدکننده یکی از
+            گزینه‌های آن فیلد را هم انتخاب می‌کند. تا همه تأیید نکنند، دکمه‌ی «ارسال به مرحله بعد» کار نمی‌کند؛
+            کاربر مرحله «📤 ارسال برای تأیید» را می‌زند. این قانون‌ها در «فرایندساز» هم دیده و ویرایش می‌شوند.</div>
+          <label class="mt-1">⛔ گزینه‌هایی که مانع ارسال‌اند</label>
+          <div id="fb-block-options" class="fb-approval-options"></div>
+          <div class="hint">اگر یکی از این گزینه‌ها انتخاب شود، مرحله تا اصلاح پاسخ ارسال نمی‌شود (مثلاً «خیر» در
+            «مسیر دسترسی به چاه آماده است؟»).</div>
         </div>
+      </div>
+      <!-- «نمودار» -->
+      <div class="field span-full hidden fb-special" data-for="chart">
+        <label>📈 سری‌های نمودار</label>
+        <div id="fb-chart-series" class="fb-chart-series"></div>
+        <button class="btn-ghost btn-sm" id="fb-chart-add" type="button">➕ سری</button>
+        <div class="field-group cols-3 mt-1">
+          <div class="field"><label>عنوان محور افقی</label><input type="text" id="fb-chart-xl"></div>
+          <div class="field"><label>عنوان محور چپ</label><input type="text" id="fb-chart-yl"></div>
+          <div class="field"><label>حداکثر محور چپ</label><input type="number" id="fb-chart-ymax" step="any"></div>
+          <div class="field"><label>عنوان محور راست</label><input type="text" id="fb-chart-y2l"></div>
+          <div class="field"><label>حداکثر محور راست</label><input type="number" id="fb-chart-y2max" step="any"></div>
+        </div>
+        <div class="hint">هر سری نقطه‌هایی است که X و Y آن از فیلدهای همین فرم خوانده می‌شود (ردیف به ردیف: اولین X با
+          اولین Y و…). خط روند «درجه ۲ از مبدأ» همان خط روند اکسل با «Set Intercept = 0» است (s = aQ² + bQ) و معادله‌ی
+          آن زیر نمودار نوشته می‌شود. نمودار پس از ورود داده‌ها خودکار در فرم رسم می‌شود و چیزی ذخیره نمی‌کند.</div>
       </div>
       <!-- «مرحله‌ی پرکردن» -->
       <div class="field span-full" id="fb-fill-wrap">

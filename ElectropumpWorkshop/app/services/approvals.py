@@ -34,6 +34,13 @@ def _wf():
 
 
 def _fmt(field, value, files_by_field):
+    if field.get("field_type") == "chart":
+        return None
+    if field.get("field_type") == "numbers":
+        from .records import numbers_text
+        parts = field.get("part_labels") or []
+        text = numbers_text(value)
+        return (f"{text} ({' / '.join(parts)})" if text and parts else text)
     if field.get("field_type") == "file":
         return "، ".join(a["filename"] for a in files_by_field.get(field.get("field_name"), [])) or "—"
     if value in (None, "", [], {}):
@@ -54,7 +61,7 @@ def _values_hash(fields, values, instance=None):
     picked = {}
     for f in fields:
         name = f.get("field_name")
-        if f.get("field_type") == "formula" or f.get("read_only"):
+        if f.get("field_type") in ("formula", "chart") or f.get("read_only"):
             continue
         if f.get("field_type") == "file":
             picked[name] = sorted(a.id for a in (getattr(instance, "attachments", None) or [])
@@ -76,7 +83,9 @@ def _stage_values(instance, stage, draft=None):
         values.update(entry.draft)       # what they had typed when they sent it
     if draft:
         values.update(draft)
-    return values
+    # what the approver reads includes the calculations, as they will be saved
+    from .formfields import apply_formulas_to_payload
+    return apply_formulas_to_payload(values)
 
 
 def attachable_blocks(instance, stage, draft=None) -> list:
@@ -163,10 +172,12 @@ def required_items(stage) -> list:
 def _option_fields():
     """Fields with «تأیید گزینه» set: field_name (as drawn) → FormField."""
     from ..models import FormField
+    from sqlalchemy import or_
     out = {}
-    for f in FormField.query.filter(FormField.approval_user_id.isnot(None),
+    for f in FormField.query.filter(or_(FormField.approval_user_id.isnot(None),
+                                        FormField.approval_rules.isnot(None)),
                                     FormField.is_active.is_(True)).all():
-        if f.approval_option_list:
+        if f.approval_rule_list:
             out[f.field_name] = f
     return out
 
@@ -200,7 +211,8 @@ def required_approver_ids(stage) -> set:
         names = _names_on(stage, options)
         for n, f in options.items():
             if n in names:
-                ids.update(f.approver_ids)
+                for rule in f.approval_rule_list:
+                    ids.update(rule["approvers"])
     return ids
 
 
@@ -218,13 +230,29 @@ def answer_choices(field_name):
                     if i.is_active] if cat else [])
 
 
-def _hits(field, value) -> list:
-    """Which of ``field``'s approval-needing options ``value`` holds."""
+def _hits(options, value) -> list:
+    """Which of the approval-needing ``options`` ``value`` holds."""
     if value in (None, "", [], {}):
         return []
-    wanted = set(field.approval_option_list)
+    wanted = set(options)
     have = value if isinstance(value, list) else [value]
     return [str(v) for v in have if str(v) in wanted]
+
+
+def _opened_by(blocks, field_name, values) -> list:
+    """The forms of this page that ``field_name``'s answer opened («اتصال‌ها»):
+    they go to the approver with it — the readings behind the answer."""
+    from .conditions import parse_rules
+    have = values.get(field_name)
+    have = {str(v) for v in (have if isinstance(have, list) else [have])
+            if v not in (None, "")}
+    out = []
+    for block in blocks:
+        for on, wanted in parse_rules(block.get("visible_when")):
+            if on == field_name and have & set(wanted):
+                out.append(block)
+                break
+    return out
 
 
 def option_rules(instance, stage, payload=None, form=None, values=None) -> list:
@@ -237,24 +265,31 @@ def option_rules(instance, stage, payload=None, form=None, values=None) -> list:
     values = values if values is not None else _stage_values(instance, stage, payload)
     form = form or wf.stage_form(instance, stage, payload)
     rules = {}
-    for block in form["sections"]:
-        if block.get("is_locked"):
-            continue
+    blocks = [b for b in form["sections"] if not b.get("is_locked")]
+    for block in blocks:
         for f in block.get("fields") or []:
             field = options.get(f.get("field_name"))
             if field is None or f.get("read_only"):
                 continue
-            hits = _hits(field, values.get(field.field_name))
-            if not hits:
-                continue
-            # every approver named on the field must approve, each on their own
-            for approver_id in field.approver_ids:
-                rid = f"f{field.id}:{block.get('code')}:{approver_id}"
-                rule = rules.setdefault((block.get("code"), approver_id), {
-                    "item_id": rid, "block": block, "approver_id": approver_id,
-                    "answers": [], "answer_field": None})
-                rule["answers"].append(f"{f.get('label') or field.label}: {'، '.join(hits)}")
-                rule["answer_field"] = rule["answer_field"] or field.approval_answer_field
+            value = values.get(field.field_name)
+            for spec in field.approval_rule_list:
+                hits = _hits(spec["options"], value)
+                if not hits:
+                    continue
+                opened = [b for b in _opened_by(blocks, field.field_name,
+                                                {field.field_name: hits})
+                          if b.get("code") != block.get("code")]
+                # every approver named on the rule must approve, each on their own
+                for approver_id in spec["approvers"]:
+                    rid = f"f{field.id}:{block.get('code')}:{approver_id}"
+                    rule = rules.setdefault((block.get("code"), approver_id), {
+                        "item_id": rid, "block": block, "approver_id": approver_id,
+                        "answers": [], "answer_field": None, "opened": []})
+                    rule["answers"].append(f"{f.get('label') or field.label}: {'، '.join(hits)}")
+                    rule["answer_field"] = rule["answer_field"] or spec.get("answer_field")
+                    for b in opened:
+                        if all(b.get("code") != o.get("code") for o in rule["opened"]):
+                            rule["opened"].append(b)
     return list(rules.values())
 
 
@@ -315,10 +350,14 @@ def required_status(instance, stage, payload=None) -> list:
         key = f"{stage.stage_number}:{code}"
         if any(o["key"] == key and o["approver_id"] == rule["approver_id"] for o in out):
             continue                         # the form's own rule already covers it
-        now = _values_hash(block.get("fields") or [], values, instance)
-        state, req = _state_of(history, key, rule["approver_id"], now)
+        # the answer's own form, and the forms it opened, are approved as a whole
+        parts = [block] + rule.get("opened", [])
+        keys = [f"{stage.stage_number}:{b.get('code')}" for b in parts]
+        now = {f"{stage.stage_number}:{b.get('code')}":
+               _values_hash(b.get("fields") or [], values, instance) for b in parts}
+        state, req = _state_of(history, keys, rule["approver_id"], now)
         approver = db.session.get(AppUser, rule["approver_id"])
-        out.append({"item_id": rule["item_id"], "key": key, "code": code,
+        out.append({"item_id": rule["item_id"], "key": key, "keys": keys, "code": code,
                     "title": f"{block.get('title')} — {' / '.join(rule['answers'])}",
                     "approver_id": rule["approver_id"],
                     "approver_name": approver.full_name if approver else None,
@@ -329,23 +368,57 @@ def required_status(instance, stage, payload=None) -> list:
     return out
 
 
-def _state_of(history, key, approver_id, now):
-    """The latest request for ``key`` to ``approver_id``, and what it means now."""
+def _state_of(history, keys, approver_id, now):
+    """The latest request covering ``keys`` sent to ``approver_id``, and what
+    it means now (``now``: key → hash of what those forms hold today)."""
     for r in history:
-        if key not in r.keys or r.approver_id != approver_id:
+        if any(k not in r.keys for k in keys) or r.approver_id != approver_id:
             continue
         if r.status == APPROVAL_PENDING:
             return "pending", r
         if r.status == APPROVAL_APPROVED:
-            return ("approved" if r.hashes.get(key) == now else "changed"), r
+            same = all(r.hashes.get(k) == now.get(k) for k in keys)
+            return ("approved" if same else "changed"), r
         if r.status == APPROVAL_REJECTED:
             return "rejected", r
     return "not_sent", None
 
 
+def answer_blockers(instance, stage, payload) -> list:
+    """«مانع ارسال»: answers on this stage with which it may not be sent on —
+    «مسیر دسترسی به چاه آماده است؟ خیر» — as Persian reasons."""
+    from ..models import FormField
+    blocking = {f.field_name: f for f in FormField.query.filter(
+        FormField.block_options.isnot(None), FormField.is_active.is_(True)).all()
+        if f.block_option_list}
+    if not blocking:
+        return []
+    wf = _wf()
+    values = _stage_values(instance, stage, payload)
+    reasons = []
+    for block in wf.stage_form(instance, stage, payload)["sections"]:
+        if block.get("is_locked"):
+            continue
+        if (block.get("visible_when") or "").strip() \
+                and wf._rule_met(block.get("visible_when"), values, set()) is not True:
+            continue                         # a form that is not open asks nothing
+        for f in block.get("fields") or []:
+            field = blocking.get(f.get("field_name"))
+            if field is None or f.get("read_only"):
+                continue
+            if (f.get("visible_when") or "").strip() \
+                    and wf._rule_met(f.get("visible_when"), values, set()) is False:
+                continue                     # a question not asked
+            hits = _hits(field.block_option_list, values.get(field.field_name))
+            if hits:
+                reasons.append(f"با پاسخ «{'، '.join(hits)}» به «{f.get('label') or field.label}» "
+                               "این مرحله به مرحله‌ی بعد نمی‌رود؛ پس از رفع مورد، پاسخ را اصلاح کنید.")
+    return reasons
+
+
 def submit_blockers(instance, stage, payload) -> list:
     """Persian reasons this stage may not be finalised yet (empty = free)."""
-    reasons = []
+    reasons = answer_blockers(instance, stage, payload)
     pending = [r for r in requests_for(instance, stage.stage_number) if r.status == APPROVAL_PENDING]
     for r in pending:
         reasons.append(f"درخواست تأیید این مرحله نزد «{r.approver.full_name if r.approver else '—'}» "
@@ -400,7 +473,7 @@ def create_request(instance, stage_number, user, approver_id, keys, note=None,
             rule = next((i for i in required_items(stage) if i.id == st["item_id"]), None)
         answer_field = st.get("answer_field")
         approver_id = st["approver_id"]
-        keys = list(dict.fromkeys(list(keys or []) + [st["key"]]))
+        keys = list(dict.fromkeys(list(keys or []) + list(st.get("keys") or [st["key"]])))
     elif not stage.approval_request_enabled and not required_items(stage) \
             and not option_rules(instance, stage, draft):
         raise ApprovalError("«ارجاع برای تأیید» برای این مرحله فعال نشده است.")

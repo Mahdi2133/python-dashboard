@@ -112,12 +112,13 @@ def dynamic_fields() -> list:
     out = []
     for f in (FormField.query.filter(FormField.is_active.is_(True),
                                      FormField.model_attr.is_(None),
-                                     FormField.field_type != "mirror")
+                                     FormField.field_type.notin_(("mirror", "chart")))
               .order_by(FormField.sort_order).all()):
         out.append({
-            "key": f"dyn.{f.field_name}", "label": f.label, "kind": "dynamic",
+            "key": f"dyn.{f.field_name}", "label": f.export_header or f.label, "kind": "dynamic",
             "attr": f.field_name,
-            "numeric": f.field_type in _DYNAMIC_NUMERIC,
+            "numeric": f.field_type in _DYNAMIC_NUMERIC or (
+                f.field_type == "formula" and (f.result_type or "number") != "text"),
             "section": f.section.title if f.section else None,
         })
     return out

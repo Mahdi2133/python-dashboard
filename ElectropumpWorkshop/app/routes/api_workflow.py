@@ -709,6 +709,41 @@ def update_stage(stage_id):
     return ok(stage.to_dict(), message="مرحله به‌روزرسانی شد.")
 
 
+@bp.get("/stages/<int:stage_id>/approval-rules")
+@permission_required("workflow.manage")
+def stage_approval_rules(stage_id):
+    """«ارجاعات برای تأیید» of one stage, for the process builder: every answer
+    asked on this stage that needs somebody's approval before the stage can be
+    sent on — and every other choice question here that could have a rule."""
+    from ..services import approvals as ap
+    from .api_formbuilder import _options_of
+    stage = db.session.get(WorkflowStage, stage_id)
+    if stage is None:
+        return fail("مرحله یافت نشد.", 404)
+    choice = {f.field_name: f for f in FormField.query.filter(FormField.is_active.is_(True)).all()
+              if f.is_choice and f.field_name != "well"}
+    names = ap._names_on(stage, choice)
+    users = {u.id: u.full_name for u in AppUser.query.all()}
+    ruled, others = [], []
+    for name in sorted(names & set(choice), key=lambda n: (choice[n].section.sort_order
+                                                           if choice[n].section else 0,
+                                                           choice[n].sort_order)):
+        f = choice[name]
+        row = {"id": f.id, "field_name": f.field_name, "label": f.label,
+               "section_title": f.section.title if f.section else None,
+               "options": [o["value"] for o in _options_of(f)],
+               "rules": [{**r, "approver_names": [users.get(i, "?") for i in r["approvers"]]}
+                         for r in f.approval_rule_list],
+               "block_options": f.block_option_list}
+        (ruled if row["rules"] or row["block_options"] else others).append(row)
+    items = [{"section_title": i.section.title, "approver_name": users.get(i.approval_user_id)}
+             for i in stage.items if i.approval_user_id and i.section is not None]
+    return ok({"fields": ruled, "others": others, "items": items,
+               "answer_fields": [{"field_name": f.field_name, "label": f.label,
+                                  "section_title": f.section.title if f.section else None}
+                                 for f in choice.values()]})
+
+
 @bp.put("/stages/<int:stage_id>/items")
 @permission_required("workflow.manage")
 def set_stage_items(stage_id):
@@ -1553,13 +1588,22 @@ _STAGE_REPORT_BASE = [
 def _stage_field_names(stage):
     """Every field this stage asks for, section by section, in form order."""
     names = []
+
+    def add(field):
+        # a «فیلد مشترک» is stored under the field it shows; a chart stores nothing
+        source = field.mirror_source() if field.field_type == "mirror" else field
+        if source is None or source.field_type == "chart" or not source.is_active:
+            return
+        if source.field_name not in names:
+            names.append(source.field_name)
+
     for item in sorted(stage.items, key=lambda i: i.sort_order):
         if item.section is not None:
             for field in sorted(item.section.fields, key=lambda f: f.sort_order):
-                if field.is_active and field.field_name not in names:
-                    names.append(field.field_name)
-        elif item.field is not None and item.field.field_name not in names:
-            names.append(item.field.field_name)
+                if field.is_active:
+                    add(field)
+        elif item.field is not None:
+            add(item.field)
     return names
 
 
@@ -1590,6 +1634,7 @@ def _stage_report(payload):
     if not wanted:
         raise WorkflowError("حداقل یک ستون را انتخاب کنید.")
 
+    kinds = {f.field_name: f.field_type for f in FormField.query.all()}
     labels = {f.field_name: f.label for f in FormField.query.all()}
     labels.update(dict(_STAGE_REPORT_BASE))
     only_done = payload.get("only_submitted") is not False
@@ -1630,6 +1675,11 @@ def _stage_report(payload):
         row = {}
         for key in wanted:
             value = facts[key] if key in facts else values.get(key)
+            if kinds.get(key) == "file":       # the documents, by name
+                value = [a.filename for a in instance.attachments if a.field_name == key]
+            elif kinds.get(key) == "numbers":
+                from ..services.records import numbers_text
+                value = numbers_text(value)
             if isinstance(value, list):
                 value = "، ".join(str(v) for v in value if v not in (None, ""))
             row[key] = "" if value in (None, False) else value

@@ -33,8 +33,8 @@ def _export_columns():
                {"key": "j_year", "label": "سال"}]
     seen = {c["key"] for c in columns}
     for field in fields:
-        if field.field_name in ("op_jdate",):
-            continue
+        if field.field_name in ("op_jdate",) or field.field_type in ("mirror", "chart"):
+            continue                           # a mirror's value is its source's column
         # The PM code and well class sit next to the well name, matching the
         # order the maintenance workbook uses.
         if field.field_name == "well":

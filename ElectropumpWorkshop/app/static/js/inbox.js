@@ -342,7 +342,13 @@
         + '</div>'
         + (b.note ? '<div class="sum-note">' + A.esc(b.note) + '</div>' : '')
         + '<dl class="sum-values">' + b.values.map(function (v) {
-            return '<dt>' + A.esc(v.label) + '</dt><dd>' + A.esc(v.value) + '</dd>';
+            /* a document is shown as the file itself, to open */
+            var val = v.files && v.files.length
+              ? v.files.map(function (a) {
+                  return '<a href="' + A.esc(a.url) + '" target="_blank">📄 ' + A.esc(a.filename) + '</a>';
+                }).join(' ')
+              : A.esc(v.value);
+            return '<dt>' + A.esc(v.label) + '</dt><dd>' + val + '</dd>';
           }).join('') + '</dl>'
         + '</div>';
     }).join(''));

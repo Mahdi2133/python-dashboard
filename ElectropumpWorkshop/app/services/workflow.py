@@ -487,8 +487,8 @@ def fill_stage_map(instance: WorkflowInstance) -> dict:
     for f in (FormField.query.filter(FormField.fill_stage_ids.isnot(None),
                                      FormField.is_active.is_(True)).all()):
         number = next((visited[i] for i in f.fill_stage_list if i in visited), None)
-        if number is None:
-            continue
+        if number is None or (f.section is not None and not f.section.is_active):
+            continue                              # a form switched off asks nothing
         source = f.mirror_source() if f.field_type == "mirror" else f
         if source is not None:
             out[source.field_name] = (number, f)
@@ -656,6 +656,13 @@ def _missing_required(instance: WorkflowInstance, stage: WorkflowStage,
             # to the record, it does not re-type what is on it.
             if merged.get(name) in (None, "", [], {}):
                 missing[name] = f"«{f.get('label') or name}» الزامی است."
+            elif f.get("field_type") == "numbers":
+                from .records import numbers_parts
+                parts = numbers_parts(merged.get(name))
+                need = len(f.get("part_labels") or [1, 2, 3])
+                if len(parts) < need or any(p is None for p in parts[:need]):
+                    missing[name] = (f"همه‌ی مقادیر «{f.get('label') or name}» "
+                                     f"({'، '.join(f.get('part_labels') or [])}) را وارد کنید.")
     return missing
 
 
@@ -719,7 +726,11 @@ def submitted_summary(instance: WorkflowInstance, except_stage: int = None,
     something is; without it they see everything recorded so far, which is the
     default and the usual answer.
     """
-    labels = {f.field_name: f.label for f in FormField.query.all()}
+    all_fields = FormField.query.all()
+    labels = {f.field_name: f.label for f in all_fields}
+    kinds = {f.field_name: f.field_type for f in all_fields}
+    from .formfields import files_by_field
+    files = files_by_field(instance)
     out = []
     for entry in sorted(instance.entries, key=lambda e: e.stage_number):
         if entry.stage_number == except_stage or entry.stage_number == STAGE_INTAKE:
@@ -732,7 +743,23 @@ def submitted_summary(instance: WorkflowInstance, except_stage: int = None,
         for name, value in (entry.payload or {}).items():
             if value in (None, "", [], False):
                 continue
-            if isinstance(value, list):
+            kind = kinds.get(name)
+            if kind == "chart":
+                continue
+            if kind == "file":
+                # the documents themselves, to open — not their ids
+                got = files.get(name, [])
+                if got:
+                    values.append({"label": labels.get(name, name),
+                                   "value": "، ".join(a["filename"] for a in got),
+                                   "files": got})
+                continue
+            if kind == "numbers":
+                from .records import numbers_text
+                value = numbers_text(value)
+                if not value:
+                    continue
+            elif isinstance(value, list):
                 value = "، ".join(str(v) for v in value if v not in (None, ""))
                 if not value:
                     continue
@@ -1282,6 +1309,19 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
     if formula_here:
         computed = compute_formulas({**instance.payload, **payload}, only=formula_here)
         payload.update(computed)
+    # a «مقدار پیش‌فرض» written as a formula fills the field left empty
+    auto_here = {f["field_name"] for f in drawn
+                 if str(f.get("default_value") or "").startswith("=")
+                 and payload.get(f["field_name"]) in (None, "", [])}
+    if auto_here:
+        from .formfields import compute_autofill
+        base = {**instance.payload, **payload}
+        filled = {k: v for k, v in compute_autofill(
+            {**base, **{k: None for k in auto_here}}).items() if k in auto_here}
+        if filled:
+            payload.update(filled)
+            if formula_here:
+                payload.update(compute_formulas({**instance.payload, **payload}, only=formula_here))
 
     # When several people share one stage, what an earlier one of them wrote
     # counts — the second is confirming the form, not typing it again.

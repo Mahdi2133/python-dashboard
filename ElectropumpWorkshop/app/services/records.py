@@ -252,7 +252,15 @@ def _apply_dynamic(record, payload, errors):
             except ValueError:
                 errors[name] = "قالب تاریخ نامعتبر است."
         elif field.field_type == "formula":
-            holder.value_num = to_float(raw, name, errors)
+            if (field.result_type or "number") == "text" or (
+                    isinstance(raw, str) and to_float(raw, name, {}) is None):
+                holder.value_text = str(raw)
+            else:
+                holder.value_num = to_float(raw, name, errors)
+        elif field.field_type == "numbers":
+            holder.value_text = numbers_text(raw)
+        elif field.field_type == "chart":
+            continue                       # a chart stores nothing
         elif field.field_type == "file":
             holder.value_text = _file_names(raw)
         elif field.field_type in ("checkbox", "multiselect", "checklist"):
@@ -262,8 +270,36 @@ def _apply_dynamic(record, payload, errors):
         # a «مستند» is uploaded in the process کارتابل, and checked there
         if field.is_required and field.field_type != "file" and holder.value in (None, ""):
             errors[name] = f"«{field.label}» الزامی است."
+        elif field.is_required and field.field_type == "numbers" \
+                and None in (numbers_parts(raw) + [None] * len(field.part_labels))[:len(field.part_labels)]:
+            errors[name] = f"همه‌ی مقادیر «{field.label}» ({'، '.join(field.part_labels)}) الزامی است."
         if holder.id is None and holder.field_id not in existing:
             record.dynamic_values.append(holder)
+
+
+def numbers_parts(raw) -> list:
+    """A «چند مقدار عددی» answer as a list (from a list or «a / b / c»)."""
+    if raw in (None, ""):
+        return []
+    parts = raw if isinstance(raw, (list, tuple)) else str(raw).split("/")
+    out = []
+    for p in parts:
+        t = str(p if p is not None else "").strip().translate(
+            str.maketrans("۰۱۲۳۴۵۶۷۸۹٫", "0123456789."))
+        try:
+            n = float(t) if t not in ("", "None") else None
+        except ValueError:
+            n = None
+        out.append(int(n) if n is not None and n.is_integer() else n)
+    return out
+
+
+def numbers_text(raw) -> str | None:
+    """How the record keeps it: «12 / 13 / 12.5» (empty parts stay empty)."""
+    parts = numbers_parts(raw)
+    if not any(p is not None for p in parts):
+        return None
+    return " / ".join("" if p is None else str(p) for p in parts)
 
 
 def _file_names(raw) -> str:

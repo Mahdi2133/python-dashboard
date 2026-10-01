@@ -155,6 +155,8 @@ MULTI_TYPES = ("checkbox", "multiselect", "checklist")
 
 
 def form_field_type(field) -> str:
+    if field.field_type == "formula" and (field.result_type or "number") == "text":
+        return "text"
     if field.field_type in ("number", "formula"):
         return "decimal"
     if field.field_type in ("date", "jalali_date"):
@@ -199,22 +201,50 @@ def report_form_fields() -> list:
     # a «فیلد مشترک» stores nothing of its own — its field is listed already
     return (FormField.query.join(FormSection)
             .filter(or_(FormField.is_active.is_(True), FormField.model_attr.isnot(None)))
-            .filter(FormField.field_type != "mirror")
+            .filter(FormField.field_type.notin_(("mirror", "chart")))
             .order_by(FormSection.sort_order, FormField.sort_order).all())
+
+
+def set_field_value(row: dict, field, raw, ftype=None):
+    """Put one form answer on a report row. A «چند مقدار عددی» answer is one
+    readable value («12 / 13 / 12.5») plus a numeric column per part, so its
+    phases can be averaged and compared like any number."""
+    if field.field_type == "numbers":
+        from ..services.records import numbers_parts, numbers_text
+        parts = numbers_parts(raw)
+        row[field.field_name] = numbers_text(raw)
+        for i in range(len(field.part_labels)):
+            row[f"{field.field_name}__{i + 1}"] = parts[i] if i < len(parts) else None
+        return
+    row[field.field_name] = coerce(ftype or form_field_type(field), raw)
 
 
 def form_fields(prefix: str = "", group_prefix: str = "") -> list:
     """Every reportable form-builder field, as a report field."""
     cats = _labels_by_category()
     out = []
-    for field in report_form_fields():
+    fields = report_form_fields()
+    # «افت (m)» in five «کارکرد» forms: a report column must say which one
+    seen = {}
+    for field in fields:
+        seen[field.label] = seen.get(field.label, 0) + 1
+    for field in fields:
         ftype = form_field_type(field)
-        label = field.label + ("" if field.is_active else " (پنهان در فرم)")
+        label = field.label
+        if seen.get(label, 0) > 1 and field.section is not None and field.section.title not in label:
+            label = f"{label} — {field.section.title}"
+        label += "" if field.is_active else " (پنهان در فرم)"
         out.append(fdef(prefix + field.field_name, label, ftype,
                         group_prefix + (field.section.title if field.section else "فرم"),
                         options=form_field_options(field, cats) if ftype in ("single", "multi", "center") else None,
                         form_field=field.field_name,
                         form=field.section.code if field.section else None))
+        if field.field_type == "numbers":
+            for i, part in enumerate(field.part_labels, start=1):
+                out.append(fdef(f"{prefix}{field.field_name}__{i}", f"{label} — {part}", "decimal",
+                                group_prefix + (field.section.title if field.section else "فرم"),
+                                form_field=field.field_name,
+                                form=field.section.code if field.section else None))
     return out
 
 
@@ -382,6 +412,10 @@ def _load_records(scope):
                     value = MONTHS_FA[raw] if isinstance(raw, int) and 1 <= raw <= 12 else None
                 else:
                     value = raw
+            elif f.field_type == "numbers":
+                holder = dyn[rec.id].get(f.id)
+                set_field_value(row, f, holder.value_text if holder is not None else None)
+                continue
             else:
                 holder = dyn[rec.id].get(f.id)
                 if holder is not None:
@@ -540,7 +574,7 @@ def _load_processes(scope):
                 delays += 1
         row["_delays"] = delays
         for f in fields:
-            row[f.field_name] = coerce(form_field_type(f), payload.get(f.field_name))
+            set_field_value(row, f, payload.get(f.field_name))
         rows.append(row)
     return rows
 
@@ -627,7 +661,7 @@ def _load_steps(scope):
             }
             payload = e.payload or {}
             for f in fields:
-                row[f.field_name] = coerce(form_field_type(f), payload.get(f.field_name))
+                set_field_value(row, f, payload.get(f.field_name))
             rows.append(row)
     return rows
 

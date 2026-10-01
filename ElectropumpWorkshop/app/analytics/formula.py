@@ -168,7 +168,14 @@ FUNCTIONS = {
     "OR": (1, None, "OR(شرط۱، شرط۲، …)"),
     "NOT": (1, 1, "NOT(شرط)"),
     "ROUND": (1, 2, "ROUND(عدد، تعداد اعشار)"),
+    "ROUNDUP": (1, 2, "ROUNDUP(عدد، تعداد اعشار) — گرد کردن رو به بالا (مثل اکسل)"),
+    "ROUNDDOWN": (1, 2, "ROUNDDOWN(عدد، تعداد اعشار) — گرد کردن رو به پایین"),
+    "SQRT": (1, 1, "SQRT(عدد) — جذر"),
+    "POWER": (2, 2, "POWER(عدد، توان)"),
+    "IFERROR": (2, 2, "IFERROR(مقدار، جایگزین) — اگر مقدار خطا یا خالی بود"),
     "ABS": (1, 1, "ABS(عدد)"),
+    "QFIT_A": (4, None, "QFIT_A(x1، …، xn، y1، …، yn) — ضریب a در برازش y = a·x² + b·x (خط روند درجه ۲ از مبدأ)"),
+    "QFIT_B": (4, None, "QFIT_B(x1، …، xn، y1، …، yn) — ضریب b در برازش y = a·x² + b·x"),
     "MIN": (1, None, "MIN(a، b، …) یا در گزارش گروهی MIN([فیلد])"),
     "MAX": (1, None, "MAX(a، b، …) یا در گزارش گروهی MAX([فیلد])"),
     "CONCAT": (1, None, "CONCAT(متن۱، متن۲، …)"),
@@ -485,6 +492,33 @@ class Evaluator:
             v = _num(ev(args[0]))
             d = int(_num(ev(args[1])) or 0) if len(args) > 1 else 0
             return round(v, d) if v is not None else None
+        if name in ("ROUNDUP", "ROUNDDOWN"):
+            v = _num(ev(args[0]))
+            if v is None:
+                return None
+            d = int(_num(ev(args[1])) or 0) if len(args) > 1 else 0
+            f = 10 ** d
+            # away from zero / toward zero, as Excel does
+            r = (math.ceil(abs(v) * f - 1e-9) if name == "ROUNDUP" else math.floor(abs(v) * f + 1e-9)) / f
+            return r if v >= 0 else -r
+        if name == "SQRT":
+            v = _num(ev(args[0]))
+            return math.sqrt(v) if v is not None and v >= 0 else None
+        if name == "POWER":
+            a, b = _num(ev(args[0])), _num(ev(args[1]))
+            try:
+                return None if a is None or b is None else a ** b
+            except (OverflowError, ValueError, ZeroDivisionError):
+                return None
+        if name == "IFERROR":
+            try:
+                v = ev(args[0])
+            except (ArithmeticError, ValueError, TypeError):
+                v = None
+            return ev(args[1]) if v in (None, "") or (isinstance(v, complex)) else v
+        if name in ("QFIT_A", "QFIT_B"):
+            vals = [_num(ev(a)) for a in args]
+            return qfit(vals, name == "QFIT_A")
         if name == "ABS":
             v = _num(ev(args[0]))
             return abs(v) if v is not None else None
@@ -566,6 +600,25 @@ class Evaluator:
             p = _num(self._ev(args[1], rows[0] if rows else {}, None)) or 50
             return percentile(nums, p)
         return None
+
+
+def qfit(vals: list, want_a: bool):
+    """Least squares of y = a·x² + b·x through the origin — Excel's order-2
+    trendline with «Set intercept = 0». The first half of ``vals`` are the x's,
+    the second half the y's; a pair with a blank (or a zero x) is left out."""
+    if len(vals) % 2:
+        return None
+    n = len(vals) // 2
+    pts = [(x, y) for x, y in zip(vals[:n], vals[n:]) if x not in (None, 0) and y is not None]
+    x2 = sum(x ** 2 for x, _ in pts)
+    x3 = sum(x ** 3 for x, _ in pts)
+    x4 = sum(x ** 4 for x, _ in pts)
+    yx = sum(y * x for x, y in pts)
+    yx2 = sum(y * x * x for x, y in pts)
+    det = x4 * x2 - x3 * x3
+    if len(pts) < 2 or abs(det) < 1e-12:
+        return None
+    return (yx2 * x2 - yx * x3) / det if want_a else (x4 * yx - x3 * yx2) / det
 
 
 def percentile(nums, p):

@@ -33,7 +33,17 @@ FIELD_TYPES = (
     # of its own — it draws and writes the field it points at, so «تیپ پمپ
     # قبلی» in «فرم انتخاب پمپ» and in «مشخصات پمپ» is one value, not two.
     "mirror",
+    # «چند مقدار عددی»: one answer made of several numbers, e.g. the three
+    # phases of «عدم تعادل جریان» — فاز ۱ / فاز ۲ / فاز ۳. The parts are named by
+    # the field's own options (default: three phases).
+    "numbers",
+    # «نمودار»: a chart drawn from other fields of the form as they are filled
+    # (series of x/y fields, an axis on either side, optional trend line). It
+    # stores nothing.
+    "chart",
 )
+
+DEFAULT_PART_LABELS = ["فاز ۱", "فاز ۲", "فاز ۳"]
 
 
 class FormSection(db.Model):
@@ -140,6 +150,18 @@ class FormField(db.Model):
     # filled. On that stage it is asked, whatever forms the stage carries;
     # before it the field is not shown, after it it is shown read-only.
     fill_stage_ids = db.Column(db.String(200))
+    # Several «تأیید گزینه» rules on one field, each its own answers → its own
+    # approvers (JSON: [{"options": [...], "approvers": [ids], "answer_field": name}]).
+    # When empty, the single rule in the columns above is the field's rule.
+    approval_rules = db.Column(db.Text)
+    # «مانع ارسال»: answers (JSON list) with which the stage cannot be sent on.
+    block_options = db.Column(db.Text)
+    # «محاسباتی»: what the formula gives — a number (default) or a text.
+    result_type = db.Column(db.String(10))
+    # «نمودار»: JSON {"series": [{"label", "x": [fields], "y": [fields],
+    # "axis": "left"|"right", "trend": "poly2"|"poly2_0"|"power"|"linear"|""}],
+    # "x_label", "y_label", "y2_label"}
+    chart_config = db.Column(db.Text)
     show_in_table = db.Column(db.Boolean, nullable=False, default=False)
     table_order = db.Column(db.Integer, nullable=False, default=0)
     export_header = db.Column(db.String(200))
@@ -166,6 +188,8 @@ class FormField(db.Model):
         ``months``  — the built-in Jalali month list.
         ``wells``   — the wells table (the well autocomplete).
         """
+        if self.field_type == "numbers":
+            return "own"                  # the names of its parts
         if not self.is_choice:
             return None
         if self.lookup_category == "__months__":
@@ -201,8 +225,58 @@ class FormField(db.Model):
             "approval_user_id": self.approval_user_id,
             "approval_user_ids": self.approver_ids,
             "approval_answer_field": self.approval_answer_field,
+            "approval_rules": self.approval_rule_list,
+            "block_options": self.block_option_list,
+            "result_type": self.result_type or "number",
+            "chart_config": self.chart_spec,
+            "part_labels": self.part_labels if self.field_type == "numbers" else None,
             "fill_stage_ids": self.fill_stage_list,
         }
+
+    @staticmethod
+    def _json(raw, default):
+        import json
+        try:
+            got = json.loads(raw) if raw else default
+        except ValueError:
+            return default
+        return got if isinstance(got, type(default)) else default
+
+    @property
+    def approval_rule_list(self) -> list:
+        """Every «تأیید گزینه» rule of this field: which answers, whose approval,
+        and the question the approver answers (if any)."""
+        out = []
+        for r in self._json(self.approval_rules, []):
+            if not isinstance(r, dict):
+                continue
+            opts = [str(x) for x in r.get("options") or [] if str(x).strip()]
+            who = [int(x) for x in r.get("approvers") or [] if str(x).isdigit()]
+            if opts and who:
+                out.append({"options": opts, "approvers": who,
+                            "answer_field": r.get("answer_field") or None})
+        if out:
+            return out
+        if self.approval_option_list and self.approver_ids:
+            return [{"options": self.approval_option_list, "approvers": self.approver_ids,
+                     "answer_field": self.approval_answer_field}]
+        return []
+
+    @property
+    def block_option_list(self) -> list:
+        return [str(x) for x in self._json(self.block_options, []) if str(x).strip()]
+
+    @property
+    def chart_spec(self) -> dict | None:
+        if self.field_type != "chart":
+            return None
+        return self._json(self.chart_config, {})
+
+    @property
+    def part_labels(self) -> list:
+        """The names of a «چند مقدار عددی» field's parts (its own options)."""
+        labels = [o.label or o.value for o in self.options if o.is_active]
+        return labels or list(DEFAULT_PART_LABELS)
 
     @property
     def approver_ids(self) -> list:

@@ -2620,6 +2620,110 @@ def main():
     c.put(f"/api/form-builder/fields/{[f for s in fb['sections'] for f in s['fields'] if f['field_name'] == 't_later'][0]['id']}",
           json={"fill_stage_ids": []})
 
+    print("\n— فیلد چندعددی، نمودار، چند قاعده‌ی تأیید، پاسخ مانع و پیش‌فرض محاسباتی —")
+    from app.analytics.formula import Evaluator as _Ev, parse as _parse
+    _ev = _Ev({})
+    _q = "QFIT_{}(1.146, 1.05, 0.954, 18.8, 17, 15.3)"
+    check("ضریب a خط روند درجه ۲ از مبدأ مثل اکسل",
+          round(_ev.row(_parse(_q.format("A")), {}), 3) == 1.932)
+    check("ضریب b خط روند درجه ۲ از مبدأ مثل اکسل",
+          round(_ev.row(_parse(_q.format("B")), {}), 3) == 14.182)
+    check("ROUNDUP مثل اکسل", _ev.row(_parse("ROUNDUP(87.57, 0)"), {}) == 88
+          and _ev.row(_parse("ROUNDUP(-1.2, 0)"), {}) == -2)
+    check("IFERROR", _ev.row(_parse("IFERROR(1/0, 5)"), {}) == 5)
+    check("نتیجه‌ی متنی در فرمول", _ev.row(_parse('IF(0.14 < 0.1, "رس", "سیلت")'), {}) == "سیلت")
+    c.post("/api/form-builder/sections", json={"code": "t_r5", "title": "فرم آزمون R5",
+                                               "show_on_entry": False})
+    with app.app_context():
+        r5_sec = _FS.query.filter_by(code="t_r5").first().id
+    rr = c.post("/api/form-builder/fields", json={
+        "field_name": "t_r5_phase", "label": "جریان", "field_type": "numbers", "section_id": r5_sec,
+        "is_required": True})
+    check("فیلد چند مقدار عددی با فاز ۱ تا ۳ ساخته می‌شود", rr.status_code == 200
+          and rr.get_json()["data"]["part_labels"] == ["فاز ۱", "فاز ۲", "فاز ۳"], str(rr.get_json())[:200])
+    rr = c.post("/api/form-builder/fields", json={
+        "field_name": "t_r5_cause", "label": "علت", "field_type": "checkbox", "section_id": r5_sec,
+        "options": [{"value": "برق", "label": "برق"}, {"value": "مکانیک", "label": "مکانیک"}],
+        "approval_rules": [{"options": ["برق"], "approvers": [owners["bozorg"]]},
+                           {"options": ["مکانیک"], "approvers": [owners["kahani"]]}]})
+    check("چند قاعده‌ی تأیید روی یک فیلد", rr.status_code == 200
+          and len(rr.get_json()["data"]["approval_rules"]) == 2, str(rr.get_json())[:200])
+    rr = c.post("/api/form-builder/fields", json={
+        "field_name": "t_r5_ok", "label": "مسیر آماده است؟", "field_type": "radio", "section_id": r5_sec,
+        "options": [{"value": "بله", "label": "بله"}, {"value": "خیر", "label": "خیر"}],
+        "block_options": ["خیر"]})
+    check("پاسخ مانع ارسال ذخیره می‌شود", rr.status_code == 200
+          and rr.get_json()["data"]["block_options"] == ["خیر"])
+    c.post("/api/form-builder/fields", json={"field_name": "t_r5_x", "label": "ورودی", "field_type": "number",
+                                             "section_id": r5_sec})
+    rr = c.post("/api/form-builder/fields", json={"field_name": "t_r5_auto", "label": "خودکار", "field_type": "number",
+                                                  "section_id": r5_sec, "default_value": "=[t_r5_x] * 2"})
+    check("پیش‌فرض محاسباتی ذخیره می‌شود", rr.status_code == 200)
+    rr = c.post("/api/form-builder/fields", json={"field_name": "t_r5_txt", "label": "رده", "field_type": "formula",
+                                                  "section_id": r5_sec, "result_type": "text",
+                                                  "formula": 'IF([t_r5_x] > 3, "زیاد", "کم")'})
+    check("فرمول با نتیجه‌ی متنی", rr.status_code == 200 and rr.get_json()["data"]["result_type"] == "text",
+          str(rr.get_json())[:200])
+    rr = c.post("/api/form-builder/fields", json={"field_name": "t_r5_chart", "label": "نمودار", "field_type": "chart",
+                                                  "section_id": r5_sec, "chart_config": {"series": []}})
+    check("نمودار بدون سری رد می‌شود", rr.status_code == 422)
+    rr = c.post("/api/form-builder/fields", json={
+        "field_name": "t_r5_chart", "label": "نمودار", "field_type": "chart", "section_id": r5_sec, "is_required": True,
+        "chart_config": {"series": [{"label": "افت", "x": ["t_r5_x"], "y": ["t_r5_auto"], "trend": "poly2_0"}],
+                         "y2_max": 1}})
+    check("نمودار با سری ذخیره می‌شود و الزامی نیست", rr.status_code == 200
+          and rr.get_json()["data"]["chart_config"]["series"][0]["trend"] == "poly2_0"
+          and not rr.get_json()["data"]["is_required"], str(rr.get_json())[:200])
+    wfd = c.get("/api/workflow/definition").get_json()["data"]
+    stages_ = {x["stage_number"]: x for x in wfd["workflow"]["stages"]}
+    rr = c.put(f"/api/workflow/stages/{stages_[1]['id']}/items", json={"items": _items(
+        stages_[1], {"kind": "section", "id": r5_sec, "applies_to": "both"})})
+    check("فرم آزمون R5 روی مرحله ۱", rr.status_code == 200, str(rr.get_json().get("error")))
+    ar = c.get(f"/api/workflow/stages/{stages_[1]['id']}/approval-rules").get_json()["data"]
+    mine = [f for f in ar["fields"] if f["field_name"] == "t_r5_cause"]
+    check("قاعده‌های تأیید در فرایندساز دیده می‌شوند", mine and len(mine[0]["rules"]) == 2
+          and any(f["field_name"] == "t_r5_ok" and f["block_options"] == ["خیر"] for f in ar["fields"]),
+          str(ar)[:300])
+    pid5 = markaz.post("/api/workflow/instances", json={"operation_kind": "کشیدن", "well": well_name}
+                       ).get_json()["data"]["id"]
+    data5 = {"failure": [plain_cause], "op_jdate": "1405/07/02", "center": "سوران",
+             "t_r5_phase": ["12", "", ""], "t_r5_cause": ["برق"], "t_r5_ok": "خیر", "t_r5_x": "4", "t_r5_auto": ""}
+    rr = markaz.post(f"/api/workflow/instances/{pid5}/submit", json={"stage_number": 1, "data": data5})
+    check("چندعددی الزامی با خانه‌ی خالی ثبت نمی‌شود", rr.status_code == 422
+          and "t_r5_phase" in (rr.get_json().get("fields") or {}), str(rr.get_json())[:200])
+    data5["t_r5_phase"] = ["12", "13", "12.5"]
+    rr = markaz.post(f"/api/workflow/instances/{pid5}/submit", json={"stage_number": 1, "data": data5})
+    check("پاسخ «خیر» مانع ارسال است", rr.status_code == 422 and "خیر" in rr.get_json().get("error", ""),
+          str(rr.get_json().get("error"))[:200])
+    data5["t_r5_ok"] = "بله"
+    st5 = markaz.post(f"/api/workflow/instances/{pid5}/approval-status",
+                      json={"stage_number": 1, "draft": data5}).get_json()["data"]
+    rules5 = [r for r in st5["required"] if r.get("kind") == "option"]
+    check("هر گزینه تأییدکننده‌ی خودش را دارد (برق ← بزرگمهر، نه کاهانی)",
+          [r["approver_id"] for r in rules5] == [owners["bozorg"]], str(rules5)[:300])
+    rr = markaz.post(f"/api/workflow/instances/{pid5}/approval-requests", json={
+        "stage_number": 1, "keys": [], "draft": data5, "rule_item_id": rules5[0]["item_id"] if rules5 else None})
+    snap = rr.get_json()["data"].get("snapshot") or []
+    seen = {v["label"]: v["value"] for b in snap for v in b.get("values") or []}
+    check("تأییدکننده مقدار محاسبه‌شده را هم می‌بیند", seen.get("رده") == "زیاد" and seen.get("جریان", "").startswith("12 / 13"),
+          str(seen)[:300])
+    bozorg.post(f"/api/workflow/approval-requests/{rr.get_json()['data']['id']}/decide", json={"approved": True})
+    rr = markaz.post(f"/api/workflow/instances/{pid5}/submit", json={"stage_number": 1, "data": data5})
+    check("پس از تأیید، مرحله ثبت می‌شود", rr.status_code == 200, str(rr.get_json().get("error"))[:200])
+    pay5 = c.get(f"/api/workflow/instances/{pid5}").get_json()["data"]["payload"]
+    check("پیش‌فرض محاسباتی فیلد خالی را پر می‌کند", pay5.get("t_r5_auto") == 8, str(pay5.get("t_r5_auto")))
+    check("فرمول متنی ذخیره می‌شود", pay5.get("t_r5_txt") == "زیاد")
+    rep5 = c.post("/api/workflow/stage-report", json={"stage_id": stages_[1]["id"],
+                                                      "columns": ["__instance", "t_r5_phase"]}).get_json()["data"]
+    row5 = next((r for r in rep5["rows"] if r["__instance"] == pid5), {})
+    check("گزارش مرحله سه عدد را خوانا نشان می‌دهد", row5.get("t_r5_phase") == "12 / 13 / 12.5", str(row5))
+    with app.app_context():
+        from app.analytics.catalogue import form_fields as _ff
+        keys5 = {f["key"] for f in _ff()}
+    check("گزارش‌ساز برای هر فاز یک ستون عددی دارد",
+          {"t_r5_phase", "t_r5_phase__1", "t_r5_phase__3"} <= keys5 and "t_r5_chart" not in keys5)
+    c.put(f"/api/workflow/stages/{stages_[1]['id']}/items", json={"items": _items(stages_[1])})
+
     print("\n— خروجی PDF بدون کتابخانه‌ی reportlab پیام روشن می‌دهد —")
     import sys as _sys
     _saved = _sys.modules.get("reportlab.platypus")
