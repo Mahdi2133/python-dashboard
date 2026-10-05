@@ -402,6 +402,8 @@ def _hidden_by_condition(payload, record=None, unanswered_hides=False) -> set:
         # «سوختن الکتروموتور» can both open the burn form. An empty list is a
         # form linked to no cause yet, which opens for nothing.
         wanted = {normalize_text(x) for x in expected.split("|") if x.strip()}
+        if "*" in wanted:                    # «field=*»: any answer opens it
+            return not any(v not in (None, "", False) and str(v).strip() for v in values)
         return not any(normalize_text(v) in wanted for v in values)
 
     hidden = set()
@@ -429,7 +431,11 @@ def _check_required(record, payload, errors, hidden=frozenset()):
             if getattr(record, field.model_attr) in (None, "", []):
                 errors.setdefault(field.field_name, f"«{field.label}» الزامی است.")
         elif field.lookup_category and not field.model_attr:
-            if not record.tag_values(field.lookup_category):
+            # a choice kept as tags («خرابی مشاهده شده»), or one kept as the
+            # field's own answer («نتیجه بررسی») — either counts
+            answered = any(v.field_id == field.id and v.value not in (None, "")
+                           for v in record.dynamic_values)
+            if not answered and not record.tag_values(field.lookup_category):
                 errors.setdefault(field.field_name, f"«{field.label}» الزامی است.")
 
 

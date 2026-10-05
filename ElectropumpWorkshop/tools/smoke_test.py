@@ -2283,7 +2283,7 @@ def main():
               "is_optional": i["is_optional"], "is_read_only": i["is_read_only"]}
              for i in st1["items"]]
     items.append({"kind": "section", "id": sec_id, "applies_to": "both",
-                  "approval_user_id": owners["bozorg"]})
+                  "approval_user_id": owners["bozorg"], "approval_required": True})
     rr = c.put(f"/api/workflow/stages/{st1['id']}/items", json={"items": items})
     check("تأیید اجباری روی فرم مرحله", rr.status_code == 200
           and any(i.get("approval_user_id") == owners["bozorg"] for i in rr.get_json()["data"]["items"]))
@@ -2480,6 +2480,9 @@ def main():
         "approval_options": ["ویژه"], "approval_user_id": owners["bozorg"]})
     check("ذخیره‌ی گزینه‌ی نیازمند تأیید", rr.status_code == 200
           and rr.get_json()["data"].get("approval_options") == ["ویژه"], str(rr.get_json())[:200])
+    # this test exercises the waiting kind: the rule is marked «الزامی»
+    c.put(f"/api/form-builder/fields/{rr.get_json()['data']['id']}", json={"approval_rules": [
+        {"options": ["ویژه"], "approvers": [owners["bozorg"]], "required": True}]})
     rr = c.post("/api/form-builder/fields", json={
         "field_name": "t_txt_ap", "label": "متن", "field_type": "text", "section_id": opt_sec,
         "approval_options": ["x"], "approval_user_id": owners["bozorg"]})
@@ -2503,6 +2506,7 @@ def main():
         out = [{"kind": i["kind"], "id": i["section_id"] or i["field_id"], "applies_to": i["applies_to"],
                 "is_optional": i["is_optional"], "is_read_only": i["is_read_only"],
                 "approval_user_id": i.get("approval_user_id"),
+                "approval_required": i.get("approval_required"),
                 "locked_fields": i.get("locked_fields") or []}
                for i in st["items"]]
         return out + ([extra] if extra else [])
@@ -2553,6 +2557,10 @@ def main():
         "options": [{"value": "کابل", "label": "کابل"}, {"value": "ترانس", "label": "ترانس"}],
         "approval_options": ["کابل", "ترانس"], "approval_user_ids": [owners["bozorg"], owners["kahani"]],
         "approval_answer_field": "t_route"})
+    if rr.status_code == 200:
+        c.put(f"/api/form-builder/fields/{rr.get_json()['data']['id']}", json={"approval_rules": [
+            {"options": ["کابل", "ترانس"], "approvers": [owners["bozorg"], owners["kahani"]],
+             "answer_field": "t_route", "required": True}]})
     check("چند تأییدکننده و پاسخ تأییدکننده ذخیره می‌شود", rr.status_code == 200
           and rr.get_json()["data"]["approval_user_ids"] == [owners["bozorg"], owners["kahani"]]
           and rr.get_json()["data"]["approval_answer_field"] == "t_route", str(rr.get_json())[:200])
@@ -2722,7 +2730,64 @@ def main():
         keys5 = {f["key"] for f in _ff()}
     check("گزارش‌ساز برای هر فاز یک ستون عددی دارد",
           {"t_r5_phase", "t_r5_phase__1", "t_r5_phase__3"} <= keys5 and "t_r5_chart" not in keys5)
+    # a referral only informs: recorded straight away, the approver is told
+    pid6 = markaz.post("/api/workflow/instances", json={"operation_kind": "کشیدن", "well": well_name}
+                       ).get_json()["data"]["id"]
+    data6 = dict(data5, t_r5_cause=["مکانیک"], t_r5_ok="بله")
+    rr = markaz.post(f"/api/workflow/instances/{pid6}/submit", json={"stage_number": 1, "data": data6})
+    check("ارجاعِ غیرالزامی مرحله را نگه نمی‌دارد", rr.status_code == 200, str(rr.get_json().get("error"))[:200])
+    told = kahani.get("/api/workflow/inbox").get_json()["approval_requests"]
+    check("ارجاع پس از ثبت، خودکار برای اطلاع فرستاده شد",
+          any(r["instance_id"] == pid6 for r in told), str([r["instance_id"] for r in told]))
     c.put(f"/api/workflow/stages/{stages_[1]['id']}/items", json={"items": _items(stages_[1])})
+
+    print("\n— ترتیب مرحله‌ها، شرط طی‌شدن و شروع خودکار فرایند بعدی —")
+    with app.app_context():
+        from app.extensions import db as _db6
+        from app.models import (WorkflowDefinition as _WD, WorkflowStage as _WS,
+                                WorkflowInstance as _WI6, AppUser as _AU6, Well as _W6)
+        from app.services import workflow as _wf6
+        from app.services.conditions import matches as _m6
+        check("قاعده‌ی «هر مقدار» (*)", _m6("180", ["*"]) and not _m6("", ["*"]) and _m6(["a", "b"], ["b"]))
+        fa = _WD(code="t_r6a", name="آزمون ترتیب", operation_kind="pull", is_active=False)
+        fb6 = _WD(code="t_r6b", name="آزمون فرایند بعد", operation_kind="install", is_active=False)
+        _db6.session.add_all([fa, fb6]); _db6.session.flush()
+        sa = {n: _WS(workflow_id=fa.id, stage_number=n, title=f"م{n}", applies_to="both") for n in (1, 2, 3, 4)}
+        sa[2].waits_for = "1"
+        sa[3].waits_for, sa[3].visit_when = "2", "t_dec=بله"
+        sa[4].waits_for, sa[4].spawn_workflow_id = "2", fb6.id
+        _db6.session.add_all(list(sa.values()) + [_WS(workflow_id=fb6.id, stage_number=1, title="ن۱",
+                                                       applies_to="both")])
+        _db6.session.flush()
+        w6 = _W6.query.filter(_W6.is_active.is_(True)).first()
+        inst6 = _WI6(workflow_id=fa.id, operation_kind="pull", well_id=w6.id, current_stage=1,
+                     entry_stage=1, status="open")
+        inst6.set_payload({"op_jdate": "1405/07/01", "x": 1})
+        _db6.session.add(inst6); _db6.session.flush()
+        _db6.session.refresh(fa)
+        _wf6.sync_entries(inst6)
+        check("مرحله‌ی منتظر، پیش از ثبتِ مرحله‌ی قبل باز نیست",
+              not _wf6.stage_open(inst6, sa[2]) and _wf6.stage_open(inst6, sa[1]))
+        _wf6._entry_for(inst6, 1).status = "submitted"
+        check("با ثبت آن باز می‌شود؛ مرحله‌های بعدی هنوز نه",
+              _wf6.stage_open(inst6, sa[2]) and not _wf6.stage_open(inst6, sa[3]))
+        _wf6._entry_for(inst6, 2).status = "submitted"
+        check("دو مرحله‌ی منتظرِ یک مرحله هم‌زمان باز می‌شوند",
+              _wf6.stage_open(inst6, sa[3]) and _wf6.stage_open(inst6, sa[4]))
+        nums = lambda: {s.stage_number for s in _wf6.applicable_stages(inst6)}
+        check("تا پرسشِ شرط جواب نگرفته، مرحله در مسیر است", 3 in nums())
+        inst6.set_payload({**inst6.payload, "t_dec": "خیر"})
+        check("با پاسخی که در شرط نیست، مرحله طی نمی‌شود", 3 not in nums())
+        inst6.set_payload({**inst6.payload, "t_dec": "بله"})
+        check("با پاسخ شرط، مرحله دوباره در مسیر است", 3 in nums())
+        fb6.is_active = True
+        admin6 = _AU6.query.filter_by(username="admin").first()
+        child = _wf6.spawn_after(inst6, sa[4], admin6)
+        check("پس از ثبت مرحله، فرایند بعدی برای همان چاه شروع می‌شود",
+              child is not None and child.parent_id == inst6.id and child.well_id == w6.id
+              and child.payload.get("x") == 1 and "op_jdate" not in child.payload)
+        check("دوباره شروع نمی‌شود اگر هنوز در جریان است", _wf6.spawn_after(inst6, sa[4], admin6) is None)
+        _db6.session.rollback()
 
     print("\n— خروجی PDF بدون کتابخانه‌ی reportlab پیام روشن می‌دهد —")
     import sys as _sys

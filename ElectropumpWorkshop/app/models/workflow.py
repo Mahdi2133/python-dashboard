@@ -132,6 +132,7 @@ class WorkflowDefinition(db.Model):
                            nullable=False)
 
     stages = db.relationship("WorkflowStage", back_populates="workflow",
+                             foreign_keys="WorkflowStage.workflow_id",
                              cascade="all, delete-orphan",
                              order_by="WorkflowStage.stage_number")
 
@@ -272,8 +273,21 @@ class WorkflowStage(db.Model):
     # and they carry on. Empty list ⇒ any active user may be chosen.
     approval_request_enabled = db.Column(db.Boolean, nullable=False, default=False)
     approval_request_user_ids = db.Column(db.String(300))
+    # «پس از ثبت این مرحله‌ها باز شود»: stage numbers this one waits for. Empty
+    # keeps the old behaviour — the stage is open as soon as the process is.
+    # Several stages may wait for the same one: they then open together, each
+    # in its own کارتابل («همزمان به کارگاه مکانیک و کارگاه کشیدن»).
+    waits_for = db.Column(db.String(120))
+    # «این مرحله فقط وقتی طی می‌شود که…»: a rule on an answer («field=a|b»).
+    # Until that question is answered the stage counts as on the way.
+    visit_when = db.Column(db.Text)
+    # «پس از ثبت (و تأیید) این مرحله، فرایند … برای همین چاه شروع شود».
+    spawn_workflow_id = db.Column(db.Integer, db.ForeignKey(
+        "workflow_definitions.id", ondelete="SET NULL"))
 
-    workflow = db.relationship("WorkflowDefinition", back_populates="stages")
+    workflow = db.relationship("WorkflowDefinition", back_populates="stages",
+                               foreign_keys=[workflow_id])
+    spawn_workflow = db.relationship("WorkflowDefinition", foreign_keys=[spawn_workflow_id])
     assignee = db.relationship("AppUser", foreign_keys=[assignee_id])
     owners = db.relationship("AppUser", secondary=workflow_stage_owners,
                              lazy="selectin")
@@ -334,6 +348,11 @@ class WorkflowStage(db.Model):
         return out
 
     @property
+    def waits_for_list(self) -> list:
+        return [int(x) for x in (self.waits_for or "").split(",")
+                if x.strip().lstrip("-").isdigit()]
+
+    @property
     def referral_ids(self):
         """The fixed recipients, the first one first."""
         ids = _ids(self.referral_user_ids)
@@ -377,6 +396,9 @@ class WorkflowStage(db.Model):
             "approval_request_enabled": bool(self.approval_request_enabled),
             "approval_request_user_ids": [int(x) for x in (self.approval_request_user_ids or "").split(",")
                                           if x.strip().isdigit()],
+            "waits_for": self.waits_for_list,
+            "visit_when": self.visit_when,
+            "spawn_workflow_id": self.spawn_workflow_id,
             "items": [i.to_dict() for i in self.items],
         }
 
@@ -416,6 +438,9 @@ class WorkflowStageItem(db.Model):
     # to this person and approved before the stage can be finalised.
     approval_user_id = db.Column(db.Integer, db.ForeignKey("app_users.id",
                                                            ondelete="SET NULL"))
+    # Off: the form is only sent to that person for their information when the
+    # stage is recorded. On: the stage waits for their approval.
+    approval_required = db.Column(db.Boolean, nullable=False, default=False)
 
     stage = db.relationship("WorkflowStage", back_populates="items")
     section = db.relationship("FormSection")
@@ -443,6 +468,7 @@ class WorkflowStageItem(db.Model):
             "is_optional": self.is_optional,
             "is_read_only": self.is_read_only,
             "approval_user_id": self.approval_user_id,
+            "approval_required": bool(self.approval_required),
             "locked_fields": self.locked_names,
         }
 
@@ -469,6 +495,10 @@ class WorkflowInstance(db.Model):
     # one its starter owns, so that choice is remembered here instead of being
     # recomputed as "the earliest door" every time the path is drawn.
     entry_stage = db.Column(db.Integer)
+    # the process whose stage started this one («فرایند نصب» after the build
+    # was approved); None for a process somebody opened by hand
+    parent_id = db.Column(db.Integer, db.ForeignKey("workflow_instances.id",
+                                                    ondelete="SET NULL"), index=True)
     status = db.Column(db.String(16), nullable=False, default=INSTANCE_OPEN,
                        index=True)
     # Everything every stage has submitted so far, merged. The record is built
@@ -527,6 +557,7 @@ class WorkflowInstance(db.Model):
             "well_pm_code": self.well.pm_code if self.well else None,
             "current_stage": self.current_stage,
             "entry_stage": self.entry_stage,
+            "parent_id": self.parent_id,
             "outcome_note": self.outcome_note,
             "status": self.status,
             "status_label": INSTANCE_STATUS.get(self.status, self.status),

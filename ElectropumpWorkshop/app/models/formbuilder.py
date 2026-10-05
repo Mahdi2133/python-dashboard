@@ -253,13 +253,16 @@ class FormField(db.Model):
             opts = [str(x) for x in r.get("options") or [] if str(x).strip()]
             who = [int(x) for x in r.get("approvers") or [] if str(x).isdigit()]
             if opts and who:
+                # «الزامی»: the stage waits for this ruling. Otherwise the
+                # referral only tells these people what was recorded.
                 out.append({"options": opts, "approvers": who,
-                            "answer_field": r.get("answer_field") or None})
+                            "answer_field": r.get("answer_field") or None,
+                            "required": bool(r.get("required"))})
         if out:
             return out
         if self.approval_option_list and self.approver_ids:
             return [{"options": self.approval_option_list, "approvers": self.approver_ids,
-                     "answer_field": self.approval_answer_field}]
+                     "answer_field": self.approval_answer_field, "required": False}]
         return []
 
     @property
@@ -332,6 +335,9 @@ class FormField(db.Model):
             "sort_order": self.sort_order, "col_span": self.col_span,
             "help_text": self.help_text or source.help_text,
             "visible_when": self.visible_when or source.visible_when,
+            # required here even if optional where it lives («عمق نصب» in the
+            # install form, though «عمق نصب فعلی» is optional on the entry page)
+            "is_required": bool(source.is_required or self.is_required),
             "mirror_id": self.id, "mirror_name": self.field_name,
             "mirrored": True,
         })

@@ -249,7 +249,7 @@ def _opened_by(blocks, field_name, values) -> list:
     out = []
     for block in blocks:
         for on, wanted in parse_rules(block.get("visible_when")):
-            if on == field_name and have & set(wanted):
+            if on == field_name and (have & set(wanted) or ("*" in wanted and have)):
                 out.append(block)
                 break
     return out
@@ -284,7 +284,9 @@ def option_rules(instance, stage, payload=None, form=None, values=None) -> list:
                     rid = f"f{field.id}:{block.get('code')}:{approver_id}"
                     rule = rules.setdefault((block.get("code"), approver_id), {
                         "item_id": rid, "block": block, "approver_id": approver_id,
-                        "answers": [], "answer_field": None, "opened": []})
+                        "answers": [], "answer_field": None, "opened": [],
+                        "required": False})
+                    rule["required"] = rule["required"] or bool(spec.get("required"))
                     rule["answers"].append(f"{f.get('label') or field.label}: {'، '.join(hits)}")
                     rule["answer_field"] = rule["answer_field"] or spec.get("answer_field")
                     for b in opened:
@@ -342,6 +344,7 @@ def required_status(instance, stage, payload=None) -> list:
                     "approver_id": item.approval_user_id,
                     "approver_name": approver.full_name if approver else None,
                     "filled": filled, "state": state,
+                    "required": bool(item.approval_required),
                     "request_id": req.id if req else None})
     # «تأیید گزینه»: an answer chosen here that the admin said needs approval
     for rule in option_rules(instance, stage, payload, form=form, values=values):
@@ -362,6 +365,7 @@ def required_status(instance, stage, payload=None) -> list:
                     "approver_id": rule["approver_id"],
                     "approver_name": approver.full_name if approver else None,
                     "filled": True, "state": state, "kind": "option",
+                    "required": bool(rule.get("required")),
                     "answer_field": rule.get("answer_field"),
                     "answer_value": req.answer_value if req is not None else None,
                     "request_id": req.id if req else None})
@@ -419,11 +423,16 @@ def answer_blockers(instance, stage, payload) -> list:
 def submit_blockers(instance, stage, payload) -> list:
     """Persian reasons this stage may not be finalised yet (empty = free)."""
     reasons = answer_blockers(instance, stage, payload)
-    pending = [r for r in requests_for(instance, stage.stage_number) if r.status == APPROVAL_PENDING]
-    for r in pending:
-        reasons.append(f"درخواست تأیید این مرحله نزد «{r.approver.full_name if r.approver else '—'}» "
-                       f"در انتظار پاسخ است؛ پس از پاسخ ادامه دهید.")
-    for st in required_status(instance, stage, payload):
+    status = required_status(instance, stage, payload)
+    # A referral only informs, unless the admin marked its rule «الزامی»: then
+    # the stage waits for the ruling, and for a request still unanswered.
+    must = [st for st in status if st.get("required")]
+    waiting_on = {(st["approver_id"]) for st in must if st["state"] == "pending"}
+    for r in requests_for(instance, stage.stage_number):
+        if r.status == APPROVAL_PENDING and r.approver_id in waiting_on:
+            reasons.append(f"درخواست تأیید این مرحله نزد «{r.approver.full_name if r.approver else '—'}» "
+                           f"در انتظار پاسخ است؛ پس از پاسخ ادامه دهید.")
+    for st in must:
         if st["state"] == "approved" or st["state"] == "pending":
             continue
         if st.get("kind") == "option":
@@ -449,7 +458,7 @@ def submit_blockers(instance, stage, payload) -> list:
 
 
 def create_request(instance, stage_number, user, approver_id, keys, note=None,
-                   draft=None, rule_item_id=None):
+                   draft=None, rule_item_id=None, auto=False):
     wf = _wf()
     if instance.status != "open":
         raise ApprovalError("این فرایند بسته شده است.")
@@ -494,7 +503,7 @@ def create_request(instance, stage_number, user, approver_id, keys, note=None,
     draft = {k: v for k, v in (draft or {}).items()} if draft else None
     # keep what they typed: the form is still theirs to finish when the answer comes
     entry = wf._ensure_entry(instance, stage)
-    if draft:
+    if draft and not auto:
         entry.draft_json = json.dumps(draft, ensure_ascii=False)
     snap, hashes = _snapshot(instance, stage, keys, draft)
     if not snap:
@@ -508,10 +517,38 @@ def create_request(instance, stage_number, user, approver_id, keys, note=None,
         answer_field=answer_field)
     db.session.add(req)
     record_audit("update", "workflow", instance.id,
-                 summary=f"ارجاع مرحله {stage.stage_number} «{stage.title}» برای تأیید "
-                         f"به «{approver.full_name}» ({len(snap)} فرم)")
-    db.session.commit()
+                 summary=f"ارجاع مرحله {stage.stage_number} «{stage.title}» "
+                         + ("برای اطلاع" if auto else "برای تأیید")
+                         + f" به «{approver.full_name}» ({len(snap)} فرم)")
+    if not auto:
+        db.session.commit()
     return req
+
+
+AUTO_NOTE = "این اطلاعات برای این چاه ثبت شد؛ برای اطلاع شما ارسال می‌شود."
+
+
+def notify_on_submit(instance, stage, user, payload) -> list:
+    """The referrals of this stage that nobody sent by hand go out by
+    themselves when it is recorded: the people named on them learn what was
+    recorded for this well. Nothing waits for their answer (unless «الزامی»,
+    in which case the stage could not have been recorded without it)."""
+    sent = []
+    for st in required_status(instance, stage, payload):
+        if st["state"] not in ("not_sent", "changed") or not st.get("filled"):
+            continue
+        if any(r.status == APPROVAL_PENDING and r.approver_id == st["approver_id"]
+               for r in requests_for(instance, stage.stage_number)):
+            continue
+        try:
+            req = create_request(instance, stage.stage_number, user, st["approver_id"],
+                                 list(st.get("keys") or [st["key"]]), AUTO_NOTE, payload,
+                                 st["item_id"], auto=True)
+        except ApprovalError:
+            continue                     # e.g. the approver is the person recording
+        db.session.flush()
+        sent.append(req)
+    return sent
 
 
 def decide_request(req, user, approved: bool, note=None, answer=None):
@@ -573,7 +610,9 @@ def inbox_items(user) -> dict:
                        WorkflowApprovalRequest.status.in_([APPROVAL_APPROVED, APPROVAL_REJECTED]),
                        WorkflowApprovalRequest.result_seen.is_(False))
                .order_by(WorkflowApprovalRequest.decided_at.desc()).all())
-    return {"approval_requests": [r.to_dict() for r in to_me if r.instance and r.instance.status == "open"],
+    # a referral that only informs still reaches them after the process moved on
+    return {"approval_requests": [r.to_dict() for r in to_me if r.instance
+                                  and r.instance.status not in ("cancelled",)],
             "approval_results": [r.to_dict() for r in results if r.instance]}
 
 

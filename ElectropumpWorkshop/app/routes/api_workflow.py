@@ -12,7 +12,7 @@ from ..models import (AppUser, FormField, FormSection, WorkflowAttachment,
                       WorkflowStageEntry, WorkflowStageItem)
 from ..models.workflow import (ACTION_FORWARD, ACTION_KINDS,
                                ACTION_RETURN, ACTION_STOP,
-                               INSTANCE_STOPPED,
+                               INSTANCE_STOPPED, INSTANCE_COMPLETED, INSTANCE_CANCELLED,
                                APPLIES_TO, APPROVAL_SEES, ENTRY_AWAITING,
                                ENTRY_DONE, SEE_PICK,
                                ENTRY_PENDING, ENTRY_STATUS, INSTANCE_OPEN,
@@ -39,7 +39,7 @@ from ..services.workflow import (WorkflowError, active_workflow,
                                  stage_form, stages_of_user,
                                  submitted_summary,
                                  start_instance, submit_stage, sync_entries,
-                                 waiting_before)
+                                 waiting_before, stage_open, unmet_waits)
 from ._helpers import body, fail, ok, paging
 
 bp = Blueprint("api_workflow", __name__, url_prefix="/api/workflow")
@@ -150,6 +150,9 @@ def get_definition():
     return ok({"workflow": workflow.to_dict(),
                "readiness": readiness(workflow),
                "choice_fields": choice_fields,
+               "workflows": [{"id": w.id, "name": w.name, "operation_kind": w.operation_kind,
+                              "is_active": w.is_active}
+                             for w in WorkflowDefinition.query.order_by(WorkflowDefinition.id).all()],
                "palette": {"sections": palette_sections, "fields": palette_fields},
                "users": users,
                "applies_to": [{"value": k, "label": v} for k, v in APPLIES_TO.items()],
@@ -520,11 +523,14 @@ def reorder_stages():
                 {"stage_number": moves[sid]}, synchronize_session=False)
     db.session.flush()
 
-    # «در صورت رد» stores a number, so it has to follow the move too.
+    # «در صورت رد» stores a number, so it has to follow the move too — and so
+    # does «پس از ثبت … باز شود».
     remap = {old_of[sid]: moves[sid] for sid in moves}
     for stage in workflow.stages:
         if stage.reject_to_stage in remap:
             stage.reject_to_stage = remap[stage.reject_to_stage]
+        if stage.waits_for_list:
+            stage.waits_for = ",".join(str(remap.get(n, n)) for n in stage.waits_for_list)
 
     # Wherever a process was sitting is now called something else.
     for instance in WorkflowInstance.query.filter_by(
@@ -539,6 +545,31 @@ def reorder_stages():
     db.session.commit()
     return ok({"moved": len(moves)},
               message=f"ترتیب {len(moves)} مرحله عوض شد.")
+
+
+def _wait_loop(workflow) -> list:
+    """Titles of stages that wait for each other in a circle (empty: none)."""
+    by_no = {s.stage_number: s for s in workflow.stages}
+    state = {}
+
+    def visit(n, path):
+        if state.get(n) == 1:
+            return path[path.index(n):] + [n] if n in path else [n]
+        if state.get(n) == 2 or n not in by_no:
+            return []
+        state[n] = 1
+        for m in by_no[n].waits_for_list:
+            got = visit(m, path + [n])
+            if got:
+                return got
+        state[n] = 2
+        return []
+
+    for n in by_no:
+        got = visit(n, [])
+        if got:
+            return [by_no[x].title for x in got if x in by_no]
+    return []
 
 
 @bp.put("/stages/<int:stage_id>")
@@ -696,6 +727,43 @@ def update_stage(stage_id):
             if target is None:
                 return fail("مرحله‌ی مقصدِ برگشت پیدا نشد.", 422)
             stage.reject_to_stage = target.stage_number
+    # ── the order: what this stage waits for, when it is visited, what follows
+    if "waits_for" in payload:
+        numbers = {x.stage_number for x in stage.workflow.stages}
+        wanted = []
+        for raw in payload.get("waits_for") or []:
+            if not str(raw).lstrip("-").isdigit() or int(raw) not in numbers:
+                return fail("مرحله‌ای که این مرحله منتظر آن است در این فرایند نیست.", 422)
+            if int(raw) == stage.stage_number:
+                return fail("مرحله نمی‌تواند منتظر خودش باشد.", 422)
+            wanted.append(int(raw))
+        stage.waits_for = ",".join(str(n) for n in dict.fromkeys(wanted)) or None
+        loop = _wait_loop(stage.workflow)
+        if loop:
+            return fail("ترتیب «پس از ثبت … باز شود» دور می‌زند ("
+                        + " ← ".join(loop) + "); هیچ‌کدام باز نمی‌شوند.", 422)
+    if "visit_when" in payload:
+        when = (payload.get("visit_when") or "").strip()
+        if when:
+            on, _, wanted = when.partition("=")
+            values = [v.strip() for v in wanted.split("|") if v.strip()]
+            if not FormField.query.filter_by(field_name=on.strip()).first() or not values:
+                return fail("برای «این مرحله فقط وقتی طی می‌شود که…»، پرسش و دست‌کم یک پاسخ را "
+                            "انتخاب کنید.", 422)
+            when = on.strip() + "=" + "|".join(values)
+        stage.visit_when = when or None
+    if "spawn_workflow_id" in payload:
+        raw = payload.get("spawn_workflow_id")
+        if raw in (None, "", 0, "0"):
+            stage.spawn_workflow_id = None
+        else:
+            target = db.session.get(WorkflowDefinition, int(raw))
+            if target is None:
+                return fail("فرایندی که باید شروع شود پیدا نشد.", 422)
+            if target.id == stage.workflow_id:
+                return fail("یک مرحله نمی‌تواند همان فرایند خودش را دوباره شروع کند.", 422)
+            stage.spawn_workflow_id = target.id
+
     if stage.needs_approval and stage.approver_id is None:
         return fail("مرحله‌ای که نیاز به تأیید دارد باید تأییدکننده داشته "
                     "باشد.", 422)
@@ -782,7 +850,8 @@ def set_stage_items(stage_id):
                 applies_to=applies, is_optional=bool(raw.get("is_optional")),
                 is_read_only=bool(raw.get("is_read_only")),
                 locked_fields=",".join(locks) or None,
-                approval_user_id=None if raw.get("is_read_only") else approver))
+                approval_user_id=None if raw.get("is_read_only") else approver,
+                approval_required=bool(approver and raw.get("approval_required"))))
         elif kind == "field":
             target = db.session.get(FormField, int(raw.get("id") or 0))
             if target is None:
@@ -1106,6 +1175,173 @@ def list_instances():
               page_size=size, pages=max(1, (total + size - 1) // size))
 
 
+@bp.get("/monitor")
+@permission_required("workflow.view")
+def monitor():
+    """«رصد فرایندها»: each process as a small map — where it started, the
+    stages it went through in order (side by side where they ran together),
+    each approval and referral, where it stopped or what it became, and the
+    process it started. Filtered by date, well, مرکز, status and process."""
+    from ..models import Well
+    from ..services.jalali import parse_jalali_to_date
+    query = WorkflowInstance.query
+    args = request.args
+    if args.get("status"):
+        query = query.filter(WorkflowInstance.status == args["status"])
+    if args.get("kind"):
+        query = query.filter(WorkflowInstance.operation_kind == args["kind"])
+    if str(args.get("workflow_id") or "").isdigit():
+        query = query.filter(WorkflowInstance.workflow_id == int(args["workflow_id"]))
+    start = parse_jalali_to_date(args.get("date_from") or "")
+    end = parse_jalali_to_date(args.get("date_to") or "")
+    if start:
+        query = query.filter(WorkflowInstance.created_at >= start)
+    if end:
+        import datetime as _dt
+        query = query.filter(WorkflowInstance.created_at < end + _dt.timedelta(days=1))
+    well = normalize_text(args.get("well") or "")
+    center = args.get("center_id")
+    if well or str(center or "").isdigit():
+        query = query.outerjoin(Well, WorkflowInstance.well_id == Well.id)
+        if well:
+            query = query.filter(db.or_(Well.name.contains(well),
+                                        WorkflowInstance.well_name_raw.contains(well)))
+        if str(center or "").isdigit():
+            query = query.filter(Well.center_id == int(center))
+    if str(args.get("instance") or "").isdigit():
+        query = query.filter(WorkflowInstance.id == int(args["instance"]))
+    total = query.count()
+    size = min(int(args.get("limit") or 40), 200)
+    rows = query.order_by(WorkflowInstance.updated_at.desc()).limit(size).all()
+    out = [_monitor_graph(i) for i in rows]
+    db.session.commit()
+    return ok(out, total=total, shown=len(out))
+
+
+def _monitor_graph(instance):
+    from ..models import WorkflowApprovalRequest
+    from ..services.jalali import to_jalali_str
+    sync_entries(instance)
+    data = instance.to_dict(with_entries=False)
+    data["center"] = (instance.well.center.label
+                      if instance.well is not None and instance.well.center is not None else None)
+    entries = {e.stage_number: e for e in instance.entries}
+    stages = applicable_stages(instance)
+    seen = {s.stage_number for s in stages}
+    # stages this run skipped but somebody already touched stay visible
+    for e in instance.entries:
+        if e.stage_number not in seen and e.stage_number > 0 and e.status in ENTRY_DONE \
+                and e.stage is not None:
+            stages.append(e.stage)
+    stages.sort(key=lambda s: s.stage_number)
+    nodes, edges = [], []
+    level = {}
+    nodes.append({"key": "start", "kind": "start", "level": 0,
+                  "title": "شروع", "sub": data.get("created_at_j") or "",
+                  "status": "submitted"})
+    if instance.parent_id:
+        parent = db.session.get(WorkflowInstance, instance.parent_id)
+        if parent is not None:
+            nodes.append({"key": "parent", "kind": "link", "level": 0, "attach": "start",
+                          "place": "above", "title": f"از فرایند #{parent.id}",
+                          "sub": parent.workflow.name if parent.workflow else "",
+                          "instance_id": parent.id, "status": parent.status})
+    previous = None
+    numbers = {s.stage_number for s in stages}
+    for st in stages:
+        waits = [n for n in st.waits_for_list if n in numbers]
+        if waits:
+            lv = 1 + max(level.get(n, 0) for n in waits)
+            sources = [f"s{n}" for n in waits]
+        else:
+            lv = 1 + (level[previous.stage_number] if previous is not None else 0)
+            sources = [f"s{previous.stage_number}"] if previous is not None else ["start"]
+        level[st.stage_number] = lv
+        e = entries.get(st.stage_number)
+        status = e.status if e is not None else "pending"
+        if status == "pending" and instance.status == INSTANCE_OPEN and not stage_open(instance, st):
+            status = "waiting"
+        who = (e.user.full_name if e is not None and e.user is not None else
+               "، ".join(u.full_name for u in [db.session.get(AppUser, i)
+                                               for i in owners_of(instance, st)] if u) or "بدون متولی")
+        label = {"waiting": "منتظر مرحله‌ی قبل"}.get(status) or ENTRY_STATUS.get(status, status)
+        nodes.append({"key": f"s{st.stage_number}", "kind": "stage", "level": lv,
+                      "stage_number": st.stage_number, "title": st.title, "who": who,
+                      "status": status, "status_label": label,
+                      "when": (to_jalali_str(e.submitted_at) if e is not None and e.submitted_at else ""),
+                      "note": (e.note if e is not None else None)})
+        for src in sources:
+            edges.append({"from": src, "to": f"s{st.stage_number}", "kind": "flow"})
+        # the stage's own sign-off («تأیید نهایی امین»)
+        tail = f"s{st.stage_number}"
+        if st.needs_approval and e is not None and (e.approver_id or e.decided_at or status == "awaiting"):
+            if status == "awaiting":
+                ast, alabel = "awaiting", "در انتظار تأیید"
+            elif e.decided_at and status in ENTRY_DONE:
+                ast, alabel = "submitted", "تأیید شد"
+            elif status == "rejected":
+                ast, alabel = "rejected", "برگشت خورد"
+            else:
+                ast, alabel = "pending", "—"
+            nodes.append({"key": f"a{st.stage_number}", "kind": "approval", "attach": tail,
+                          "place": "below", "level": lv,
+                          "title": "تأیید " + (st.approver.full_name if st.approver else ""),
+                          "status": ast, "status_label": alabel,
+                          "when": to_jalali_str(e.decided_at) if e.decided_at else "",
+                          "note": e.decision_note})
+            edges.append({"from": tail, "to": f"a{st.stage_number}", "kind": "approval"})
+            if status == "rejected" or (e.decision_note and status == "pending"):
+                edges.append({"from": f"a{st.stage_number}", "to": tail, "kind": "return"})
+        previous = st
+    # referrals: who was told / asked, from which stage
+    for r in (WorkflowApprovalRequest.query.filter_by(instance_id=instance.id)
+              .order_by(WorkflowApprovalRequest.id).all()):
+        src = f"s{r.stage_number}"
+        if not any(n["key"] == src for n in nodes):
+            continue
+        nodes.append({"key": f"r{r.id}", "kind": "referral", "attach": src, "place": "above",
+                      "level": level.get(r.stage_number, 0),
+                      "title": r.approver.full_name if r.approver else "—",
+                      "status": {"approved": "submitted", "rejected": "rejected",
+                                 "pending": "awaiting"}.get(r.status, "skipped"),
+                      "status_label": r.to_dict().get("status_label"),
+                      "when": to_jalali_str(r.created_at) if r.created_at else ""})
+        edges.append({"from": src, "to": f"r{r.id}", "kind": "info"})
+    top = max([n["level"] for n in nodes] or [0])
+    leaves = [f"s{s.stage_number}" for s in stages
+              if not any(e["from"] == f"s{s.stage_number}" and e["kind"] == "flow" for e in edges)]
+    if instance.status == INSTANCE_STOPPED:
+        nodes.append({"key": "stop", "kind": "stop", "level": top + 1, "title": "توقف",
+                      "sub": instance.outcome_note or "", "status": "stopped"})
+        edges.append({"from": f"s{instance.current_stage}" if instance.current_stage in level
+                      else (leaves[-1] if leaves else "start"), "to": "stop", "kind": "flow"})
+    elif instance.status == INSTANCE_COMPLETED:
+        nodes.append({"key": "end", "kind": "end", "level": top + 1,
+                      "title": "پایان", "sub": (f"رکورد #{instance.record_id}" if instance.record_id else ""),
+                      "status": "submitted"})
+        for leaf in leaves:
+            edges.append({"from": leaf, "to": "end", "kind": "flow"})
+    elif instance.status == INSTANCE_CANCELLED:
+        nodes.append({"key": "stop", "kind": "stop", "level": top + 1, "title": "لغو",
+                      "sub": instance.outcome_note or "", "status": "stopped"})
+        edges.append({"from": leaves[-1] if leaves else "start", "to": "stop", "kind": "flow"})
+    # the processes this one started
+    for c in WorkflowInstance.query.filter_by(parent_id=instance.id).all():
+        src = next((f"a{s.stage_number}" if s.needs_approval else f"s{s.stage_number}"
+                    for s in stages if s.spawn_workflow_id == c.workflow_id), None) or "start"
+        if not any(n["key"] == src for n in nodes):
+            src = src.replace("a", "s", 1)
+        nodes.append({"key": f"c{c.id}", "kind": "link", "attach": src, "place": "below",
+                      "level": next((n["level"] for n in nodes if n["key"] == src), 0),
+                      "title": f"فرایند #{c.id}", "sub": c.workflow.name if c.workflow else "",
+                      "instance_id": c.id, "status": c.status,
+                      "status_label": c.to_dict(False)["status_label"]})
+        edges.append({"from": src, "to": f"c{c.id}", "kind": "spawn"})
+    data["nodes"], data["edges"] = nodes, edges
+    data["children"] = [c.id for c in WorkflowInstance.query.filter_by(parent_id=instance.id).all()]
+    return data
+
+
 @bp.get("/inbox")
 @permission_required("workflow.act")
 def inbox():
@@ -1122,7 +1358,7 @@ def inbox():
         sync_entries(instance)
         outstanding = {s.stage_number for s in pending_stages(instance)}
         mine = [s for s in stages_of_user(instance, user)
-                if s.stage_number in outstanding]
+                if s.stage_number in outstanding and stage_open(instance, s)]
         # Two kinds of work land here: a stage to fill, and a stage somebody
         # has sent me to approve. They read differently and are answered with
         # different buttons, so the کارتابل says which is which.
@@ -1136,7 +1372,7 @@ def inbox():
                 if s.stage_number not in deciding]
         if not todo and user.role == "admin":
             todo = [(s, "fill") for s in applicable_stages(instance)
-                    if s.stage_number in outstanding]
+                    if s.stage_number in outstanding and stage_open(instance, s)]
         for stage, task in todo:
             waiting = waiting_before(instance, stage.stage_number)
             entry = next((e for e in instance.entries
@@ -1228,7 +1464,8 @@ def get_instance(instance_id):
         outstanding = {s.stage_number for s in pending_stages(instance)}
         mine = [s for s in stages_of_user(instance, user)
                 if s.stage_number in outstanding]
-        stage = mine[0] if mine else current_stage_of(instance)
+        open_mine = [s for s in mine if stage_open(instance, s)]
+        stage = (open_mine or mine or [current_stage_of(instance)])[0]
 
     data["may_act"] = may_act(user, instance, stage)
     data["form"] = stage_form(instance, stage) if stage else None
@@ -1296,6 +1533,19 @@ def get_instance(instance_id):
                            "approver": (hold.approver.full_name
                                         if hold.approver else None)}
                           if hold is not None else None)
+    # «پس از ثبت … باز شود»: what this stage is still waiting for
+    data["opens_after"] = [{"stage_number": s.stage_number, "title": s.title}
+                           for s in (unmet_waits(instance, stage) if stage else [])]
+    # the process this one came from, and those it started
+    parent = db.session.get(WorkflowInstance, instance.parent_id) if instance.parent_id else None
+    data["parent"] = ({"id": parent.id, "workflow_name": parent.workflow.name if parent.workflow else None,
+                       "operation_label": parent.operation_label, "status_label": parent.to_dict(False)["status_label"]}
+                      if parent else None)
+    data["children"] = [{"id": c.id, "workflow_name": c.workflow.name if c.workflow else None,
+                         "status_label": c.to_dict(False)["status_label"]}
+                        for c in WorkflowInstance.query.filter_by(parent_id=instance.id).all()]
+    if parent is not None:
+        data["parent_summary"] = submitted_summary(parent)
     return ok(data)
 
 

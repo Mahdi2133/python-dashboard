@@ -101,7 +101,7 @@
   function approvalHtml() {
     var html = '';
     if (approvalsToMe.length) {
-      html += '<div class="wf-group">📝 درخواست‌های تأیید برای شما</div>'
+      html += '<div class="wf-group">📝 ارجاع‌ها برای شما (اطلاع / تأیید)</div>'
         + approvalsToMe.map(function (r) {
           return '<button class="wf-item to-approve" data-areq="' + r.id + '" type="button">'
             + '<div class="wf-item-top"><span class="wf-stage-no">✓</span>'
@@ -317,7 +317,62 @@
       }).filter(function (b) { return b.values.length || b.note; });
   }
 
+  /* «باکس اطلاعات ثبت‌شده»: each stage's box folds away, and stays folded
+     the next time (remembered on this computer). */
+  function foldKey(n) { return 'wf-sum-fold:' + n; }
+  function isFolded(n) {
+    try { return localStorage.getItem(foldKey(n)) === '1'; } catch (e) { return false; }
+  }
+  function setFolded(n, on) {
+    try { if (on) localStorage.setItem(foldKey(n), '1'); else localStorage.removeItem(foldKey(n)); } catch (e) { /* ok */ }
+  }
+  function sumBlockHtml(b, tag) {
+    var key = (tag || '') + b.stage_number;
+    return '<details class="sum-block ' + A.esc(b.status) + '" data-fold="' + A.esc(key) + '"'
+      + (isFolded(key) ? '' : ' open') + '>'
+      + '<summary class="sum-head">'
+      + '<span class="wf-step-no">' + J.toFaDigits(b.stage_number) + '</span>'
+      + '<b>' + A.esc(b.title) + '</b>'
+      + '<span class="badge muted">' + A.esc(b.status_label) + '</span>'
+      + '<span class="sum-who">' + A.esc(b.user_name || '')
+      + (b.submitted_at_j ? ' · ' + A.esc(b.submitted_at_j) : '') + '</span>'
+      + '<span class="sum-fold-hint">نمایش / پنهان</span>'
+      + '</summary>'
+      + (b.note ? '<div class="sum-note">' + A.esc(b.note) + '</div>' : '')
+      + '<dl class="sum-values">' + b.values.map(function (v) {
+          /* a document is shown as the file itself, to open */
+          var val = v.files && v.files.length
+            ? v.files.map(function (a) {
+                return '<a href="' + A.esc(a.url) + '" target="_blank">📄 ' + A.esc(a.filename) + '</a>';
+              }).join(' ')
+            : A.esc(v.value);
+          return '<dt>' + A.esc(v.label) + '</dt><dd>' + val + '</dd>';
+        }).join('') + '</dl>'
+      + '</details>';
+  }
+  document.addEventListener('toggle', function (ev) {
+    var d = ev.target;
+    if (d && d.matches && d.matches('details.sum-block[data-fold]')) setFolded(d.dataset.fold, !d.open);
+    if (d && d.id === 'wf-summary-wrap') setFolded('all', !d.open);
+  }, true);
+
   function renderSummary(detail) {
+    var wrap = A.qs('#wf-summary-wrap');
+    if (wrap) wrap.open = !isFolded('all');
+    var parentHtml = '';
+    if (detail.parent) {
+      parentHtml = '<div class="sum-parent"><div class="pal-group-title">🔗 از فرایند #'
+        + J.toFaDigits(detail.parent.id) + ' — ' + A.esc(detail.parent.workflow_name || '')
+        + ' (' + A.esc(detail.parent.status_label || '') + ')</div>'
+        + (detail.parent_summary || []).map(function (b) { return sumBlockHtml(b, 'p'); }).join('')
+        + '</div>';
+    }
+    if ((detail.children || []).length) {
+      parentHtml += '<div class="hint">🔗 فرایندهایی که از این فرایند شروع شد: '
+        + detail.children.map(function (c) {
+          return '#' + J.toFaDigits(c.id) + ' ' + A.esc(c.workflow_name || '') + ' (' + A.esc(c.status_label) + ')';
+        }).join('، ') + '</div>';
+    }
     var blocks = detail.summary || summaryFromEntries(detail);
     /* An approver sees what the sender opened to them and nothing else, so
        say so — an approver who does not know the view is narrowed may read a
@@ -326,33 +381,24 @@
       ? '<div class="hint">ثبت‌کنندهٔ این مرحله تعیین کرده است که شما کدام '
         + 'مرحله‌ها را ببینید؛ بقیه‌ی مرحله‌ها اینجا نشان داده نمی‌شوند.</div>'
       : '';
+    var tools = blocks.length > 1 || detail.parent
+      ? '<div class="sum-tools"><button type="button" class="btn-sm btn-ghost" data-sum-all="close">➖ پنهان کردن همه</button>'
+        + '<button type="button" class="btn-sm btn-ghost" data-sum-all="open">➕ نمایش همه</button></div>'
+      : '';
     if (!blocks.length) {
-      fill('#wf-summary', scoped
-           || '<div class="hint">هنوز مرحله‌ای پیش از این ثبت نشده است.</div>');
+      fill('#wf-summary', parentHtml + (scoped
+           || '<div class="hint">هنوز مرحله‌ای پیش از این ثبت نشده است.</div>'));
       return;
     }
-    fill('#wf-summary', scoped + blocks.map(function (b) {
-      return '<div class="sum-block ' + A.esc(b.status) + '">'
-        + '<div class="sum-head">'
-        + '<span class="wf-step-no">' + J.toFaDigits(b.stage_number) + '</span>'
-        + '<b>' + A.esc(b.title) + '</b>'
-        + '<span class="badge muted">' + A.esc(b.status_label) + '</span>'
-        + '<span class="sum-who">' + A.esc(b.user_name || '')
-        + (b.submitted_at_j ? ' · ' + A.esc(b.submitted_at_j) : '') + '</span>'
-        + '</div>'
-        + (b.note ? '<div class="sum-note">' + A.esc(b.note) + '</div>' : '')
-        + '<dl class="sum-values">' + b.values.map(function (v) {
-            /* a document is shown as the file itself, to open */
-            var val = v.files && v.files.length
-              ? v.files.map(function (a) {
-                  return '<a href="' + A.esc(a.url) + '" target="_blank">📄 ' + A.esc(a.filename) + '</a>';
-                }).join(' ')
-              : A.esc(v.value);
-            return '<dt>' + A.esc(v.label) + '</dt><dd>' + val + '</dd>';
-          }).join('') + '</dl>'
-        + '</div>';
+    fill('#wf-summary', tools + parentHtml + scoped + blocks.map(function (b) {
+      return sumBlockHtml(b, '');
     }).join(''));
   }
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest && ev.target.closest('[data-sum-all]');
+    if (!b) return;
+    A.qsa('#wf-summary details.sum-block').forEach(function (d) { d.open = b.dataset.sumAll === 'open'; });
+  });
 
   /* The label of the «مستند» field a document was uploaded into. */
   function slotLabel(name) {
@@ -408,22 +454,29 @@
       /* A blocking approval in front of this stage stops it being filled —
          the server refuses it either way, so the button says so first. */
       var hold = detail.blocked_by;
+      var before = detail.opens_after || [];
       var submit = A.qs('#wf-submit');
       if (submit) {
-        submit.disabled = !detail.may_act || !!hold;
+        submit.disabled = !detail.may_act || !!hold || before.length > 0;
         submit.title = hold
           ? 'در انتظار تأیید مرحله ' + hold.stage_number
+          : before.length ? 'این مرحله هنوز باز نشده است'
           : (detail.may_act ? '' : 'این مرحله در اختیار شما نیست.');
       }
       fill('#wf-progress', progressHtml(detail.referral_progress));
       renderDocsOwed(detail);
       renderDecisionChoices(detail);
-      fill('#wf-blocked', hold
+      fill('#wf-blocked', (hold
         ? '<div class="wf-blocked">⛔ مرحله ' + J.toFaDigits(hold.stage_number)
           + ' — ' + A.esc(hold.title) + ' در انتظار تأیید '
           + '<b>' + A.esc(hold.approver || 'تأییدکننده') + '</b> است. '
           + 'تا تأیید نشود، این مرحله ثبت نمی‌شود.</div>'
-        : '');
+        : '')
+        + (before.length
+          ? '<div class="wf-blocked">⏳ این مرحله پس از ثبت '
+            + before.map(function (b) { return '«' + A.esc(b.title) + '»'; }).join(' و ')
+            + ' باز می‌شود.</div>'
+          : ''));
       renderReferral(detail);
       renderDecision(detail);
 
@@ -499,6 +552,9 @@
       .filter(Boolean);
     var have = values[rule.slice(0, at).trim()];
     have = Array.isArray(have) ? have : [have];
+    if (wanted.indexOf('*') !== -1) {
+      return have.some(function (h) { return h !== null && h !== undefined && String(h).trim() !== ''; });
+    }
     return have.some(function (h) {
       return h !== null && h !== undefined && wanted.indexOf(String(h).trim()) !== -1;
     });
@@ -962,17 +1018,25 @@
     var ap = detail.approval_requests;
     if (!ap || !detail.may_act || (!(ap.required || []).length && !ap.enabled
         && !(ap.history || []).length)) { box.classList.add('hidden'); box.innerHTML = ''; return; }
-    var html = '<div class="section-title"><span>📝</span><span>ارجاع برای تأیید</span></div>';
-    if ((ap.required || []).length) {
-      html += '<div class="hint">این فرم‌ها و پاسخ‌ها پیش از ثبت نهایی مرحله باید به تأیید برسند:</div><ul class="areq-required">'
-        + ap.required.map(function (r) {
-          var st = STATE[r.state] || STATE.not_sent;
-          var action = (r.state === 'approved' || r.state === 'pending') ? ''
-            : '<button class="btn-sm btn-primary" type="button" data-areq-rule="' + A.esc(String(r.item_id)) + '"'
-              + ' data-areq-approver="' + A.esc(r.approver_name || '') + '">📤 ارسال برای تأیید</button>';
-          return '<li><b>' + A.esc(r.title) + '</b> ← ' + A.esc(r.approver_name || '—')
-            + ' <span class="badge ' + st[0] + '">' + st[1] + '</span> ' + action + '</li>';
-        }).join('') + '</ul>';
+    var html = '<div class="section-title"><span>📝</span><span>ارجاع‌ها</span></div>';
+    var must = (ap.required || []).filter(function (r) { return r.required; });
+    var info = (ap.required || []).filter(function (r) { return !r.required; });
+    function ruleLi(r, verb) {
+      var st = STATE[r.state] || STATE.not_sent;
+      var action = (r.state === 'approved' || r.state === 'pending') ? ''
+        : '<button class="btn-sm btn-ghost" type="button" data-areq-rule="' + A.esc(String(r.item_id)) + '"'
+          + ' data-areq-approver="' + A.esc(r.approver_name || '') + '">📤 ' + verb + '</button>';
+      return '<li><b>' + A.esc(r.title) + '</b> ← ' + A.esc(r.approver_name || '—')
+        + ' <span class="badge ' + st[0] + '">' + st[1] + '</span> ' + action + '</li>';
+    }
+    if (info.length) {
+      html += '<div class="hint">با ثبت این مرحله، این موارد خودکار <b>برای اطلاع</b> افراد زیر فرستاده می‌شود؛ '
+        + 'منتظر پاسخ آن‌ها نمی‌مانید و کار به مرحله‌ی بعد می‌رود (اگر بخواهید، همین حالا هم با توضیح و مستند بفرستید):</div>'
+        + '<ul class="areq-required">' + info.map(function (r) { return ruleLi(r, 'ارسال همین حالا'); }).join('') + '</ul>';
+    }
+    if (must.length) {
+      html += '<div class="hint">این موارد <b>الزامی</b> است و پیش از ثبت نهایی مرحله باید به تأیید برسد:</div>'
+        + '<ul class="areq-required">' + must.map(function (r) { return ruleLi(r, 'ارسال برای تأیید'); }).join('') + '</ul>';
     }
     if (ap.enabled) {
       html += '<button class="btn-ghost btn-sm" type="button" id="areq-open">📝 ارجاع برای تأیید (با ضمیمه‌ی فرم‌ها، توضیحات و مستندات)</button>';
@@ -991,8 +1055,8 @@
             + '</div>';
         }).join('') + '</div>';
     }
-    var pending = (ap.history || []).some(function (r) { return r.status === 'pending'; });
-    if (pending) html += '<div class="alert warn">تا پاسخ تأییدکننده نیاید، ثبت نهایی این مرحله ممکن نیست.</div>';
+    var pending = must.some(function (r) { return r.state === 'pending'; });
+    if (pending) html += '<div class="alert warn">تا پاسخ تأییدِ الزامی نیاید، ثبت نهایی این مرحله ممکن نیست.</div>';
     box.innerHTML = html;
     box.classList.remove('hidden');
   }

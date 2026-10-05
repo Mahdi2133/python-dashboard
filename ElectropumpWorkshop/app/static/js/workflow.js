@@ -481,12 +481,15 @@
       + '<input type="checkbox" class="readonly"' + (item.is_read_only ? ' checked' : '')
       + '> 🔒 فقط نمایش</label>'
       + (item.kind === 'section'
-          ? '<select class="mini item-approver" title="تأیید اجباری: پس از پر شدن این فرم، تا این شخص تأیید نکند مرحله نهایی نمی‌شود">'
-            + '<option value="">✅ تأیید: —</option>'
+          ? '<select class="mini item-approver" title="ارجاع این فرم: با ثبت مرحله برای اطلاع این شخص فرستاده می‌شود">'
+            + '<option value="">📝 ارجاع: —</option>'
             + definition.users.map(function (u) {
-                return '<option value="' + u.id + '"' + (u.id === item.approval_user_id ? ' selected' : '') + '>✅ '
+                return '<option value="' + u.id + '"' + (u.id === item.approval_user_id ? ' selected' : '') + '>📝 '
                   + A.esc(u.full_name) + '</option>';
-              }).join('') + '</select>' : '')
+              }).join('') + '</select>'
+            + '<label class="mini-check" title="تیک‌خورده: مرحله تا تأیید این شخص ثبت نمی‌شود">'
+            + '<input type="checkbox" class="item-approval-req"' + (item.approval_required ? ' checked' : '')
+            + '> الزامی</label>' : '')
       + (item.kind === 'section'
           ? '<button class="btn-sm lock-toggle" type="button" title="کدام فیلدهای این فرم '
             + 'در این مرحله قابل ویرایش‌اند و کدام قفل">' + lockLabel(item.locked_fields)
@@ -664,7 +667,7 @@
      referrals in one place and changes them where the process is drawn. */
   function approvalRulesPanel(s) {
     return '<details class="wf-refer wf-rules" data-stage-id="' + s.id + '">'
-      + '<summary>📝 ارجاعات برای تأیید (تأیید پاسخ‌ها پیش از ارسال)'
+      + '<summary>📝 ارجاعات (اطلاع‌رسانی / تأیید پاسخ‌ها)'
       + '<span class="wf-refer-tag wf-rules-tag">برای دیدن باز کنید</span></summary>'
       + '<div class="wf-rules-body"><div class="loading">در حال بارگذاری</div></div></details>';
   }
@@ -683,6 +686,8 @@
             + A.esc(u.full_name) + '</option>';
         }).join('') + '</select></div>'
       + '<div class="wf-rule-who hint">' + whoText(rule.approvers) + '</div>'
+      + '<label class="mini-check' + (rule.required ? ' on' : '') + '" title="بدون تیک: فقط برای اطلاع فرستاده می‌شود و مرحله منتظر نمی‌ماند">'
+      + '<input type="checkbox" class="r-req"' + (rule.required ? ' checked' : '') + '> الزامی — تا پاسخ نیاید مرحله ثبت نشود</label>'
       + '<div class="wf-rule-row"><label>پاسخ تأییدکننده</label><select class="r-answer">'
       + '<option value="">— فقط تأیید / عدم تأیید —</option>'
       + answerFields.filter(function (a) { return a.field_name !== field.field_name; }).map(function (a) {
@@ -725,9 +730,10 @@
       var count = d.fields.reduce(function (n, f) { return n + f.rules.length; }, 0);
       box.querySelector('.wf-rules-tag').textContent = count
         ? J.toFaDigits(count) + ' قاعده‌ی تأیید' : 'بدون ارجاع';
-      body.innerHTML = '<div class="hint">هر قاعده: اگر یکی از گزینه‌های تیک‌خورده انتخاب شود، کاربر مرحله '
-        + 'آن را با «ارجاع برای تأیید» برای این افراد می‌فرستد و تا <b>همه</b> تأیید نکنند، مرحله به بعد نمی‌رود. '
-        + 'فرم‌هایی که همان پاسخ باز کرده هم ضمیمه می‌شوند. «مانع ارسال» یعنی با آن پاسخ اصلاً نمی‌شود ارسال کرد.</div>'
+      body.innerHTML = '<div class="hint">هر قاعده: اگر یکی از گزینه‌های تیک‌خورده انتخاب شود، با ثبت مرحله، همان فرم‌ها '
+        + '(و فرم‌هایی که آن پاسخ باز کرده) <b>برای اطلاع</b> این افراد فرستاده می‌شود؛ مرحله منتظر آن‌ها نمی‌ماند و '
+        + 'کاربر مرحله کارش را ادامه می‌دهد. فقط قاعده‌ای که «الزامی» تیک خورده باشد مرحله را تا پاسخ نگه می‌دارد. '
+        + '«مانع ارسال» یعنی با آن پاسخ اصلاً نمی‌شود ارسال کرد.</div>'
         + (d.items.length ? '<div class="hint">تأیید اجباری فرم‌ها: ' + d.items.map(function (i) {
             return '«' + A.esc(i.section_title) + '» ← ' + A.esc(i.approver_name || '—');
           }).join('، ') + '</div>' : '')
@@ -752,7 +758,8 @@
     }
     box.addEventListener('change', function (ev) {
       ev.stopPropagation();                  // a referral is saved on its own, not with the stage
-      if (ev.target.classList.contains('r-opt') || ev.target.classList.contains('r-block')) {
+      if (ev.target.classList.contains('r-opt') || ev.target.classList.contains('r-block')
+          || ev.target.classList.contains('r-req')) {
         ev.target.closest('label').classList.toggle('on', ev.target.checked);
       }
       if (ev.target.classList.contains('r-who')) {
@@ -803,6 +810,7 @@
             approvers: Array.prototype.slice.call(row.querySelector('.r-who').selectedOptions)
               .map(function (o) { return Number(o.value); }),
             answer_field: row.querySelector('.r-answer').value || null,
+            required: !!(row.querySelector('.r-req') || {}).checked,
           };
         }).filter(function (r) { return r.options.length || r.approvers.length; });
         var blocked = A.qsa('.r-block:checked', fs.holder).map(function (c) { return c.value; });
@@ -824,6 +832,68 @@
     bindRules(box);
     loadRules(box);
   }, true);
+
+  /* «ترتیب و مسیر»: when this stage opens, when the run visits it at all, and
+     which process starts once it is done. Nothing here is fixed in code — the
+     کارگاه مکانیک and کارگاه کشیدن stages that open together after «بررسی
+     کارشناس» are two stages waiting for the same one. */
+  function orderPanel(s) {
+    var others = definition.workflow.stages.filter(function (x) {
+      return x.stage_number > 0 && x.stage_number !== s.stage_number && x.is_active !== false;
+    });
+    var waits = s.waits_for || [];
+    var rule = s.visit_when || '';
+    var on = rule.split('=')[0] || '';
+    var picked = rule.indexOf('=') !== -1 ? rule.split('=').slice(1).join('=').split('|') : [];
+    var fields = whenFields(s);
+    var field = fields.find(function (f) { return f.name === on; });
+    var flows = (definition.workflows || []).filter(function (w) { return w.id !== definition.workflow.id; });
+    var count = (waits.length ? 1 : 0) + (on ? 1 : 0) + (s.spawn_workflow_id ? 1 : 0);
+    return '<details class="wf-refer wf-order"' + (count ? ' open' : '') + '>'
+      + '<summary>🔀 ترتیب و مسیر<span class="wf-refer-tag">' + (count ? J.toFaDigits(count) + ' تنظیم'
+          : 'از شروع فرایند باز است') + '</span></summary>'
+      + '<div class="act-field"><label>این مرحله پس از ثبتِ این مرحله‌ها باز شود:</label>'
+      + '<div class="wf-order-waits">' + (others.map(function (x) {
+          var hit = waits.indexOf(x.stage_number) !== -1;
+          return '<label class="mini-check' + (hit ? ' on' : '') + '"><input type="checkbox" class="wf-wait" value="'
+            + x.stage_number + '"' + (hit ? ' checked' : '') + '> مرحله ' + J.toFaDigits(x.stage_number) + ' — '
+            + A.esc(x.title) + '</label>';
+        }).join('') || '<span class="hint">مرحله‌ی دیگری نیست.</span>') + '</div>'
+      + '<span class="hint">چند مرحله که منتظر یک مرحله باشند، با ثبت آن هم‌زمان در کارتابل متولی‌هایشان باز '
+      + 'می‌شوند (مثلاً کارگاه مکانیک و کارگاه کشیدن پس از بررسی کارشناس). بدون تیک: مثل قبل، از شروع فرایند باز است.</span></div>'
+      + '<div class="act-field"><label>این مرحله فقط وقتی طی می‌شود که:</label>'
+      + '<select class="wf-visit-on"><option value="">همیشه</option>'
+      + fields.map(function (f) {
+          return '<option value="' + A.esc(f.name) + '"' + (f.name === on ? ' selected' : '') + '>«'
+            + A.esc(f.label) + '» یکی از این‌ها باشد:</option>';
+        }).join('') + '</select>'
+      + '<div class="wf-visit-values">' + visitValues(field, picked) + '</div>'
+      + '<span class="hint">تا آن پرسش جواب نگرفته، مرحله در مسیر می‌ماند؛ با پاسخی که در فهرست نیست، از مسیر کنار می‌رود.</span></div>'
+      + '<div class="act-field"><label>پس از ثبت (و تأیید) این مرحله، این فرایند هم برای همین چاه شروع شود:</label>'
+      + '<select class="wf-spawn"><option value="">— هیچ —</option>'
+      + flows.map(function (w) {
+          return '<option value="' + w.id + '"' + (w.id === s.spawn_workflow_id ? ' selected' : '') + '>'
+            + A.esc(w.name) + (w.is_active ? '' : ' (غیرفعال)') + '</option>';
+        }).join('') + '</select>'
+      + '<span class="hint">فرایند تازه با اطلاعات همین پرونده در کارتابل متولی مرحله‌ی شروعِ آن باز می‌شود '
+      + '(مثلاً «فرایند نصب» پس از تأیید ساخت الکتروپمپ).</span></div>'
+      + '</details>';
+  }
+  function visitValues(field, picked) {
+    if (!field) return '';
+    return field.options.map(function (v) {
+      return '<label class="mini-check"><input type="checkbox" class="wf-visit-val" value="'
+        + A.esc(v) + '"' + (picked.indexOf(v) !== -1 ? ' checked' : '') + '> ' + A.esc(v) + '</label>';
+    }).join('');
+  }
+  function readOrder(card, body) {
+    if (!card.querySelector('.wf-order')) return;
+    body.waits_for = A.qsa('.wf-wait:checked', card).map(function (b) { return Number(b.value); });
+    var on = card.querySelector('.wf-visit-on').value;
+    var vals = A.qsa('.wf-visit-val:checked', card).map(function (b) { return b.value; });
+    body.visit_when = on && vals.length ? on + '=' + vals.join('|') : '';
+    body.spawn_workflow_id = card.querySelector('.wf-spawn').value || null;
+  }
 
   function actionsEditor(s) {
     var acts = s.actions || [];
@@ -1078,7 +1148,7 @@
         + (s.description ? '<div class="hint wf-stage-desc">'
             + A.esc(s.description) + '</div>' : '')
         + (zero ? '<div class="hint">این مرحله فقط نوع عملیات را می‌پرسد.</div>'
-                : referralPanel(s) + actionsEditor(s) + approvalRulesPanel(s))
+                : orderPanel(s) + referralPanel(s) + actionsEditor(s) + approvalRulesPanel(s))
         + '<ul class="wf-drop" data-stage="' + s.id + '">'
         + (s.items.map(itemHtml).join('')
            || '<li class="wf-drop-empty">موردی اینجا نیست — از پالت بکشید</li>')
@@ -1332,6 +1402,7 @@
         }
       }
       if (card.querySelector('.wf-actions')) body.actions = readActions(card);
+      readOrder(card, body);
       await A.api.put('/api/workflow/stages/' + id, body);
       /* Read each control if it is there, fall back to what the row was
          drawn with if it is not. A desktop install is updated by copying
@@ -1353,6 +1424,7 @@
           locked_fields: ((li.querySelector('.wf-lock-panel') || { dataset: {} })
             .dataset.locked || '').split(',').filter(Boolean),
           approval_user_id: (li.querySelector('.item-approver') || {}).value || null,
+          approval_required: !!(li.querySelector('.item-approval-req') || {}).checked,
         };
       });
       await A.api.put('/api/workflow/stages/' + id + '/items', { items: items });
@@ -1368,65 +1440,239 @@
   }
 
   /* ── monitor ────────────────────────────────────────────────────────── */
-  async function loadMonitor() {
-    var params = [];
-    if (A.qs('#mon-status').value) params.push('status=' + A.qs('#mon-status').value);
-    if (A.qs('#mon-kind').value) params.push('kind=' + A.qs('#mon-kind').value);
+  /* «رصد فرایندها»: every process as a map, right to left — start, the stages
+     in order (stages that ran together share a column), each stage's sign-off
+     below it, the people a stage referred to above it, then the end, the stop,
+     or the process it started. Filtered on the server. */
+  var monFilled = false;
+  async function fillMonitorFilters() {
+    if (monFilled) return;
+    monFilled = true;
+    A.qsa('#pane-monitor .jdate').forEach(function (i) { if (J.attach) J.attach(i); });
+    A.qs('#mon-flow').innerHTML = '<option value="">همه</option>' + (definition.workflows || []).map(function (w) {
+      return '<option value="' + w.id + '">' + A.esc(w.name) + '</option>';
+    }).join('');
     try {
-      var res = await A.api.get('/api/workflow/instances?' + params.join('&'));
+      var res = await A.api.get('/api/lookups/center');
+      var items = (res.data && (res.data.items || res.data)) || [];
+      A.qs('#mon-center').innerHTML = '<option value="">همه</option>' + items.filter(function (i) {
+        return i.is_active !== false;
+      }).map(function (i) {
+        return '<option value="' + i.id + '">' + A.esc(i.label || i.value) + '</option>';
+      }).join('');
+    } catch (err) { /* the other filters still work */ }
+  }
+
+  async function loadMonitor(extra) {
+    await fillMonitorFilters();
+    var params = [];
+    [['status', '#mon-status'], ['kind', '#mon-kind'], ['workflow_id', '#mon-flow'],
+     ['date_from', '#mon-from'], ['date_to', '#mon-to'], ['well', '#mon-well'],
+     ['center_id', '#mon-center']].forEach(function (p) {
+      var v = (A.qs(p[1]) || {}).value;
+      if (v) params.push(p[0] + '=' + encodeURIComponent(v.trim()));
+    });
+    if (extra && extra.instance) params = ['instance=' + extra.instance];
+    var list = A.qs('#mon-list');
+    list.innerHTML = '<div class="loading">در حال بارگذاری</div>';
+    try {
+      var res = await A.api.get('/api/workflow/monitor?' + params.join('&'));
       var rows = res.data || [];
+      A.qs('#mon-count').textContent = rows.length
+        ? J.toFaDigits(rows.length) + ' فرایند' + (res.total > rows.length ? ' از ' + J.toFaDigits(res.total) : '')
+        : '';
       if (!rows.length) {
-        A.qs('#mon-list').innerHTML = '<div class="table-empty">فرایندی یافت نشد.</div>';
+        list.innerHTML = '<div class="table-empty">فرایندی با این فیلترها یافت نشد.</div>';
         return;
       }
-      A.qs('#mon-list').innerHTML = rows.map(function (r) {
-        var steps = (r.entries || []).filter(function (e) {
-          return e.stage_number > 0;
-        }).map(function (e) {
-          return '<div class="wf-step ' + e.status + '">'
-            + '<span class="wf-step-no">' + J.toFaDigits(e.stage_number) + '</span>'
-            + '<span class="wf-step-title">' + A.esc(e.title || '') + '</span>'
-            + '<span class="wf-step-who">'
-            + A.esc(e.user_name || e.assignee_name || 'بدون متولی') + '</span>'
-            + '<span class="wf-step-state">' + A.esc(e.status_label) + '</span>'
-            + (e.submitted_at_j ? '<span class="wf-step-when">'
-                + A.esc(e.submitted_at_j) + '</span>' : '')
-            + '</div>';
-        }).join('');
-        return '<div class="card mon-card">'
-          + '<div class="card-head">'
-          + '<span>🔀 فرایند #' + J.toFaDigits(r.id) + ' — '
-          + A.esc(r.well || 'چاه نامشخص') + '</span>'
-          + '<span class="badge ' + (r.status === 'completed' ? 'ok' : 'warn') + '">'
-          + A.esc(r.status_label) + '</span></div>'
-          + '<div class="mon-meta">'
-          + '<span class="badge">' + A.esc(r.operation_label) + '</span>'
-          + (r.workflow_name ? '<span class="badge muted">🔀 ' + A.esc(r.workflow_name)
-             + '</span>' : '')
-          + (r.well_pm_code ? '<span class="badge muted">کد PM: '
-              + A.esc(r.well_pm_code) + '</span>' : '')
-          + '<span class="badge muted">آغاز: ' + A.esc(r.created_at_j || '') + '</span>'
-          /* Stopped on purpose: the reason is the whole point of the entry. */
-          + (r.status === 'stopped' && r.outcome_note
-              ? '<span class="badge warn">⛔ ' + A.esc(r.outcome_note) + '</span>'
-              : '')
-          + (r.record_id ? '<a class="badge ok" href="/records">رکورد #'
-              + J.toFaDigits(r.record_id) + ' ثبت شد</a>'
-              : '<span class="badge warn">هنوز رکورد نشده</span>')
-          + (r.attachment_count ? '<span class="badge muted">📎 '
-              + J.toFaDigits(r.attachment_count) + '</span>' : '')
-          + '</div>'
-          + '<div class="wf-path">' + steps + '</div>'
-          + (r.status === 'open'
-              ? '<div class="mon-foot"><button class="btn-sm btn-del cancel-wf" '
-                + 'data-id="' + r.id + '" type="button">لغو فرایند</button></div>'
-              : '')
-          + '</div>';
-      }).join('');
+      var graph = A.qs('#mon-view').value !== 'list';
+      list.innerHTML = rows.map(function (r) { return monCard(r, graph); }).join('');
     } catch (err) {
-      A.qs('#mon-list').innerHTML = '<div class="alert error">'
-        + A.esc(err.message) + '</div>';
+      list.innerHTML = '<div class="alert error">' + A.esc(err.message) + '</div>';
     }
+  }
+
+  function monCard(r, graph) {
+    var body = graph ? '<div class="mon-graph">' + flowSvg(r) + '</div>' : monSteps(r);
+    return '<div class="card mon-card" id="mon-' + r.id + '">'
+      + '<div class="card-head">'
+      + '<span>🔀 فرایند #' + J.toFaDigits(r.id) + ' — ' + A.esc(r.well || 'چاه نامشخص')
+      + (r.center ? ' <span class="hint">(' + A.esc(r.center) + ')</span>' : '') + '</span>'
+      + '<span class="badge ' + (r.status === 'completed' ? 'ok' : r.status === 'open' ? 'warn' : 'danger') + '">'
+      + A.esc(r.status_label) + '</span></div>'
+      + '<div class="mon-meta">'
+      + '<span class="badge">' + A.esc(r.operation_label) + '</span>'
+      + (r.workflow_name ? '<span class="badge muted">🔀 ' + A.esc(r.workflow_name) + '</span>' : '')
+      + (r.well_pm_code ? '<span class="badge muted">کد PM: ' + A.esc(r.well_pm_code) + '</span>' : '')
+      + '<span class="badge muted">آغاز: ' + A.esc(r.created_at_j || '') + (r.created_by_name ? ' · ' + A.esc(r.created_by_name) : '') + '</span>'
+      + (r.completed_at_j ? '<span class="badge muted">پایان: ' + A.esc(r.completed_at_j) + '</span>' : '')
+      + (r.status === 'stopped' && r.outcome_note ? '<span class="badge warn">⛔ ' + A.esc(r.outcome_note) + '</span>' : '')
+      + (r.record_id ? '<a class="badge ok" href="/records">رکورد #' + J.toFaDigits(r.record_id) + '</a>' : '')
+      + (r.parent_id ? '<a class="badge" href="#" data-mon-instance="' + r.parent_id + '">↖ از فرایند #' + J.toFaDigits(r.parent_id) + '</a>' : '')
+      + (r.children || []).map(function (c) {
+          return '<a class="badge" href="#" data-mon-instance="' + c + '">↘ فرایند #' + J.toFaDigits(c) + '</a>';
+        }).join('')
+      + (r.attachment_count ? '<span class="badge muted">📎 ' + J.toFaDigits(r.attachment_count) + '</span>' : '')
+      + '</div>' + body
+      + (r.status === 'open' ? '<div class="mon-foot"><button class="btn-sm btn-del cancel-wf" data-id="' + r.id
+          + '" type="button">لغو فرایند</button></div>' : '')
+      + '</div>';
+  }
+
+  function monSteps(r) {
+    return '<div class="wf-path">' + (r.nodes || []).filter(function (n) { return n.kind === 'stage'; }).map(function (n) {
+      return '<div class="wf-step ' + n.status + '">'
+        + '<span class="wf-step-no">' + J.toFaDigits(n.stage_number) + '</span>'
+        + '<span class="wf-step-title">' + A.esc(n.title) + '</span>'
+        + '<span class="wf-step-who">' + A.esc(n.who || '') + '</span>'
+        + '<span class="wf-step-state">' + A.esc(n.status_label || '') + '</span>'
+        + (n.when ? '<span class="wf-step-when">' + A.esc(n.when) + '</span>' : '') + '</div>';
+    }).join('') + '</div>';
+  }
+
+  var ST_COLORS = {
+    submitted: ['#dcfce7', '#16a34a'], completed: ['#dcfce7', '#16a34a'], archived: ['#e0f2fe', '#0284c7'],
+    deferred: ['#e0f2fe', '#0284c7'], pending: ['#f1f5f9', '#64748b'], waiting: ['#ffffff', '#94a3b8'],
+    awaiting: ['#fef3c7', '#d97706'], rejected: ['#fee2e2', '#dc2626'], stopped: ['#fee2e2', '#dc2626'],
+    cancelled: ['#fee2e2', '#dc2626'], skipped: ['#f8fafc', '#cbd5e1'], open: ['#e0f2fe', '#0284c7']
+  };
+  var EDGE = { flow: ['#475569', ''], info: ['#7c3aed', '4 3'], approval: ['#d97706', ''],
+               return: ['#dc2626', '5 3'], spawn: ['#0891b2', '6 3'] };
+
+  function clip(t, n) { t = String(t || ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; }
+  function svgEsc(t) { return A.esc(String(t == null ? '' : t)); }
+
+  function flowSvg(r) {
+    var nodes = r.nodes || [], edges = r.edges || [];
+    var COL = 210, W_ST = 172, H_ST = 64, PILL_W = 150, PILL_H = 24, BELOW_H = 50;
+    var main = nodes.filter(function (n) { return !n.attach; });
+    var byKey = {};
+    nodes.forEach(function (n) { byKey[n.key] = n; });
+    var cols = {};
+    main.forEach(function (n) { (cols[n.level] = cols[n.level] || []).push(n); });
+    var above = {}, below = {};
+    nodes.filter(function (n) { return n.attach; }).forEach(function (n) {
+      var bag = n.place === 'above' ? above : below;
+      (bag[n.attach] = bag[n.attach] || []).push(n);
+    });
+    var maxAbove = 0, maxBelow = 0;
+    main.forEach(function (n) {
+      maxAbove = Math.max(maxAbove, Math.min((above[n.key] || []).length, 4));
+      var b = (below[n.key] || []).slice();
+      b.forEach(function (x) { b = b.concat(below[x.key] || []); });
+      maxBelow = Math.max(maxBelow, b.length);
+    });
+    var rowH = H_ST + 34 + maxAbove * (PILL_H + 6) + maxBelow * (BELOW_H + 12);
+    var top = 16 + maxAbove * (PILL_H + 6);
+    var levels = Object.keys(cols).map(Number);
+    var maxLevel = Math.max.apply(null, levels.concat([0]));
+    var maxRows = Math.max.apply(null, Object.keys(cols).map(function (k) { return cols[k].length; }).concat([1]));
+    var W = (maxLevel + 1) * COL + 40, H = top + maxRows * rowH + 10;
+    var pos = {};
+    levels.forEach(function (lv) {
+      cols[lv].forEach(function (n, i) {
+        pos[n.key] = { x: W - 20 - lv * COL - COL / 2, y: top + i * rowH + H_ST / 2, w: n.kind === 'stage' ? W_ST : 60, h: n.kind === 'stage' ? H_ST : 52 };
+      });
+    });
+    function place(anchorKey) {
+      var a = pos[anchorKey];
+      if (!a) return;
+      (above[anchorKey] || []).slice(0, 4).forEach(function (n, i) {
+        pos[n.key] = { x: a.x, y: a.y - a.h / 2 - 14 - i * (PILL_H + 6), w: PILL_W, h: PILL_H };
+      });
+      var extra = (above[anchorKey] || []).length - 4;
+      if (extra > 0) pos[anchorKey].more = extra;
+      var yb = a.y + a.h / 2 + 18;
+      (below[anchorKey] || []).forEach(function (n) {
+        pos[n.key] = { x: a.x, y: yb + BELOW_H / 2, w: n.kind === 'approval' ? 132 : 150, h: BELOW_H };
+        yb += BELOW_H + 12;
+        place(n.key);
+        if (below[n.key]) yb += (below[n.key].length) * (BELOW_H + 12);
+      });
+    }
+    main.forEach(function (n) { place(n.key); });
+
+    var out = [];
+    out.push('<svg class="flow-svg" xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H
+      + '" viewBox="0 0 ' + W + ' ' + H + '" direction="rtl">');
+    out.push('<defs>' + Object.keys(EDGE).map(function (k) {
+      return '<marker id="ar-' + k + '-' + r.id + '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
+        + '<path d="M0,0 L10,5 L0,10 z" fill="' + EDGE[k][0] + '"/></marker>';
+    }).join('') + '</defs>');
+    // edges first, nodes on top
+    edges.forEach(function (e) {
+      var a = pos[e.from], b = pos[e.to];
+      if (!a || !b) return;
+      var c = EDGE[e.kind] || EDGE.flow, d;
+      if (e.kind === 'flow') {
+        var x1 = a.x - a.w / 2, y1 = a.y, x2 = b.x + b.w / 2, y2 = b.y, mx = (x1 + x2) / 2;
+        d = 'M' + x1 + ',' + y1 + ' C' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + x2 + ',' + y2;
+      } else if (e.kind === 'return') {
+        var xr = a.x + a.w / 2, xs = b.x + b.w / 2 + 4;
+        d = 'M' + xr + ',' + a.y + ' C' + (xr + 40) + ',' + a.y + ' ' + (xs + 40) + ',' + b.y + ' ' + xs + ',' + b.y;
+      } else {
+        var up = b.y < a.y;
+        d = 'M' + a.x + ',' + (a.y + (up ? -a.h / 2 : a.h / 2)) + ' L' + b.x + ',' + (b.y + (up ? b.h / 2 : -b.h / 2));
+      }
+      out.push('<path d="' + d + '" fill="none" stroke="' + c[0] + '" stroke-width="' + (e.kind === 'flow' ? 1.8 : 1.4) + '"'
+        + (c[1] ? ' stroke-dasharray="' + c[1] + '"' : '') + ' marker-end="url(#ar-' + e.kind + '-' + r.id + ')"/>');
+    });
+    nodes.forEach(function (n) {
+      var p = pos[n.key];
+      if (!p) return;
+      var col = ST_COLORS[n.status] || ST_COLORS.pending;
+      var tip = [n.title, n.who, n.status_label, n.when, n.sub, n.note].filter(Boolean).join(' — ');
+      var g = '<g class="fnode k-' + n.kind + '"' + (n.instance_id ? ' data-mon-instance="' + n.instance_id + '" style="cursor:pointer"' : '')
+        + '><title>' + svgEsc(tip) + '</title>';
+      var dash = n.status === 'waiting' || n.status === 'skipped' ? ' stroke-dasharray="5 3"' : '';
+      if (n.kind === 'stage') {
+        g += '<rect x="' + (p.x - p.w / 2) + '" y="' + (p.y - p.h / 2) + '" width="' + p.w + '" height="' + p.h
+          + '" rx="12" fill="' + col[0] + '" stroke="' + col[1] + '" stroke-width="1.6"' + dash + '/>'
+          + '<circle cx="' + (p.x + p.w / 2 - 14) + '" cy="' + (p.y - p.h / 2 + 14) + '" r="10" fill="' + col[1] + '"/>'
+          + '<text x="' + (p.x + p.w / 2 - 14) + '" y="' + (p.y - p.h / 2 + 18) + '" text-anchor="middle" class="f-no">'
+          + svgEsc(J.toFaDigits(n.stage_number)) + '</text>'
+          + '<text x="' + (p.x - 8) + '" y="' + (p.y - 10) + '" text-anchor="middle" class="f-title">' + svgEsc(clip(n.title, 20)) + '</text>'
+          + '<text x="' + p.x + '" y="' + (p.y + 7) + '" text-anchor="middle" class="f-who">' + svgEsc(clip(n.who, 28)) + '</text>'
+          + '<text x="' + p.x + '" y="' + (p.y + 23) + '" text-anchor="middle" class="f-state" fill="' + col[1] + '">'
+          + svgEsc(clip((n.status_label || '') + (n.when ? ' · ' + n.when : ''), 30)) + '</text>';
+        if (p.more) g += '<text x="' + p.x + '" y="' + (p.y - p.h / 2 - 14 - 4 * (PILL_H + 6) + 10) + '" text-anchor="middle" class="f-sub">+'
+          + svgEsc(J.toFaDigits(p.more)) + ' ارجاع دیگر</text>';
+      } else if (n.kind === 'start' || n.kind === 'end') {
+        g += '<circle cx="' + p.x + '" cy="' + p.y + '" r="22" fill="' + col[0] + '" stroke="' + col[1] + '" stroke-width="' + (n.kind === 'end' ? 4 : 2) + '"/>'
+          + '<text x="' + p.x + '" y="' + (p.y + 4) + '" text-anchor="middle" class="f-title">' + svgEsc(n.title) + '</text>'
+          + (n.sub ? '<text x="' + p.x + '" y="' + (p.y + 38) + '" text-anchor="middle" class="f-sub">' + svgEsc(clip(n.sub, 26)) + '</text>' : '');
+      } else if (n.kind === 'stop') {
+        var r8 = 24, pts = [];
+        for (var k = 0; k < 8; k++) {
+          var ang = Math.PI / 8 + k * Math.PI / 4;
+          pts.push((p.x + r8 * Math.cos(ang)).toFixed(1) + ',' + (p.y + r8 * Math.sin(ang)).toFixed(1));
+        }
+        g += '<polygon points="' + pts.join(' ') + '" fill="#fee2e2" stroke="#dc2626" stroke-width="2"/>'
+          + '<text x="' + p.x + '" y="' + (p.y + 4) + '" text-anchor="middle" class="f-title" fill="#b91c1c">' + svgEsc(n.title) + '</text>'
+          + (n.sub ? '<text x="' + p.x + '" y="' + (p.y + 40) + '" text-anchor="middle" class="f-sub">' + svgEsc(clip(n.sub, 30)) + '</text>' : '');
+      } else if (n.kind === 'approval') {
+        var hw = p.w / 2, hh = p.h / 2;
+        g += '<polygon points="' + p.x + ',' + (p.y - hh) + ' ' + (p.x + hw) + ',' + p.y + ' ' + p.x + ',' + (p.y + hh) + ' ' + (p.x - hw) + ',' + p.y
+          + '" fill="' + col[0] + '" stroke="' + col[1] + '" stroke-width="1.6"/>'
+          + '<text x="' + p.x + '" y="' + (p.y - 2) + '" text-anchor="middle" class="f-who">' + svgEsc(clip(n.title, 20)) + '</text>'
+          + '<text x="' + p.x + '" y="' + (p.y + 13) + '" text-anchor="middle" class="f-state" fill="' + col[1] + '">' + svgEsc(n.status_label || '') + '</text>';
+      } else if (n.kind === 'referral') {
+        g += '<rect x="' + (p.x - p.w / 2) + '" y="' + (p.y - p.h / 2) + '" width="' + p.w + '" height="' + p.h
+          + '" rx="12" fill="' + col[0] + '" stroke="#7c3aed" stroke-width="1.2"/>'
+          + '<text x="' + p.x + '" y="' + (p.y + 4) + '" text-anchor="middle" class="f-sub">📝 ' + svgEsc(clip(n.title, 16))
+          + ' · ' + svgEsc(clip(n.status_label || '', 12)) + '</text>';
+      } else if (n.kind === 'link') {
+        var lw = p.w / 2, lh = p.h / 2, cut = 14;
+        g += '<polygon points="' + (p.x - lw + cut) + ',' + (p.y - lh) + ' ' + (p.x + lw - cut) + ',' + (p.y - lh) + ' ' + (p.x + lw) + ',' + p.y
+          + ' ' + (p.x + lw - cut) + ',' + (p.y + lh) + ' ' + (p.x - lw + cut) + ',' + (p.y + lh) + ' ' + (p.x - lw) + ',' + p.y
+          + '" fill="' + col[0] + '" stroke="#0891b2" stroke-width="1.6"/>'
+          + '<text x="' + p.x + '" y="' + (p.y - 3) + '" text-anchor="middle" class="f-title">' + svgEsc(n.title) + '</text>'
+          + '<text x="' + p.x + '" y="' + (p.y + 13) + '" text-anchor="middle" class="f-sub">' + svgEsc(clip(n.sub, 22)) + '</text>';
+      }
+      out.push(g + '</g>');
+    });
+    out.push('</svg>');
+    return out.join('');
   }
 
   function showPane(which) {
@@ -1622,6 +1868,15 @@
         syncLocks(ev.target.closest('.wf-drop-item'));
         return;
       }
+      if (ev.target.classList.contains('wf-visit-on')) {
+        var vst = definition.workflow.stages.find(function (x) {
+          return String(x.id) === card.dataset.stage; });
+        var vf = whenFields(vst || {}).find(function (x) { return x.name === ev.target.value; });
+        card.querySelector('.wf-visit-values').innerHTML = visitValues(vf, []);
+      }
+      if (ev.target.classList.contains('wf-wait') || ev.target.classList.contains('wf-visit-val')) {
+        ev.target.closest('label').classList.toggle('on', ev.target.checked);
+      }
       if (ev.target.classList.contains('act-when-on')) {
         var wrow = ev.target.closest('.wf-action');
         var st = definition.workflow.stages.find(function (x) {
@@ -1672,9 +1927,22 @@
 
     A.qs('#tab-design').addEventListener('click', function () { showPane('design'); });
     A.qs('#tab-monitor').addEventListener('click', function () { showPane('monitor'); });
-    A.qs('#mon-refresh').addEventListener('click', loadMonitor);
-    A.qs('#mon-status').addEventListener('change', loadMonitor);
-    A.qs('#mon-kind').addEventListener('change', loadMonitor);
+    A.qs('#mon-refresh').addEventListener('click', function () { loadMonitor(); });
+    ['#mon-status', '#mon-kind', '#mon-center', '#mon-flow', '#mon-view'].forEach(function (sel) {
+      A.qs(sel).addEventListener('change', function () { loadMonitor(); });
+    });
+    A.qs('#mon-well').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') loadMonitor(); });
+    /* a linked process: jump to its card, or show it alone */
+    A.qs('#mon-list').addEventListener('click', function (ev) {
+      var link = ev.target.closest('[data-mon-instance]');
+      if (!link) return;
+      ev.preventDefault();
+      var id = link.getAttribute('data-mon-instance');
+      var card = A.qs('#mon-' + id);
+      if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); card.classList.add('flash');
+                  setTimeout(function () { card.classList.remove('flash'); }, 1500); }
+      else loadMonitor({ instance: id });
+    });
     A.qs('#mon-list').addEventListener('click', async function (ev) {
       var button = ev.target.closest('.cancel-wf');
       if (!button) return;

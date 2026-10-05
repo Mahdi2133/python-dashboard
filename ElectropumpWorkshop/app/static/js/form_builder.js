@@ -342,6 +342,7 @@
     A.qs('#fb-mirror').value = field && field.mirror_of ? field.mirror_of : '';
     A.qs('#fb-result-type').value = field && field.result_type === 'text' ? 'text' : 'number';
     fillChart(field);
+    fillWhen(field && field.visible_when, 'fb', field && field.field_name);
     fillApproval(field);
     fillStages(field);
     toggleSpecial();
@@ -381,6 +382,7 @@
       file_multiple: A.qs('#fb-multiple').value === '1',
       formula: A.qs('#fb-formula').value.trim(),
       mirror_of: A.qs('#fb-mirror').value,
+      visible_when: readWhen('fb'),
       approval_rules: collectRules(),
       block_options: blockPicked.slice(),
       result_type: A.qs('#fb-result-type').value,
@@ -398,7 +400,7 @@
   function fillApproval(field) {
     rulesState = ((field && field.approval_rules) || []).map(function (r) {
       return { options: (r.options || []).map(String), approvers: (r.approvers || []).slice(),
-               answer_field: r.answer_field || '' };
+               answer_field: r.answer_field || '', required: !!r.required };
     });
     blockPicked = ((field && field.block_options) || []).map(String);
     editingAnswerOpts = '';
@@ -435,6 +437,8 @@
             return '<option value="' + u.id + '"' + (r.approvers.indexOf(u.id) !== -1 ? ' selected' : '') + '>'
               + A.esc(u.name) + '</option>';
           }).join('') + '</select></div>'
+        + '<label class="mini-check' + (r.required ? ' on' : '') + '"><input type="checkbox" class="fb-rule-req"'
+        + (r.required ? ' checked' : '') + '> الزامی — تا پاسخ نیاید مرحله ثبت نشود (بدون تیک: فقط برای اطلاع)</label>'
         + '<div class="fb-inline"><label>پاسخ تأییدکننده</label><select class="fb-rule-answer">'
         + '<option value="">— فقط تأیید / عدم تأیید —</option>'
         + editingAnswerOpts.replace('value="' + A.esc(r.answer_field) + '"',
@@ -465,6 +469,9 @@
         r.approvers = Array.prototype.slice.call(ev.target.selectedOptions).map(function (o) { return Number(o.value); });
       } else if (ev.target.classList.contains('fb-rule-answer')) {
         r.answer_field = ev.target.value;
+      } else if (ev.target.classList.contains('fb-rule-req')) {
+        r.required = ev.target.checked;
+        ev.target.closest('label').classList.toggle('on', ev.target.checked);
       }
     });
     box.addEventListener('click', function (ev) {
@@ -474,7 +481,7 @@
       renderApprovalOptions();
     });
     A.qs('#fb-rule-add').addEventListener('click', function () {
-      rulesState.push({ options: [], approvers: [], answer_field: '' });
+      rulesState.push({ options: [], approvers: [], answer_field: '', required: false });
       renderApprovalOptions();
     });
     A.qs('#fb-block-options').addEventListener('change', function (ev) {
@@ -638,16 +645,6 @@
      The rule is stored as «field=value», but nobody should have to know that
      to say «this block belongs to سوختن الکتروپمپ». The first list offers the
      choice fields that have options; the second offers that field's options. */
-  function whenSources() {
-    var out = [];
-    (schema.sections || []).forEach(function (sec) {
-      (sec.fields || []).forEach(function (f) {
-        if (optionsOf(f).length) out.push(f);
-      });
-    });
-    return out;
-  }
-
   function optionsOf(field) {
     if (field.own_options && field.own_options.length) return field.own_options;
     if (field.lookup_category) {
@@ -656,48 +653,63 @@
     return [];
   }
 
-  /* A section may be opened by several questions («a=x;b=y»). This editor
-     shows the first; the others are kept as they are and listed, and are
-     edited in «اتصال‌ها» at the top of the page. */
-  var whenRest = [];
-  function fillWhen(rule) {
+  /* A section — or a single field — may be opened by several questions
+     («a=x;b=y»). This editor shows the first; the others are kept as they are
+     and listed, and are edited in «اتصال‌ها» at the top of the page. The same
+     editor serves the section dialog (prefix «sb») and the field dialog («fb»). */
+  var whenRest = { sb: [], fb: [] };
+  var ANY = '*';
+  function whenSources(except) {
+    var out = [];
+    (schema.sections || []).forEach(function (sec) {
+      (sec.fields || []).forEach(function (f) {
+        if (except && f.field_name === except) return;
+        if (['file', 'chart', 'checklist'].indexOf(f.field_type) !== -1) return;
+        out.push(f);
+      });
+    });
+    return out;
+  }
+  function fillWhen(rule, prefix, except) {
+    prefix = prefix || 'sb';
     var rules = String(rule || '').split(';').filter(function (r) {
       return r.indexOf('=') !== -1;
     });
-    whenRest = rules.slice(1);
+    whenRest[prefix] = rules.slice(1);
     var parts = String(rules[0] || '').split('=');
     var onName = parts[0] || '', value = parts.slice(1).join('=') || '';
-    var note = A.qs('#sb-when-more');
+    var note = A.qs('#' + prefix + '-when-more');
     if (note) {
-      note.textContent = whenRest.length
-        ? 'این بخش با ' + J.toFaDigits(whenRest.length) + ' پرسش دیگر هم باز می‌شود ('
-          + whenRest.map(function (r) {
+      note.textContent = whenRest[prefix].length
+        ? 'با ' + J.toFaDigits(whenRest[prefix].length) + ' پرسش دیگر هم باز می‌شود ('
+          + whenRest[prefix].map(function (r) {
               var f = whenSources().find(function (x) { return x.field_name === r.split('=')[0]; });
               return f ? f.label : r.split('=')[0];
             }).join('، ') + ')؛ آن‌ها سر جایشان می‌مانند.'
         : '';
     }
-    var fieldBox = A.qs('#sb-when-field');
-    var valueBox = A.qs('#sb-when-value');
+    var fieldBox = A.qs('#' + prefix + '-when-field');
+    var valueBox = A.qs('#' + prefix + '-when-value');
     if (!fieldBox || !valueBox) return;
     fieldBox.innerHTML = '<option value="">— همیشه نشان داده شود —</option>'
-      + whenSources().map(function (f) {
+      + whenSources(except).map(function (f) {
           return '<option value="' + A.esc(f.field_name) + '"'
             + (f.field_name === onName ? ' selected' : '') + '>'
             + A.esc(f.label) + '</option>';
         }).join('');
-    fillWhenValues(onName, value);
+    fillWhenValues(onName, value, prefix);
   }
 
-  /* Several values may open the same section («a|b|c»), so the value list is
-     a multi-select; the same links are edited more comfortably in «اتصال
-     علت‌های خرابی به فرم‌ها» at the top of the page. */
-  function fillWhenValues(onName, selected) {
-    var valueBox = A.qs('#sb-when-value');
+  /* Several values may open the same thing («a|b|c»), so the value list is a
+     multi-select; «✳ هر مقدار» opens it as soon as the question is answered —
+     «نحوه‌ی کشیدن» once «متراژ کشیده شده» holds a number. */
+  function fillWhenValues(onName, selected, prefix) {
+    prefix = prefix || 'sb';
+    var valueBox = A.qs('#' + prefix + '-when-value');
     if (!valueBox) return;
     var picked = String(selected || '').split('|');
     var field = whenSources().find(function (f) { return f.field_name === onName; });
-    var opts = field ? optionsOf(field) : [];
+    var opts = field ? [{ value: ANY, label: '✳ هر مقدار (به‌محض پر شدن)' }].concat(optionsOf(field)) : [];
     valueBox.multiple = true;
     valueBox.size = Math.min(6, Math.max(3, opts.length));
     valueBox.innerHTML = opts.map(function (o) {
@@ -709,12 +721,14 @@
     valueBox.disabled = !opts.length;
   }
 
-  function readWhen() {
-    var onName = (A.qs('#sb-when-field') || {}).value || '';
-    var box = A.qs('#sb-when-value');
+  function readWhen(prefix) {
+    prefix = prefix || 'sb';
+    var onName = (A.qs('#' + prefix + '-when-field') || {}).value || '';
+    var box = A.qs('#' + prefix + '-when-value');
     var values = box ? Array.prototype.slice.call(box.selectedOptions)
       .map(function (o) { return o.value; }).filter(Boolean) : [];
-    var rest = whenRest.filter(function (r) { return r.split('=')[0] !== onName; });
+    if (values.indexOf(ANY) !== -1) values = [ANY];
+    var rest = whenRest[prefix].filter(function (r) { return r.split('=')[0] !== onName; });
     return (onName ? [onName + '=' + values.join('|')] : []).concat(rest).join(';');
   }
 
@@ -729,7 +743,7 @@
     A.qs('#sb-full').value = section && section.full_width ? '1' : '0';
     A.qs('#sb-active').value = section && !section.is_active ? '0' : '1';
     A.qs('#sb-entry').value = section && section.show_on_entry === false ? '0' : '1';
-    fillWhen(section && section.visible_when);
+    fillWhen(section && section.visible_when, 'sb');
     fillBring(section);
     A.qs('#sb-delete').classList.toggle('hidden', !section);
     A.openModal('section-modal');
@@ -742,7 +756,7 @@
       full_width: A.qs('#sb-full').value === '1',
       is_active: A.qs('#sb-active').value === '1',
       show_on_entry: A.qs('#sb-entry').value === '1',
-      visible_when: readWhen()
+      visible_when: readWhen('sb')
     };
     if (!payload.code || !payload.title) {
       A.toast('کد و عنوان بخش الزامی است.', 'error'); return;
@@ -842,7 +856,10 @@
     A.qs('#btn-new-field').addEventListener('click', function () { openFieldEditor(null); });
     A.qs('#btn-new-section').addEventListener('click', function () { openSectionEditor(null); });
     A.qs('#sb-when-field').addEventListener('change', function () {
-      fillWhenValues(this.value, '');
+      fillWhenValues(this.value, '', 'sb');
+    });
+    A.qs('#fb-when-field').addEventListener('change', function () {
+      fillWhenValues(this.value, '', 'fb');
     });
     A.qs('#fb-save').addEventListener('click', saveField);
     A.qs('#sb-save').addEventListener('click', saveSection);

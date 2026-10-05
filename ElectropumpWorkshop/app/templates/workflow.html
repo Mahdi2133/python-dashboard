@@ -88,7 +88,12 @@
 
 <!-- ── monitor ───────────────────────────────────────────────────────── -->
 <section id="pane-monitor" class="hidden">
-  <div class="filters card">
+  <div class="filters card mon-filters">
+    <div class="field"><label>از تاریخ</label><input type="text" id="mon-from" class="jdate" placeholder="۱۴۰۵/۰۷/۰۱"></div>
+    <div class="field"><label>تا تاریخ</label><input type="text" id="mon-to" class="jdate" placeholder="۱۴۰۵/۰۷/۳۰"></div>
+    <div class="field"><label>چاه</label><input type="search" id="mon-well" placeholder="نام چاه…"></div>
+    <div class="field"><label>مرکز</label><select id="mon-center"><option value="">همه</option></select></div>
+    <div class="field"><label>فرایند</label><select id="mon-flow"><option value="">همه</option></select></div>
     <div class="field"><label>وضعیت</label>
       <select id="mon-status">
         <option value="">همه</option>
@@ -103,8 +108,20 @@
         <option value="pull">کشیدن</option>
         <option value="install">نصب</option>
       </select></div>
+    <div class="field"><label>نمایش</label>
+      <select id="mon-view"><option value="graph">🗺 نمودار مسیر</option><option value="list">📋 فهرست مرحله‌ها</option></select></div>
     <div class="field"><label>&nbsp;</label>
-      <button class="btn-ghost" id="mon-refresh" type="button">↻ به‌روزرسانی</button></div>
+      <button class="btn-ghost" id="mon-refresh" type="button">↻ اعمال فیلتر</button></div>
+  </div>
+  <div class="mon-legend card">
+    <span class="lg"><i class="sw st-submitted"></i>ثبت شده</span>
+    <span class="lg"><i class="sw st-pending"></i>در انتظار متولی</span>
+    <span class="lg"><i class="sw st-waiting"></i>منتظر مرحله‌ی قبل</span>
+    <span class="lg"><i class="sw st-awaiting"></i>در انتظار تأیید / پاسخ</span>
+    <span class="lg"><i class="sw st-rejected"></i>برگشت خورده / توقف</span>
+    <span class="lg">⬭ مرحله</span><span class="lg">◇ تأیید مرحله</span><span class="lg">⊂⊃ ارجاع (اطلاع)</span>
+    <span class="lg">⬡ فرایند مرتبط</span><span class="lg">⯃ توقف</span><span class="lg">◉ شروع / پایان</span>
+    <span class="hint" id="mon-count"></span>
   </div>
   <div id="mon-list"><div class="loading">در حال بارگذاری</div></div>
 </section>

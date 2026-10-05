@@ -1429,3 +1429,34 @@ th.sortable.sorted { background:rgba(255,255,255,.12); }
 .fb-rule-head b { flex: 1; }
 .fb-rule-head input[type=text] { flex: 1; min-width: 140px; }
 .block-note { display: block; margin-top: 4px; color: var(--danger, #dc2626); font-size: 12.5px; font-weight: 600; }
+
+/* foldable «اطلاعات ثبت‌شده» boxes */
+details.sum-block > summary.sum-head { cursor: pointer; list-style: none; }
+details.sum-block > summary.sum-head::-webkit-details-marker { display: none; }
+details.sum-block > summary.sum-head::before { content: '▸'; color: var(--text-muted, #64748b); transition: transform .15s; }
+details.sum-block[open] > summary.sum-head::before { transform: rotate(90deg); }
+.sum-fold-hint { margin-inline-start: auto; font-size: 11px; color: var(--text-muted, #64748b); }
+.sum-tools { display: flex; gap: 6px; justify-content: flex-end; margin-bottom: 4px; }
+.sum-parent { border: 1px dashed var(--border, #cbd5e1); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px;
+  background: var(--surface-2, #f8fafc); }
+
+/* «رصد فرایندها» — process map */
+.mon-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.mon-filters .field { min-width: 130px; flex: 1 1 130px; }
+.mon-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 12px; padding: 8px 12px; margin: 8px 0; }
+.mon-legend .lg { display: inline-flex; align-items: center; gap: 5px; }
+.mon-legend .sw { width: 14px; height: 14px; border-radius: 4px; display: inline-block; border: 1.5px solid; }
+.sw.st-submitted { background: #dcfce7; border-color: #16a34a; }
+.sw.st-pending { background: #f1f5f9; border-color: #64748b; }
+.sw.st-waiting { background: #fff; border-color: #94a3b8; border-style: dashed; }
+.sw.st-awaiting { background: #fef3c7; border-color: #d97706; }
+.sw.st-rejected { background: #fee2e2; border-color: #dc2626; }
+.mon-graph { overflow-x: auto; padding: 6px 0; direction: rtl; }
+.flow-svg { display: block; margin-inline-start: auto; font-family: Vazirmatn, Tahoma, sans-serif; }
+.flow-svg .f-title { font-size: 12.5px; font-weight: 700; fill: #0f172a; }
+.flow-svg .f-who { font-size: 11px; fill: #334155; }
+.flow-svg .f-state { font-size: 10.5px; font-weight: 600; }
+.flow-svg .f-sub { font-size: 10.5px; fill: #475569; }
+.flow-svg .f-no { font-size: 10.5px; font-weight: 700; fill: #fff; }
+.flow-svg .fnode:hover rect, .flow-svg .fnode:hover polygon, .flow-svg .fnode:hover circle { filter: drop-shadow(0 2px 4px rgba(0,0,0,.18)); }
+.mon-card.flash { outline: 3px solid #0891b2; transition: outline .3s; }

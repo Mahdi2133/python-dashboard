@@ -11,6 +11,16 @@ A rule with no values («failure=») is a link to nothing yet and opens for
 nothing, as before.
 """
 SEP = ";"
+ANY = "*"          # «field=*»: shown as soon as the field holds any answer
+
+
+def matches(have, wanted) -> bool:
+    """Whether an answer (one value or several) meets a rule's values."""
+    have = have if isinstance(have, (list, tuple, set)) else [have]
+    have = [str(v).strip() for v in have if v not in (None, "", False)]
+    if ANY in wanted:
+        return bool(have)
+    return any(v in wanted for v in have)
 
 
 def parse_rules(raw) -> list:

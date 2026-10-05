@@ -836,6 +836,7 @@
          one form. An empty list is a form linked to nothing yet. */
       var wanted = String(rule.value || '').split('|').filter(Boolean);
       var have = valuesOf(rule.on);
+      if (wanted.indexOf('*') !== -1) return have.some(function (h) { return String(h).trim() !== ''; });
       return wanted.some(function (w) { return have.indexOf(w) !== -1; });
     }
 

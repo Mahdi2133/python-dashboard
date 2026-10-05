@@ -599,8 +599,8 @@ def _rule_met(raw, values: dict, on_page: set):
         if have in (None, "", [], {}):
             continue
         answered = True
-        have = have if isinstance(have, list) else [have]
-        if any(str(h) in wanted for h in have):
+        from .conditions import matches
+        if matches(have, wanted):
             return True
     return False if answered else None
 
@@ -988,6 +988,8 @@ def clone_workflow(source: WorkflowDefinition, name: str, kind: str | None,
                 setattr(new, column.name, getattr(old, column.name))
         new.owners = list(old.owners)
         new.reject_to_stage = renumber.get(old.reject_to_stage)
+        new.waits_for = ",".join(str(renumber[n]) for n in old.waits_for_list
+                                 if n in renumber) or None
         if door is not None and old.stage_number == door.stage_number:
             new.can_start, new.start_kind = True, kind
         elif kind and old.start_kind and old.start_kind != kind:
@@ -1013,6 +1015,26 @@ def clone_workflow(source: WorkflowDefinition, name: str, kind: str | None,
     return workflow
 
 
+def visit_ok(stage: WorkflowStage, values: dict) -> bool:
+    """«این مرحله فقط وقتی طی می‌شود که…»: whether ``values`` keep this stage
+    on the run. A question nobody has answered yet keeps it — the run may
+    still need it — so only an answer that rules it out leaves it behind
+    («نیاز به کشیدن ندارد»: no کشیدن stage)."""
+    raw = (stage.visit_when or "").strip()
+    if not raw:
+        return True
+    from .conditions import matches, parse_rules
+    answered = False
+    for on, wanted in parse_rules(raw):
+        have = values.get(on)
+        if have in (None, "", [], {}):
+            continue
+        answered = True
+        if matches(have, wanted):
+            return True
+    return not answered
+
+
 def applicable_stages(instance: WorkflowInstance) -> list:
     """Stages this instance's branch actually visits, in order.
 
@@ -1021,10 +1043,34 @@ def applicable_stages(instance: WorkflowInstance) -> list:
     kind = instance.operation_kind
     start = (instance.entry_stage if instance.entry_stage is not None
              else first_stage_number(kind, instance.workflow))
+    values = instance.payload
     return [s for s in sorted(instance.workflow.stages, key=lambda x: x.stage_number)
             if s.is_active and s.stage_number > STAGE_INTAKE
             and s.stage_number >= start
-            and _kind_matches(s.applies_to, kind)]
+            and _kind_matches(s.applies_to, kind)
+            and visit_ok(s, values)]
+
+
+def unmet_waits(instance: WorkflowInstance, stage: WorkflowStage) -> list:
+    """The stages ``stage`` still waits for on this run («پس از ثبت … باز
+    شود»). A stage this run does not visit is nothing to wait for."""
+    numbers = stage.waits_for_list if stage is not None else []
+    if not numbers:
+        return []
+    visited = {s.stage_number: s for s in applicable_stages(instance)}
+    out = []
+    for n in numbers:
+        other = visited.get(n)
+        if other is None or other.stage_number == stage.stage_number:
+            continue
+        entry = _entry_for(instance, n)
+        if entry is None or entry.status not in ENTRY_DONE:
+            out.append(other)
+    return out
+
+
+def stage_open(instance: WorkflowInstance, stage: WorkflowStage) -> bool:
+    return not unmet_waits(instance, stage)
 
 
 def sync_entries(instance: WorkflowInstance):
@@ -1094,6 +1140,9 @@ def waiting_before(instance: WorkflowInstance, stage_number: int) -> list:
     but the owner is told, because filling a form whose input has not arrived
     is usually a mistake worth noticing.
     """
+    stage = stage_by_number(instance, stage_number)
+    if stage is not None and stage.waits_for_list:
+        return []        # an ordered stage says exactly what it waits for
     return [s for s in pending_stages(instance) if s.stage_number < stage_number]
 
 
@@ -1229,7 +1278,7 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
     sync_entries(instance)
 
     if stage_number is None:
-        owned = stages_of_user(instance, user)
+        owned = [s for s in stages_of_user(instance, user) if stage_open(instance, s)]
         pending_owned = [s for s in owned if s in pending_stages(instance)]
         stage = (pending_owned or owned or [current_stage_of(instance)])[0]
     else:
@@ -1246,6 +1295,12 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
                    if db.session.get(AppUser, i) is not None]
         owner = "، ".join(holders) if holders else "تعیین‌نشده"
         raise WorkflowError(f"مرحله «{stage.title}» در اختیار «{owner}» است.")
+    # «پس از ثبت … باز شود»: not this stage's turn yet.
+    before = unmet_waits(instance, stage)
+    if before:
+        raise WorkflowError(
+            f"مرحله «{stage.title}» پس از ثبت "
+            + "، ".join(f"«{s.title}»" for s in before) + " باز می‌شود.")
     # An approval the admin marked as blocking is exactly that: nothing after
     # that stage may be recorded until its approver has ruled.
     hold = blocked_by(instance, stage.stage_number)
@@ -1393,6 +1448,11 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
     entry.set_payload(payload or {})
     instance.set_payload(merged)
 
+    # «ارجاع برای تأیید» informs: the people named on this stage's referrals
+    # are told what was recorded, without the stage waiting for them.
+    from .approvals import notify_on_submit
+    notify_on_submit(instance, stage, user, payload)
+
     # An approval holds the work here until somebody rules on it; only then is
     # it referred onward. Anything else goes on its way immediately. A stage
     # whose form a rule set aside («بایگانی»، «موکول») was still done by
@@ -1414,6 +1474,11 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
                              f"«{stage.title}» برای تأیید")
     else:
         _refer_onward(instance, stage, user, refer_to, referral_note)
+
+    # «پس از ثبت این مرحله، فرایند … شروع شود» — once it is done (an approval
+    # starts it when the approver signs off instead).
+    if entry.status in ENTRY_DONE:
+        spawn_after(instance, stage, user)
 
     # A well named at any stage belongs to the instance, not just the payload.
     if payload and payload.get("well") and not instance.well_id:
@@ -1928,6 +1993,7 @@ def decide_stage(instance: WorkflowInstance, stage_number: int, user,
         record_audit("update", "workflow", instance.id,
                      summary=f"تأیید مرحله {stage.stage_number} «{stage.title}»")
         _refer_onward(instance, stage, user)
+        spawn_after(instance, stage, user)
         if not refresh_position(instance):
             finalize(instance, user)
     else:
@@ -2016,6 +2082,82 @@ def finalize(instance: WorkflowInstance, user) -> Record:
                  summary=f"فرایند تکمیل و رکورد #{record.id} ثبت شد")
     log.info("Workflow %s finalised into record %s", instance.id, record.id)
     return record
+
+
+def spawn_after(instance: WorkflowInstance, stage: WorkflowStage, user):
+    """Start the process the admin chained to ``stage`` for the same well —
+    «پس از تأیید ساخت الکتروپمپ، فرایند نصب در کارتابل کارگاه نصب» — unless
+    this run already started one that is still going (a stage approved again
+    after a correction does not open a second)."""
+    target = stage.spawn_workflow
+    if target is None or not target.is_active:
+        return None
+    running = WorkflowInstance.query.filter_by(
+        parent_id=instance.id, workflow_id=target.id, status=INSTANCE_OPEN).first()
+    if running is not None:
+        return None
+    # The new process inherits the chain of work that led to it — the stages
+    # this one waited for, and theirs — not a branch that ran beside it: the
+    # کشیدن answers belong to the کشیدن record, not to the نصب that follows
+    # the build.
+    chain = _upstream(instance, stage)
+    mine, beside = set(), set()
+    for e in instance.entries:
+        keys = set((e.payload or {}).keys())
+        (mine if e.stage_number in chain else beside).update(keys)
+    return spawn_instance(instance, target, user, drop=beside - mine)
+
+
+def _upstream(instance: WorkflowInstance, stage: WorkflowStage) -> set:
+    """Stage numbers ``stage`` came from: itself, what it waits for (or every
+    earlier stage when it waits for nothing in particular), recursively."""
+    by_no = {s.stage_number: s for s in instance.workflow.stages}
+    out, todo = set(), [stage.stage_number]
+    while todo:
+        n = todo.pop()
+        if n in out or n not in by_no:
+            continue
+        out.add(n)
+        st = by_no[n]
+        todo.extend(st.waits_for_list or [m for m in by_no if m < n])
+    return out
+
+
+# Answers of the parent that describe its own operation, not the new one
+SPAWN_DROP = ("op_jdate", "operation_kind")
+
+
+def spawn_instance(parent: WorkflowInstance, workflow: WorkflowDefinition, user, drop=()):
+    """A new process for the parent's well, carrying what the parent knows
+    (less ``drop``: answers of a branch that is not this one's)."""
+    kind = workflow.operation_kind or parent.operation_kind
+    start_at = first_stage_number(kind, workflow)
+    child = WorkflowInstance(
+        workflow_id=workflow.id, operation_kind=kind, well_id=parent.well_id,
+        well_name_raw=parent.well_name_raw, current_stage=start_at,
+        entry_stage=start_at, status=INSTANCE_OPEN, parent_id=parent.id,
+        created_by=user.id if user else None)
+    data = {k: v for k, v in parent.payload.items() if k not in SPAWN_DROP and k not in set(drop)}
+    data["operation_kind"] = OPERATION_KINDS.get(kind, kind)
+    child.set_payload(data)
+    db.session.add(child)
+    db.session.flush()
+    intake = next((s for s in workflow.stages
+                   if s.stage_number == STAGE_INTAKE and s.is_active), None)
+    if intake is not None:
+        entry = _ensure_entry(child, intake)
+        entry.status = ENTRY_SUBMITTED
+        entry.user_id = user.id if user else None
+        entry.submitted_at = local_now()
+        entry.set_payload({"operation_kind": data["operation_kind"]})
+    sync_entries(child)
+    refresh_position(child)
+    record_audit("create", "workflow", child.id,
+                 summary=f"شروع خودکار «{workflow.name}» از فرایند #{parent.id}"
+                         + (f" برای «{parent.well.name}»" if parent.well else ""))
+    record_audit("update", "workflow", parent.id,
+                 summary=f"فرایند #{child.id} («{workflow.name}») برای همین چاه شروع شد")
+    return child
 
 
 def cancel_instance(instance: WorkflowInstance, reason: str, user):

@@ -351,7 +351,8 @@ def _behaviour_settings(field, payload):
                 target = FormField.query.filter_by(field_name=answer).first()
                 if target is None or not target.is_choice or target.id == field.id:
                     return "«پاسخ تأییدکننده» باید یک فیلد انتخابی دیگر باشد."
-            rules.append({"options": opts, "approvers": who, "answer_field": answer})
+            rules.append({"options": opts, "approvers": who, "answer_field": answer,
+                          "required": bool(r.get("required"))})
         field.approval_rules = json.dumps(rules, ensure_ascii=False) if rules else None
         first = rules[0] if rules else None   # the single-rule columns follow the first
         field.approval_options = json.dumps(first["options"], ensure_ascii=False) if first else None
