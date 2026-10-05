@@ -94,6 +94,7 @@ PAGE_PERMISSION = {
     "workflow": "workflow.manage",
     "formbuilder": "form.manage",
     "options": "form.manage",
+    "catalogue": "form.manage",
     "transfer": "data.import",
     "users": "user.manage",
     "settings": "settings.view",

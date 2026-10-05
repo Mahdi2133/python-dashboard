@@ -492,7 +492,7 @@
             + '> الزامی</label>' : '')
       + (item.kind === 'section'
           ? '<button class="btn-sm lock-toggle" type="button" title="کدام فیلدهای این فرم '
-            + 'در این مرحله قابل ویرایش‌اند و کدام قفل">' + lockLabel(item.locked_fields)
+            + 'در این مرحله قابل ویرایش‌اند و کدام قفل">' + lockLabel(item.locked_fields, item.hidden_fields)
             + '</button>' : '')
       + '<button class="btn-sm btn-del remove" type="button" title="حذف">×</button>'
       + (item.kind === 'section' ? lockPanel(item) : '')
@@ -509,23 +509,30 @@
     });
   }
 
-  function lockLabel(locked) {
-    var n = (locked || []).length;
-    return n ? '🔐 ' + J.toFaDigits(n) + ' فیلد قفل' : '🔐 فیلدها';
+  function lockLabel(locked, hidden) {
+    var n = (locked || []).length, h = (hidden || []).length;
+    if (!n && !h) return '🔐 فیلدها';
+    return (n ? '🔐 ' + J.toFaDigits(n) + ' قفل' : '') + (n && h ? ' · ' : '')
+      + (h ? '🙈 ' + J.toFaDigits(h) + ' پنهان' : '');
   }
 
   function lockPanel(item) {
     var locked = item.locked_fields || [];
+    var hidden = item.hidden_fields || [];
     var fields = sectionFields(item.code);
-    return '<div class="wf-lock-panel" hidden data-locked="' + A.esc(locked.join(',')) + '">'
+    return '<div class="wf-lock-panel" hidden data-locked="' + A.esc(locked.join(',')) + '"'
+      + ' data-hidden="' + A.esc(hidden.join(',')) + '">'
       + '<div class="hint">تیک «قفل» یعنی کاربر این مرحله آن فیلد را می‌بیند ولی نمی‌تواند '
-      + 'تغییرش دهد. بقیه‌ی فیلدها را خودش پر می‌کند.</div>'
+      + 'تغییرش دهد؛ «پنهان» یعنی آن فیلد در این مرحله اصلاً نشان داده نمی‌شود (در فرم و '
+      + 'مرحله‌های دیگر می‌ماند). بقیه‌ی فیلدها را خودش پر می‌کند.</div>'
       + (fields.length ? fields.map(function (f) {
-          var on = locked.indexOf(f.code) !== -1;
-          return '<label class="lock-row' + (on ? ' on' : '') + '">'
+          var on = locked.indexOf(f.code) !== -1, off = hidden.indexOf(f.code) !== -1;
+          return '<label class="lock-row' + (on ? ' on' : '') + (off ? ' off' : '') + '">'
             + '<span>' + A.esc(f.title) + ' <i class="mono">' + A.esc(f.code) + '</i></span>'
             + '<span class="lock-choice"><input type="checkbox" class="lock-field" value="'
-            + A.esc(f.code) + '"' + (on ? ' checked' : '') + '> 🔒 قفل</span></label>';
+            + A.esc(f.code) + '"' + (on ? ' checked' : '') + '> 🔒 قفل</span>'
+            + '<span class="lock-choice"><input type="checkbox" class="hide-field" value="'
+            + A.esc(f.code) + '"' + (off ? ' checked' : '') + '> 🙈 پنهان</span></label>';
         }).join('') : '<div class="hint">این فرم فیلدی ندارد.</div>')
       + '<div class="lock-actions"><button type="button" class="btn-ghost btn-sm lock-all">'
       + 'قفل همه</button><button type="button" class="btn-ghost btn-sm lock-none">'
@@ -535,11 +542,17 @@
   function syncLocks(li) {
     var panel = li.querySelector('.wf-lock-panel');
     var names = A.qsa('.lock-field:checked', panel).map(function (b) { return b.value; });
+    var hides = A.qsa('.hide-field:checked', panel).map(function (b) { return b.value; });
+    names = names.filter(function (n) { return hides.indexOf(n) === -1; });
     panel.dataset.locked = names.join(',');
+    panel.dataset.hidden = hides.join(',');
     A.qsa('.lock-row', panel).forEach(function (row) {
+      var off = row.querySelector('.hide-field').checked;
+      if (off) row.querySelector('.lock-field').checked = false;
       row.classList.toggle('on', row.querySelector('.lock-field').checked);
+      row.classList.toggle('off', off);
     });
-    li.querySelector('.lock-toggle').textContent = lockLabel(names);
+    li.querySelector('.lock-toggle').textContent = lockLabel(names, hides);
   }
 
   /* Where a stage's work goes when it is finished, and who signs it off.
@@ -1423,6 +1436,8 @@
           is_read_only: flag(li, '.readonly', 'readonly'),
           locked_fields: ((li.querySelector('.wf-lock-panel') || { dataset: {} })
             .dataset.locked || '').split(',').filter(Boolean),
+          hidden_fields: ((li.querySelector('.wf-lock-panel') || { dataset: {} })
+            .dataset.hidden || '').split(',').filter(Boolean),
           approval_user_id: (li.querySelector('.item-approver') || {}).value || null,
           approval_required: !!(li.querySelector('.item-approval-req') || {}).checked,
         };
@@ -1494,6 +1509,10 @@
 
   function monCard(r, graph) {
     var body = graph ? '<div class="mon-graph">' + flowSvg(r) + '</div>' : monSteps(r);
+    /* «نمایش / مخفی»: each map folds away; the choice is remembered here */
+    body = '<details class="mon-body" data-mon-fold="' + r.id + '"' + (monHidden(r.id) ? '' : ' open') + '>'
+      + '<summary class="mon-body-head">' + (graph ? '🗺 نقشه‌ی فرایند' : '📋 مرحله‌ها')
+      + ' <span class="hint">— نمایش / مخفی</span></summary>' + body + '</details>';
     return '<div class="card mon-card" id="mon-' + r.id + '">'
       + '<div class="card-head">'
       + '<span>🔀 فرایند #' + J.toFaDigits(r.id) + ' — ' + A.esc(r.well || 'چاه نامشخص')
@@ -1518,6 +1537,30 @@
           + '" type="button">لغو فرایند</button></div>' : '')
       + '</div>';
   }
+
+  function monHidden(id) {
+    try {
+      var one = localStorage.getItem('wf-mon-map:' + id);
+      if (one !== null) return one === '0';
+      return localStorage.getItem('wf-mon-map:all') === '0';
+    } catch (e) { return false; }
+  }
+  function monRemember(id, open) {
+    try { localStorage.setItem('wf-mon-map:' + id, open ? '1' : '0'); } catch (e) { /* ok */ }
+  }
+  function monAll(open) {
+    try {
+      Object.keys(localStorage).forEach(function (k) {
+        if (k.indexOf('wf-mon-map:') === 0) localStorage.removeItem(k);
+      });
+      localStorage.setItem('wf-mon-map:all', open ? '1' : '0');
+    } catch (e) { /* ok */ }
+    A.qsa('#mon-list details.mon-body').forEach(function (d) { d.open = open; });
+  }
+  document.addEventListener('toggle', function (ev) {
+    var d = ev.target;
+    if (d && d.matches && d.matches('details.mon-body[data-mon-fold]')) monRemember(d.dataset.monFold, d.open);
+  }, true);
 
   function monSteps(r) {
     return '<div class="wf-path">' + (r.nodes || []).filter(function (n) { return n.kind === 'stage'; }).map(function (n) {
@@ -1864,7 +1907,7 @@
         krow.dataset.kind = ev.target.value;
         krow.querySelector('.wf-action-return').hidden = ev.target.value !== 'return';
       }
-      if (ev.target.classList.contains('lock-field')) {
+      if (ev.target.classList.contains('lock-field') || ev.target.classList.contains('hide-field')) {
         syncLocks(ev.target.closest('.wf-drop-item'));
         return;
       }
@@ -1928,6 +1971,10 @@
     A.qs('#tab-design').addEventListener('click', function () { showPane('design'); });
     A.qs('#tab-monitor').addEventListener('click', function () { showPane('monitor'); });
     A.qs('#mon-refresh').addEventListener('click', function () { loadMonitor(); });
+    if (A.qs('#mon-maps-show')) {
+      A.qs('#mon-maps-show').addEventListener('click', function () { monAll(true); });
+      A.qs('#mon-maps-hide').addEventListener('click', function () { monAll(false); });
+    }
     ['#mon-status', '#mon-kind', '#mon-center', '#mon-flow', '#mon-view'].forEach(function (sel) {
       A.qs(sel).addEventListener('change', function () { loadMonitor(); });
     });

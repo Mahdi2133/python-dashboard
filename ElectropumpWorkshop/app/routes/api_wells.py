@@ -21,6 +21,12 @@ def list_wells():
     query = Well.query
     if request.args.get("all") not in ("1", "true"):
         query = query.filter(Well.is_active.is_(True))
+    # a مرکز آبرسانی user picks from their own مرکز's wells only
+    from ..services.auth import current_user
+    from ..services.workflow import well_center_scope
+    scope = well_center_scope(current_user())
+    if scope is not None:
+        query = query.filter(Well.center_id.in_(scope))
     if q:
         like = f"%{q}%"
         # Operators look wells up by PM code as often as by name.

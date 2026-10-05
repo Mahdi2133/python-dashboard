@@ -25,6 +25,7 @@ NAV = [
     ("formbuilder", "فرم‌ساز", "🛠", "/form-builder"),
     ("workflow", "فرایندساز", "🔀", "/workflow"),
     ("options", "مدیریت گزینه‌ها", "🗂", "/options"),
+    ("catalogue", "کاتالوگ پمپ", "📘", "/catalogue"),
     ("transfer", "ورود / خروج داده", "🔁", "/transfer"),
     ("users", "کاربران", "👤", "/users"),
     ("settings", "تنظیمات", "⚙", "/settings"),
@@ -142,6 +143,13 @@ def workflow():
 @permission_required("form.manage")
 def options():
     return render_template("options.html", active="options")
+
+
+@bp.get("/catalogue")
+@permission_required("form.manage")
+def catalogue():
+    """The pump catalogue the forms read curves from: view, edit, Excel in/out."""
+    return render_template("catalogue.html", active="catalogue")
 
 
 @bp.get("/transfer")

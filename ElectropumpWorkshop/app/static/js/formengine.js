@@ -18,6 +18,296 @@
      the server sort it out, so this only matters for the entry page. */
   var TAG_FIELDS = ['failure', 'workshop_opinion', 'desc_tags', 'install_relates_to'];
 
+  /* ── the pump catalogue, read by CAT_* formulas and «کاتالوگ» chart curves ──
+     Loaded once per page; flows are l/s, as on the server (catalogue/services). */
+  var Catalogue = {
+    data: null, loading: null,
+    load: function () {
+      if (Catalogue.data) return Promise.resolve(Catalogue.data);
+      if (!Catalogue.loading) {
+        Catalogue.loading = A.api.get('/api/catalogue/compact').then(function (res) {
+          Catalogue.data = (res.data || {}).models || {};
+          return Catalogue.data;
+        }).catch(function () { Catalogue.data = {}; return Catalogue.data; });
+      }
+      return Catalogue.loading;
+    },
+    normType: function (v) {
+      var t = String(v === null || v === undefined ? '' : v).trim().replace('٫', '.');
+      var n = Number(t);
+      return t !== '' && !isNaN(n) && Math.floor(n) === n ? String(n) : t.toUpperCase();
+    },
+    normStages: function (v) {
+      var t = String(v === null || v === undefined ? '' : v).replace(/\s+/g, '')
+        .replace(/[A-Z]/g, function (c) { return c.toLowerCase(); });
+      var n = Number(t);
+      return t !== '' && !isNaN(n) && Math.floor(n) === n ? String(n) : t;
+    },
+    model: function (type, stages) {
+      if (Array.isArray(type)) type = type[0];
+      if (Array.isArray(stages)) stages = stages[0];
+      if (!Catalogue.data || type === null || type === undefined || type === ''
+          || stages === null || stages === undefined || stages === '') return null;
+      return Catalogue.data[Catalogue.normType(type) + '|' + Catalogue.normStages(stages)] || null;
+    },
+    interp: function (x, x1, y1, x2, y2) { return x2 === x1 ? y1 : y1 + (y2 - y1) * (x - x1) / (x2 - x1); },
+    flowAtHead: function (m, h) {
+      if (!m || h === null) return null;
+      for (var i = 0; i + 1 < m.pts.length; i++) {
+        var a = m.pts[i], b = m.pts[i + 1];
+        if (Math.min(a[1], b[1]) - 1e-9 <= h && h <= Math.max(a[1], b[1]) + 1e-9)
+          return Catalogue.interp(h, a[1], a[0], b[1], b[0]);
+      }
+      return null;
+    },
+    headAtFlow: function (m, q) {
+      if (!m || q === null) return null;
+      for (var i = 0; i + 1 < m.pts.length; i++) {
+        var a = m.pts[i], b = m.pts[i + 1];
+        if (a[0] - 1e-9 <= q && q <= b[0] + 1e-9) return Catalogue.interp(q, a[0], a[1], b[0], b[1]);
+      }
+      return null;
+    },
+    effAtFlow: function (m, q) {
+      if (!m || q === null) return null;
+      var pts = m.pts.filter(function (p) { return p[2] !== null && p[2] !== undefined; });
+      for (var i = 0; i + 1 < pts.length; i++) {
+        var a = pts[i], b = pts[i + 1];
+        if (a[0] - 1e-9 <= q && q <= b[0] + 1e-9) return Catalogue.interp(q, a[0], a[2], b[0], b[2]);
+      }
+      return null;
+    },
+    call: function (name, args, toNum) {
+      var m = Catalogue.model(args[0], args[1]);
+      if (!m) return null;
+      var x = toNum(args[2]);
+      switch (name) {
+        case 'CAT_Q': return Catalogue.flowAtHead(m, x);
+        case 'CAT_H': return Catalogue.headAtFlow(m, x);
+        case 'CAT_EFF': return Catalogue.effAtFlow(m, x);
+        case 'CAT_KW': return m.kw;
+        case 'CAT_A': return m.a;
+        case 'CAT_MEFF': return m.motor_eff === null || m.motor_eff === undefined ? 90 : m.motor_eff;
+        case 'CAT_TITLE': return m.full_title;
+      }
+      return null;
+    }
+  };
+
+  function qfit(vals, wantA) {
+    if (vals.length % 2) return null;
+    var n = vals.length / 2, x2 = 0, x3 = 0, x4 = 0, yx = 0, yx2 = 0, k = 0;
+    for (var q = 0; q < n; q++) {
+      var x = vals[q], y = vals[n + q];
+      if (x === null || x === 0 || y === null) continue;
+      k++; x2 += x * x; x3 += x * x * x; x4 += x * x * x * x; yx += y * x; yx2 += y * x * x;
+    }
+    var det = x4 * x2 - x3 * x3;
+    if (k < 2 || Math.abs(det) < 1e-12) return null;
+    return wantA ? (yx2 * x2 - yx * x3) / det : (x4 * yx - x3 * yx2) / det;
+  }
+  var echartsLoading = null;
+  function loadEcharts() {
+    if (window.echarts) return Promise.resolve(window.echarts);
+    if (echartsLoading) return echartsLoading;
+    var me = document.querySelector('script[src*="js/formengine.js"]');
+    var src = me ? me.getAttribute('src').replace(/js\/formengine\.js.*$/, 'vendor/echarts.min.js')
+      : '/static/vendor/echarts.min.js';
+    echartsLoading = new Promise(function (resolve, reject) {
+      var tag = document.createElement('script');
+      tag.src = src;
+      tag.onload = function () { resolve(window.echarts); };
+      tag.onerror = reject;
+      document.head.appendChild(tag);
+    });
+    return echartsLoading;
+  }
+  function solve3(m, v) {
+    /* Cramer's rule for the 3×3 normal equations of a full quadratic. */
+    function det(a) {
+      return a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1])
+        - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0])
+        + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
+    }
+    var d = det(m);
+    if (Math.abs(d) < 1e-12) return null;
+    return [0, 1, 2].map(function (k) {
+      var c = m.map(function (row, r) { return row.map(function (x, j) { return j === k ? v[r] : x; }); });
+      return det(c) / d;
+    });
+  }
+  function fmtC(n) {
+    var a = Math.abs(n);
+    return String(a >= 100 ? Math.round(a * 100) / 100 : a >= 1 ? Math.round(a * 10000) / 10000
+      : Number(a.toPrecision(4)));
+  }
+  function sgn(n, first) { return n < 0 ? (first ? '-' : ' - ') : (first ? '' : ' + '); }
+  function fitTrend(kind, pts) {
+    var xs = pts.map(function (q) { return q[0]; }), ys = pts.map(function (q) { return q[1]; });
+    var n = pts.length;
+    function S(f) { var t = 0; for (var q = 0; q < n; q++) t += f(xs[q], ys[q]); return t; }
+    if (kind === 'poly2_0') {
+      var flat = xs.concat(ys), a = qfit(flat, true), b = qfit(flat, false);
+      if (a === null) return null;
+      return { f: function (x) { return a * x * x + b * x; }, from0: true,
+               eq: 'y = ' + sgn(a, true) + fmtC(a) + 'x²' + sgn(b) + fmtC(b) + 'x' };
+    }
+    if (kind === 'poly2' && n >= 3) {
+      var c = solve3([[S(function (x) { return Math.pow(x, 4); }), S(function (x) { return Math.pow(x, 3); }), S(function (x) { return x * x; })],
+                      [S(function (x) { return Math.pow(x, 3); }), S(function (x) { return x * x; }), S(function (x) { return x; })],
+                      [S(function (x) { return x * x; }), S(function (x) { return x; }), n]],
+                     [S(function (x, y) { return y * x * x; }), S(function (x, y) { return y * x; }), S(function (x, y) { return y; })]);
+      if (!c) return null;
+      return { f: function (x) { return c[0] * x * x + c[1] * x + c[2]; },
+               eq: 'y = ' + sgn(c[0], true) + fmtC(c[0]) + 'x²' + sgn(c[1]) + fmtC(c[1]) + 'x' + sgn(c[2]) + fmtC(c[2]) };
+    }
+    if (kind === 'linear' && n >= 2) {
+      var den = n * S(function (x) { return x * x; }) - Math.pow(S(function (x) { return x; }), 2);
+      if (Math.abs(den) < 1e-12) return null;
+      var m = (n * S(function (x, y) { return x * y; }) - S(function (x) { return x; }) * S(function (x, y) { return y; })) / den;
+      var k = (S(function (x, y) { return y; }) - m * S(function (x) { return x; })) / n;
+      return { f: function (x) { return m * x + k; }, eq: 'y = ' + sgn(m, true) + fmtC(m) + 'x' + sgn(k) + fmtC(k) };
+    }
+    if (kind === 'power') {
+      var pp = pts.filter(function (q) { return q[0] > 0 && q[1] > 0; });
+      if (pp.length < 2) return null;
+      var lx = pp.map(function (q) { return Math.log(q[0]); }), ly = pp.map(function (q) { return Math.log(q[1]); });
+      var N = pp.length, sx = 0, sy = 0, sxx = 0, sxy = 0;
+      for (var q = 0; q < N; q++) { sx += lx[q]; sy += ly[q]; sxx += lx[q] * lx[q]; sxy += lx[q] * ly[q]; }
+      var dd = N * sxx - sx * sx;
+      if (Math.abs(dd) < 1e-12) return null;
+      var kk = (N * sxy - sx * sy) / dd, AA = Math.exp((sy - kk * sx) / N);
+      return { f: function (x) { return x > 0 ? AA * Math.pow(x, kk) : null; },
+               eq: 'y = ' + fmtC(AA) + 'x^' + (kk < 0 ? '-' : '') + fmtC(kk) };
+    }
+    return null;
+  }
+
+  function toNumber(v) {
+    if (v === null || v === undefined || v === '') return null;
+    if (typeof v === 'number') return v;
+    var t = String(v).replace(/[۰-۹]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d); })
+      .replace('٫', '.').replace(/,/g, '');
+    var n = Number(t);
+    return isNaN(n) ? null : n;
+  }
+  /* One chart from its config and a reader of the form's values. Used by the
+     live form and by the read-only summaries (the approver sees the same
+     chart the sender drew). Series kinds:
+       {label, x:[fields], y:[fields], axis, trend}   points typed in the form
+       {label, catalogue:{type, stages}, x:'head'|'q', hide_same_as}
+                                                     a model's curve from the
+                                                     pump catalogue, picked by
+                                                     the form's own answers */
+  function paintChart(ec, box, eqBox, cfg, getValue) {
+    var palette = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed'];
+    var series = [], eqs = [], notes = [], useRight = false, xmax = 0, keys = {};
+    (cfg.series || []).forEach(function (sr, si) {
+      var color = sr.color || palette[si % palette.length];
+      var right = sr.axis === 'right';
+      if (sr.catalogue) {
+        var t = getValue(sr.catalogue.type), st = getValue(sr.catalogue.stages);
+        var key = (t === null || t === undefined || t === '' || st === null || st === undefined || st === '')
+          ? null : Catalogue.normType(Array.isArray(t) ? t[0] : t) + '|' + Catalogue.normStages(Array.isArray(st) ? st[0] : st);
+        keys[si] = key;
+        if (!key) return;
+        if (sr.hide_same_as !== undefined && sr.hide_same_as !== null && keys[sr.hide_same_as] === key) {
+          notes.push('<div class="hint">«' + A.esc(sr.label || '') + '» همان مدل «'
+                     + A.esc(((cfg.series || [])[sr.hide_same_as] || {}).label || '') + '» است؛ یک منحنی رسم شد.</div>');
+          return;
+        }
+        var m = Catalogue.model(t, st);
+        if (!m) {
+          notes.push('<div class="hint">مدل ' + A.esc(key.replace('|', '/')) + ' در کاتالوگ پمپ نیست.</div>');
+          return;
+        }
+        var byHead = (sr.x || 'head') === 'head';
+        var line = m.pts.map(function (pt) { return byHead ? [pt[1], pt[0]] : [pt[0], pt[1]]; })
+          .sort(function (p1, p2) { return p1[0] - p2[0]; });
+        line.forEach(function (pt) { if (pt[0] > xmax) xmax = pt[0]; });
+        if (right) useRight = true;
+        series.push({ name: (sr.label ? sr.label + ' — ' : '') + m.full_title, type: 'line', data: line,
+                      yAxisIndex: right ? 1 : 0, symbolSize: 6, smooth: true,
+                      lineStyle: { color: color, width: 2 }, itemStyle: { color: color } });
+        return;
+      }
+      var pts = [];
+      (sr.x || []).forEach(function (xn, k) {
+        var x = toNumber(getValue(xn)), y = toNumber(getValue((sr.y || [])[k]));
+        if (x === null || y === null || (x === 0 && y === 0)) return;
+        pts.push([x, y]);
+        if (x > xmax) xmax = x;
+      });
+      pts.sort(function (p1, p2) { return p1[0] - p2[0]; });
+      if (right) useRight = true;
+      series.push({ name: sr.label || ('سری ' + (si + 1)), type: 'scatter', data: pts,
+                    yAxisIndex: right ? 1 : 0, symbolSize: 9, itemStyle: { color: color } });
+      if (sr.trend && pts.length >= 2) {
+        var fit = fitTrend(sr.trend, pts);
+        if (fit) {
+          var lo = fit.from0 ? 0 : pts[0][0], hi = pts[pts.length - 1][0];
+          var span = (hi - lo) || hi || 1, tl = [];
+          for (var q = 0; q <= 40; q++) {
+            var x = lo + (span * 1.1) * q / 40, y = fit.f(x);
+            if (y !== null && isFinite(y)) tl.push([Math.round(x * 10000) / 10000, Math.round(y * 10000) / 10000]);
+          }
+          series.push({ name: (sr.label || '') + ' — روند', type: 'line', data: tl, showSymbol: false,
+                        yAxisIndex: right ? 1 : 0, lineStyle: { type: 'dashed', color: color, width: 1.5 },
+                        itemStyle: { color: color } });
+          eqs.push('<div style="color:' + color + '"><span>' + A.esc(sr.label || '') + ' — خط روند: </span>'
+                   + '<span dir="ltr" class="mono">' + A.esc(fit.eq) + '</span></div>');
+        }
+      }
+    });
+    var yAxis = [{ type: 'value', name: cfg.y_label || '', max: cfg.y_max ? Number(cfg.y_max) : null,
+                   position: 'left', nameTextStyle: { fontFamily: 'Vazirmatn' } }];
+    if (useRight) {
+      yAxis.push({ type: 'value', name: cfg.y2_label || '', max: cfg.y2_max ? Number(cfg.y2_max) : null,
+                   position: 'right', splitLine: { show: false }, nameTextStyle: { fontFamily: 'Vazirmatn' } });
+    }
+    var chart = box._chart;
+    if (chart && chart.getDom() !== box) { chart.dispose(); chart = null; }
+    if (!chart) {
+      chart = ec.init(box);
+      box._chart = chart;
+      window.addEventListener('resize', function () { chart.resize(); });
+    }
+    chart.setOption({
+      textStyle: { fontFamily: 'Vazirmatn, Tahoma, sans-serif' },
+      tooltip: { trigger: 'item', formatter: function (pr) {
+        return A.esc(pr.seriesName) + '<br>' + (cfg.x_label || 'x') + ': ' + pr.value[0]
+          + '<br>' + (cfg.y_label || 'y') + ': ' + pr.value[1];
+      } },
+      legend: { top: 0, textStyle: { fontFamily: 'Vazirmatn' } },
+      grid: { left: 56, right: useRight ? 56 : 24, top: series.length > 3 ? 84 : 56, bottom: 48 },
+      xAxis: { type: 'value', name: cfg.x_label || '', nameLocation: 'middle', nameGap: 28, min: 0,
+               max: xmax ? niceMax(xmax * 1.1) : null },
+      yAxis: yAxis,
+      series: series,
+    }, true);
+    chart.resize();
+    if (eqBox) {
+      eqBox.innerHTML = (eqs.join('') + notes.join(''))
+        || (series.some(function (sr) { return sr.data.length; }) ? '' : 'پس از ورود داده‌ها نمودار رسم می‌شود.');
+    }
+  }
+  function niceMax(v) {
+    /* a round end for the axis: 265.65 → 300, 1.32 → 1.5 */
+    var step = Math.pow(10, Math.floor(Math.log10(v))) / 2;
+    return Math.ceil(v / step) * step;
+  }
+  function chartUsesCatalogue(cfg) {
+    return ((cfg || {}).series || []).some(function (sr) { return !!sr.catalogue; });
+  }
+  /* A read-only chart for summaries: values is {field_name: answer}. */
+  function drawStaticChart(box, eqBox, cfg, values) {
+    var get = function (name) { return values ? values[name] : null; };
+    var go = function () {
+      return loadEcharts().then(function (ec) { paintChart(ec, box, eqBox, cfg || {}, get); });
+    };
+    return chartUsesCatalogue(cfg) ? Catalogue.load().then(go) : go();
+  }
+
   function FormEngine(options) {
     var root = options.root;
     var schema = options.schema;           // { sections, lookups, conditional }
@@ -46,8 +336,10 @@
       /* Say what to do with the row of buttons. Without it a long list of
          unselected options reads as a box that has not loaded — which is
          exactly how «علت خرابی» was misread. */
+      var tick = multiple && opts.length === 1;      /* «انجام شد»: one tick, not a list */
       var html = '<div class="choice-help">'
-        + (multiple ? 'روی هر مورد بزنید تا انتخاب شود — <b>چند مورد</b> '
+        + (tick ? 'برای تیک زدن روی گزینه بزنید.'
+           : multiple ? 'روی هر مورد بزنید تا انتخاب شود — <b>چند مورد</b> '
                       + 'قابل انتخاب است.'
                     : 'یکی از گزینه‌ها را انتخاب کنید.')
         + ' برای برداشتن، دوباره روی همان بزنید.'
@@ -177,18 +469,6 @@
       var n = Number(t);
       return isNaN(n) ? null : n;
     }
-    function qfit(vals, wantA) {
-      if (vals.length % 2) return null;
-      var n = vals.length / 2, x2 = 0, x3 = 0, x4 = 0, yx = 0, yx2 = 0, k = 0;
-      for (var q = 0; q < n; q++) {
-        var x = vals[q], y = vals[n + q];
-        if (x === null || x === 0 || y === null) continue;
-        k++; x2 += x * x; x3 += x * x * x; x4 += x * x * x * x; yx += y * x; yx2 += y * x * x;
-      }
-      var det = x4 * x2 - x3 * x3;
-      if (k < 2 || Math.abs(det) < 1e-12) return null;
-      return wantA ? (yx2 * x2 - yx * x3) / det : (x4 * yx - x3 * yx2) / det;
-    }
     function roundTo(v, d, mode) {
       var f = Math.pow(10, d || 0), a = Math.abs(v) * f;
       var r = mode === 'up' ? Math.ceil(a - 1e-9) : mode === 'down' ? Math.floor(a + 1e-9)
@@ -309,6 +589,7 @@
             case 'ABS': return a0 === null ? null : Math.abs(a0);
             case 'SQRT': return a0 === null || a0 < 0 ? null : Math.sqrt(a0);
             case 'POWER': return a0 === null || ns[1] === null ? null : Math.pow(a0, ns[1]);
+            case 'MEAN': return nums.length ? nums.reduce(function (t, x) { return t + x; }, 0) / nums.length : null;
             case 'MIN': return nums.length ? Math.min.apply(null, nums) : null;
             case 'MAX': return nums.length ? Math.max.apply(null, nums) : null;
             case 'IF': return truthy(args[0]) ? (args[1] === undefined ? null : args[1])
@@ -327,6 +608,8 @@
             case 'LEN': return args[0] === null ? null : String(args[0]).length;
             case 'QFIT_A': return qfit(ns, true);
             case 'QFIT_B': return qfit(ns, false);
+            case 'CAT_Q': case 'CAT_H': case 'CAT_EFF': case 'CAT_KW': case 'CAT_A': case 'CAT_TITLE': case 'CAT_MEFF':
+              return Catalogue.call(tk.v, args, toNum);
             default: throw 'bad';
           }
         }
@@ -499,83 +782,6 @@
       return '<div class="form-chart" data-chart="' + A.esc(field.field_name) + '"></div>'
         + '<div class="form-chart-eq hint" data-chart-eq="' + A.esc(field.field_name) + '"></div>';
     }
-    var echartsLoading = null;
-    function loadEcharts() {
-      if (window.echarts) return Promise.resolve(window.echarts);
-      if (echartsLoading) return echartsLoading;
-      var me = document.querySelector('script[src*="js/formengine.js"]');
-      var src = me ? me.getAttribute('src').replace(/js\/formengine\.js.*$/, 'vendor/echarts.min.js')
-        : '/static/vendor/echarts.min.js';
-      echartsLoading = new Promise(function (resolve, reject) {
-        var tag = document.createElement('script');
-        tag.src = src;
-        tag.onload = function () { resolve(window.echarts); };
-        tag.onerror = reject;
-        document.head.appendChild(tag);
-      });
-      return echartsLoading;
-    }
-    function solve3(m, v) {
-      /* Cramer's rule for the 3×3 normal equations of a full quadratic. */
-      function det(a) {
-        return a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1])
-          - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0])
-          + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
-      }
-      var d = det(m);
-      if (Math.abs(d) < 1e-12) return null;
-      return [0, 1, 2].map(function (k) {
-        var c = m.map(function (row, r) { return row.map(function (x, j) { return j === k ? v[r] : x; }); });
-        return det(c) / d;
-      });
-    }
-    function fmtC(n) {
-      var a = Math.abs(n);
-      return String(a >= 100 ? Math.round(a * 100) / 100 : a >= 1 ? Math.round(a * 10000) / 10000
-        : Number(a.toPrecision(4)));
-    }
-    function sgn(n, first) { return n < 0 ? (first ? '-' : ' - ') : (first ? '' : ' + '); }
-    function fitTrend(kind, pts) {
-      var xs = pts.map(function (q) { return q[0]; }), ys = pts.map(function (q) { return q[1]; });
-      var n = pts.length;
-      function S(f) { var t = 0; for (var q = 0; q < n; q++) t += f(xs[q], ys[q]); return t; }
-      if (kind === 'poly2_0') {
-        var flat = xs.concat(ys), a = qfit(flat, true), b = qfit(flat, false);
-        if (a === null) return null;
-        return { f: function (x) { return a * x * x + b * x; }, from0: true,
-                 eq: 'y = ' + sgn(a, true) + fmtC(a) + 'x²' + sgn(b) + fmtC(b) + 'x' };
-      }
-      if (kind === 'poly2' && n >= 3) {
-        var c = solve3([[S(function (x) { return Math.pow(x, 4); }), S(function (x) { return Math.pow(x, 3); }), S(function (x) { return x * x; })],
-                        [S(function (x) { return Math.pow(x, 3); }), S(function (x) { return x * x; }), S(function (x) { return x; })],
-                        [S(function (x) { return x * x; }), S(function (x) { return x; }), n]],
-                       [S(function (x, y) { return y * x * x; }), S(function (x, y) { return y * x; }), S(function (x, y) { return y; })]);
-        if (!c) return null;
-        return { f: function (x) { return c[0] * x * x + c[1] * x + c[2]; },
-                 eq: 'y = ' + sgn(c[0], true) + fmtC(c[0]) + 'x²' + sgn(c[1]) + fmtC(c[1]) + 'x' + sgn(c[2]) + fmtC(c[2]) };
-      }
-      if (kind === 'linear' && n >= 2) {
-        var den = n * S(function (x) { return x * x; }) - Math.pow(S(function (x) { return x; }), 2);
-        if (Math.abs(den) < 1e-12) return null;
-        var m = (n * S(function (x, y) { return x * y; }) - S(function (x) { return x; }) * S(function (x, y) { return y; })) / den;
-        var k = (S(function (x, y) { return y; }) - m * S(function (x) { return x; })) / n;
-        return { f: function (x) { return m * x + k; }, eq: 'y = ' + sgn(m, true) + fmtC(m) + 'x' + sgn(k) + fmtC(k) };
-      }
-      if (kind === 'power') {
-        var pp = pts.filter(function (q) { return q[0] > 0 && q[1] > 0; });
-        if (pp.length < 2) return null;
-        var lx = pp.map(function (q) { return Math.log(q[0]); }), ly = pp.map(function (q) { return Math.log(q[1]); });
-        var N = pp.length, sx = 0, sy = 0, sxx = 0, sxy = 0;
-        for (var q = 0; q < N; q++) { sx += lx[q]; sy += ly[q]; sxx += lx[q] * lx[q]; sxy += lx[q] * ly[q]; }
-        var dd = N * sxx - sx * sx;
-        if (Math.abs(dd) < 1e-12) return null;
-        var kk = (N * sxy - sx * sy) / dd, AA = Math.exp((sy - kk * sx) / N);
-        return { f: function (x) { return x > 0 ? AA * Math.pow(x, kk) : null; },
-                 eq: 'y = ' + fmtC(AA) + 'x^' + (kk < 0 ? '-' : '') + fmtC(kk) };
-      }
-      return null;
-    }
-    var chartInstances = {};
     function drawCharts() {
       var boxes = qsa('[data-chart]');
       if (!boxes.length) return;
@@ -588,71 +794,8 @@
     function drawChart(ec, box) {
       var fd = fieldByName(box.dataset.chart);
       if (!fd || !box.offsetParent) return;           // hidden: drawn when it opens
-      var cfg = fd.chart_config || {};
-      var palette = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed'];
-      var series = [], eqs = [], useRight = false, xmax = 0;
-      (cfg.series || []).forEach(function (sr, si) {
-        var pts = [];
-        (sr.x || []).forEach(function (xn, k) {
-          var x = toNum(contextValue(xn)), y = toNum(contextValue((sr.y || [])[k]));
-          if (x === null || y === null || (x === 0 && y === 0)) return;
-          pts.push([x, y]);
-          if (x > xmax) xmax = x;
-        });
-        pts.sort(function (p1, p2) { return p1[0] - p2[0]; });
-        var right = sr.axis === 'right';
-        if (right) useRight = true;
-        var color = palette[si % palette.length];
-        series.push({ name: sr.label || ('سری ' + (si + 1)), type: 'scatter', data: pts,
-                      yAxisIndex: right ? 1 : 0, symbolSize: 9, itemStyle: { color: color } });
-        if (sr.trend && pts.length >= 2) {
-          var fit = fitTrend(sr.trend, pts);
-          if (fit) {
-            var lo = fit.from0 ? 0 : pts[0][0], hi = pts[pts.length - 1][0];
-            var span = (hi - lo) || hi || 1, line = [];
-            for (var q = 0; q <= 40; q++) {
-              var x = lo + (span * 1.1) * q / 40, y = fit.f(x);
-              if (y !== null && isFinite(y)) line.push([Math.round(x * 10000) / 10000, Math.round(y * 10000) / 10000]);
-            }
-            series.push({ name: (sr.label || '') + ' — روند', type: 'line', data: line, showSymbol: false,
-                          yAxisIndex: right ? 1 : 0, lineStyle: { type: 'dashed', color: color, width: 1.5 },
-                          itemStyle: { color: color } });
-            eqs.push('<div style="color:' + color + '"><span>' + A.esc(sr.label || '') + ' — خط روند: </span>'
-                     + '<span dir="ltr" class="mono">' + A.esc(fit.eq) + '</span></div>');
-          }
-        }
-      });
-      var yAxis = [{ type: 'value', name: cfg.y_label || '', max: cfg.y_max ? Number(cfg.y_max) : null,
-                     position: 'left', nameTextStyle: { fontFamily: 'Vazirmatn' } }];
-      if (useRight) {
-        yAxis.push({ type: 'value', name: cfg.y2_label || '', max: cfg.y2_max ? Number(cfg.y2_max) : null,
-                     position: 'right', splitLine: { show: false }, nameTextStyle: { fontFamily: 'Vazirmatn' } });
-      }
-      var chart = chartInstances[fd.field_name];
-      if (chart && chart.getDom() !== box) { chart.dispose(); chart = null; }
-      if (!chart) {
-        chart = ec.init(box);
-        chartInstances[fd.field_name] = chart;
-        window.addEventListener('resize', function () { chart.resize(); });
-      }
-      chart.setOption({
-        textStyle: { fontFamily: 'Vazirmatn, Tahoma, sans-serif' },
-        tooltip: { trigger: 'item', formatter: function (pr) {
-          return A.esc(pr.seriesName) + '<br>' + pr.value[0] + ' ، ' + pr.value[1];
-        } },
-        legend: { top: 0, textStyle: { fontFamily: 'Vazirmatn' } },
-        grid: { left: 56, right: useRight ? 56 : 24, top: 48, bottom: 48 },
-        xAxis: { type: 'value', name: cfg.x_label || '', nameLocation: 'middle', nameGap: 28, min: 0,
-                 max: xmax ? Math.ceil(xmax * 1.15 * 100) / 100 : null },
-        yAxis: yAxis,
-        series: series,
-      }, true);
-      chart.resize();
-      var eqBox = qs('[data-chart-eq="' + fd.field_name + '"]');
-      if (eqBox) {
-        eqBox.innerHTML = eqs.length ? eqs.join('')
-          : (series.some(function (sr) { return sr.data.length; }) ? '' : 'پس از ورود داده‌ها نمودار رسم می‌شود.');
-      }
+      paintChart(ec, box, qs('[data-chart-eq="' + fd.field_name + '"]'), fd.chart_config || {},
+                  contextValue);
     }
     self.drawCharts = drawCharts;
 
@@ -709,6 +852,15 @@
         + '<span class="err hidden"></span></div>';
     }
 
+    function usesCatalogue() {
+      return (schema.sections || []).some(function (sec) {
+        return (sec.fields || []).some(function (f) {
+          return /CAT_/i.test(String(f.formula || '') + String(f.default_value || ''))
+            || (f.field_type === 'chart' && chartUsesCatalogue(f.chart_config));
+        });
+      });
+    }
+
     self.render = function () {
       root.innerHTML = (schema.sections || []).map(function (section) {
         if (!section.fields || !section.fields.length) return '';
@@ -735,6 +887,7 @@
       root.addEventListener('input', recomputeFormulas);
       root.addEventListener('change', recomputeFormulas);
       recomputeFormulas();
+      if (usesCatalogue()) Catalogue.load().then(function () { recomputeFormulas(); });
       /* a pane that is drawn first and shown a moment later still gets its chart */
       setTimeout(drawCharts, 250);
       return self;
@@ -1270,6 +1423,9 @@
   }
 
   window.FormEngine = function (options) { return new FormEngine(options); };
+  window.FormEngine.Catalogue = Catalogue;
+  window.FormEngine.drawStaticChart = drawStaticChart;
+  window.FormEngine.loadEcharts = loadEcharts;
 
   /* A single input outside any form that still wants the well picker — the
      «شروع فرایند» dialog, for one. */

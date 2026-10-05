@@ -35,11 +35,32 @@ def get_record(record_id):
     return ok(serialize_record(record))
 
 
+def _outside_scope(data):
+    """A مرکز آبرسانی user records their own مرکز's wells only."""
+    from ..services.auth import current_user
+    from ..services.records import resolve_well
+    from ..services.workflow import well_center_scope
+    scope = well_center_scope(current_user())
+    if scope is None:
+        return None
+    candidate = data.get("well_id") or data.get("well") or data.get("well_name")
+    if candidate in (None, "", []):
+        return None
+    well, _raw = resolve_well(candidate, create_missing=False)
+    if well is not None and well.center_id not in scope:
+        return f"چاه «{well.name}» از مرکز شما نیست؛ فقط چاه‌های مرکز خودتان قابل انتخاب است."
+    return None
+
+
 @bp.post("")
 @permission_required("record.create")
 def post_record():
+    data = body()
+    blocked = _outside_scope(data)
+    if blocked:
+        return fail(blocked, 403, fields={"well": blocked})
     try:
-        record = create_record(body())
+        record = create_record(data)
     except ValidationError as exc:
         return fail("اطلاعات فرم کامل یا معتبر نیست.", 422, fields=exc.errors)
     return ok(serialize_record(record), message="رکورد با موفقیت ثبت شد.")
@@ -55,8 +76,12 @@ def put_record(record_id):
     expired = edit_window_closed(record)
     if expired:
         return fail(expired, 403)
+    data = body()
+    blocked = _outside_scope(data) if ("well" in data or "well_id" in data) else None
+    if blocked:
+        return fail(blocked, 403, fields={"well": blocked})
     try:
-        update_record(record, body())
+        update_record(record, data)
     except ValidationError as exc:
         return fail("اطلاعات فرم کامل یا معتبر نیست.", 422, fields=exc.errors)
     return ok(serialize_record(record), message="رکورد به‌روزرسانی شد.")

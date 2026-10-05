@@ -1,6 +1,7 @@
 """SQLAlchemy models for the Electropump Workshop Management System."""
 from .audit import AuditLog, ImportBatch, User
 from .auth import AppUser, UserSession
+from .catalogue import PumpCatalogModel, PumpCatalogPoint
 from .formbuilder import FormField, FormFieldOption, FormSection, RecordDynamicValue
 from .lookup import LookupAlias, LookupCategory, LookupItem
 from .meta import AppMeta
@@ -17,6 +18,7 @@ from .workflow import (WorkflowApprovalRequest, WorkflowAttachment, WorkflowDefi
 __all__ = [
     "AuditLog", "ImportBatch", "User",
     "AppUser", "UserSession",
+    "PumpCatalogModel", "PumpCatalogPoint",
     "FormField", "FormFieldOption", "FormSection", "RecordDynamicValue",
     "LookupAlias", "LookupCategory", "LookupItem",
     "AppMeta",

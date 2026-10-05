@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}کاتالوگ پمپ — {{ APP_TITLE }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h2>📘 کاتالوگ پمپ</h2>
+    <div class="sub">منحنی هد–دبی، توان و جریان هر مدل. فرم‌ها منحنی و مقادیر کاتالوگ را از همین‌جا می‌خوانند
+      (نمودار مقایسه‌ی کارگاه و فرمول‌های CAT_Q، CAT_H، CAT_EFF، CAT_KW، CAT_A و CAT_TITLE).</div>
+  </div>
+  <div class="toolbar-actions">
+    <a class="btn-ghost" href="/api/catalogue/export.xlsx">⬇ خروجی اکسل</a>
+    <label class="btn-ghost" style="cursor:pointer">⬆ ورود از اکسل
+      <input type="file" id="cat-import" accept=".xlsx,.xlsm" hidden></label>
+    <button class="btn-primary" id="cat-add" type="button">➕ مدل جدید</button>
+  </div>
+</div>
+
+<div class="alert info">
+  داده‌ها از «جدول عملکرد هیدرولیکی پمپ» کاتالوگ گازار (دور ۲۹۰۰) خوانده شده‌اند؛ راندمان پمپ از برگه‌ی
+  «Database» کاربرگ آزمایش پمپ کارگاه. برای به‌روزرسانی، خروجی اکسل را بگیرید، اصلاح کنید و دوباره وارد
+  کنید — هر مدلی که در فایل باشد جایگزین می‌شود و بقیه دست نمی‌خورند.
+</div>
+
+<div class="cat-layout">
+  <div class="card cat-list-card">
+    <div class="cat-filters">
+      <select id="cat-type"><option value="">همه‌ی تیپ‌ها</option></select>
+      <input type="text" id="cat-search" placeholder="جستجو: 384/10">
+      <label class="small"><input type="checkbox" id="cat-inactive" style="width:auto"> غیرفعال‌ها</label>
+    </div>
+    <div class="hint" id="cat-count"></div>
+    <div class="cat-list" id="cat-list"><div class="loading">بارگذاری</div></div>
+  </div>
+  <div class="card cat-detail" id="cat-detail">
+    <div class="table-empty">یک مدل را از فهرست انتخاب کنید.</div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/formengine.js') }}"></script>
+<script src="{{ url_for('static', filename='js/catalogue.js') }}"></script>
+{% endblock %}

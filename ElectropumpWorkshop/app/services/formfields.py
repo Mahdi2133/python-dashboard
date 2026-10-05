@@ -27,10 +27,10 @@ def _field_map():
     return fields
 
 
-def compile_field_formula(text: str, exclude: str | None = None):
+def compile_field_formula(text: str, exclude: str | None = None, fields: dict | None = None):
     """Validate a form formula; returns the compiled tree or raises FormulaError."""
     from ..analytics.formula import compile_formula
-    fields = _field_map()
+    fields = dict(fields) if fields is not None else _field_map()
     if exclude:
         fields.pop(exclude, None)
     comp = compile_formula(text or "", fields)
@@ -66,17 +66,26 @@ def compute_formulas(values: dict, only: set | None = None) -> dict:
     ev = Evaluator(fields)
     row = {k: _numeric(v) for k, v in (values or {}).items()}
     out = {}
+    trees = {}
+    for f in targets:                       # compiled once, not once per pass
+        try:
+            trees[f.field_name] = compile_field_formula(f.formula, exclude=f.field_name,
+                                                        fields=fields)["tree"]
+        except FormulaError:
+            trees[f.field_name] = None
     # formulas may use each other (a pump calculation chains a dozen deep):
     # passes until nothing changes
     for _ in range(max(3, len(targets) + 1)):
         changed = False
         for f in targets:
             try:
-                comp = compile_field_formula(f.formula, exclude=f.field_name)
-                v = ev.row(comp["tree"], row)
-            except (FormulaError, ZeroDivisionError, TypeError, ValueError):
+                tree = trees[f.field_name]
+                v = ev.row(tree, row) if tree is not None else None
+            except (FormulaError, ZeroDivisionError, TypeError, ValueError, ArithmeticError):
                 v = None
-            if isinstance(v, float):
+            if isinstance(v, float) and f.result_type == "text":
+                v = str(int(v)) if v.is_integer() else str(v)   # «9»، not «9.0»
+            elif isinstance(v, float):
                 try:
                     dec = int(f.step) if (f.step or "").strip().isdigit() else 4
                 except ValueError:
@@ -107,19 +116,36 @@ def compute_autofill(values: dict) -> dict:
                if f.field_name in values and values.get(f.field_name) in (None, "", [])]
     if not targets:
         return out
-    ev = Evaluator(_field_map())
+    fields = _field_map()
+    ev = Evaluator(fields)
     row = {k: _numeric(v) for k, v in values.items()}
+    trees = {}
     for f in targets:
         try:
-            comp = compile_field_formula(f.default_value[1:], exclude=f.field_name)
-            v = ev.row(comp["tree"], row)
-        except (FormulaError, ZeroDivisionError, TypeError, ValueError):
-            v = None
-        if v in (None, ""):
-            continue
-        if isinstance(v, float):
-            v = round(v, 4)
-        out[f.field_name] = v
+            trees[f.field_name] = compile_field_formula(f.default_value[1:], exclude=f.field_name,
+                                                        fields=fields)["tree"]
+        except FormulaError:
+            trees[f.field_name] = None
+    # one filled default may feed another («هد کلی» = … + سطح دینامیک + تلفات
+    # مسیر, both filled the same way): passes until nothing new is filled
+    for _ in range(len(targets) + 1):
+        grew = False
+        for f in targets:
+            if f.field_name in out or trees.get(f.field_name) is None:
+                continue
+            try:
+                v = ev.row(trees[f.field_name], row)
+            except (FormulaError, ZeroDivisionError, TypeError, ValueError, ArithmeticError):
+                v = None
+            if v in (None, ""):
+                continue
+            if isinstance(v, float):
+                v = round(v, 4)
+            out[f.field_name] = v
+            row[f.field_name] = v
+            grew = True
+        if not grew:
+            break
     return out
 
 

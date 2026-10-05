@@ -534,8 +534,16 @@ def notify_on_submit(instance, stage, user, payload) -> list:
     recorded for this well. Nothing waits for their answer (unless «الزامی»,
     in which case the stage could not have been recorded without it)."""
     sent = []
+    # whoever holds a stage that opens once this one is recorded sees it there
+    # anyway: an informational referral to them would only say it twice
+    next_owners = set()
+    for other in (instance.workflow.stages if instance.workflow else []):
+        if other.is_active and stage.stage_number in (other.waits_for_list or []):
+            next_owners |= {u.id for u in other.owners}
     for st in required_status(instance, stage, payload):
         if st["state"] not in ("not_sent", "changed") or not st.get("filled"):
+            continue
+        if not st.get("required") and st["approver_id"] in next_owners:
             continue
         if any(r.status == APPROVAL_PENDING and r.approver_id == st["approver_id"]
                for r in requests_for(instance, stage.stage_number)):

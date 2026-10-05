@@ -434,6 +434,9 @@ class WorkflowStageItem(db.Model):
     # of the section is filled as usual. «تیپ پمپ قبلی» read off the well's
     # history, visible to کارگاه but not theirs to change.
     locked_fields = db.Column(db.Text)
+    # Fields of this section this stage does not show at all — «دبی پس از نصب
+    # پمپ جدید» belongs to the form but is measured later, by someone else.
+    hidden_fields = db.Column(db.Text)
     # «تأیید اجباری»: once this form is filled on this stage, it has to be sent
     # to this person and approved before the stage can be finalised.
     approval_user_id = db.Column(db.Integer, db.ForeignKey("app_users.id",
@@ -449,6 +452,10 @@ class WorkflowStageItem(db.Model):
     @property
     def locked_names(self) -> list:
         return [n.strip() for n in (self.locked_fields or "").split(",") if n.strip()]
+
+    @property
+    def hidden_names(self) -> list:
+        return [n.strip() for n in (self.hidden_fields or "").split(",") if n.strip()]
 
     @property
     def kind(self):
@@ -470,6 +477,7 @@ class WorkflowStageItem(db.Model):
             "approval_user_id": self.approval_user_id,
             "approval_required": bool(self.approval_required),
             "locked_fields": self.locked_names,
+            "hidden_fields": self.hidden_names,
         }
 
 

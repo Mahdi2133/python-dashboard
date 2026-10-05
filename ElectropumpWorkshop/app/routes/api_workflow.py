@@ -839,8 +839,10 @@ def set_stage_items(stage_id):
             if target is None:
                 return fail("بخش انتخاب‌شده یافت نشد.", 422)
             names = {f.field_name for f in target.fields}
-            locks = [n for n in dict.fromkeys(raw.get("locked_fields") or [])
+            hides = [n for n in dict.fromkeys(raw.get("hidden_fields") or [])
                      if n in names]
+            locks = [n for n in dict.fromkeys(raw.get("locked_fields") or [])
+                     if n in names and n not in hides]
             approver = raw.get("approval_user_id")
             approver = int(approver) if str(approver or "").isdigit() else None
             if approver and db.session.get(AppUser, approver) is None:
@@ -850,6 +852,7 @@ def set_stage_items(stage_id):
                 applies_to=applies, is_optional=bool(raw.get("is_optional")),
                 is_read_only=bool(raw.get("is_read_only")),
                 locked_fields=",".join(locks) or None,
+                hidden_fields=",".join(hides) or None,
                 approval_user_id=None if raw.get("is_read_only") else approver,
                 approval_required=bool(approver and raw.get("approval_required"))))
         elif kind == "field":

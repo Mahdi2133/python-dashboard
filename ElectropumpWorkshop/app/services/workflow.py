@@ -427,7 +427,10 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
     for item in stage_items(instance, stage, draft):
         if item.section:
             block = item.section.to_dict(include_fields=True, active_only=True)
-            block["fields"] = with_files(usable(block.get("fields") or []))
+            hide = set(item.hidden_names)
+            block["fields"] = with_files(usable([f for f in block.get("fields") or []
+                                                 if f.get("field_name") not in hide
+                                                 and f.get("mirror_name") not in hide]))
             if item.is_read_only:
                 block["fields"] = locked(block["fields"])
                 block["is_locked"] = True
@@ -731,6 +734,8 @@ def submitted_summary(instance: WorkflowInstance, except_stage: int = None,
     kinds = {f.field_name: f.field_type for f in all_fields}
     from .formfields import files_by_field
     files = files_by_field(instance)
+    merged = {**_settled_values(instance, None), **{k: v for k, v in (instance.payload or {}).items()
+                                                    if v not in (None, "", [], {})}}
     out = []
     for entry in sorted(instance.entries, key=lambda e: e.stage_number):
         if entry.stage_number == except_stage or entry.stage_number == STAGE_INTAKE:
@@ -764,7 +769,8 @@ def submitted_summary(instance: WorkflowInstance, except_stage: int = None,
                 if not value:
                     continue
             values.append({"label": labels.get(name, name), "value": str(value)})
-        if not values and not entry.note:
+        charts = stage_charts(entry.stage, merged) if entry.stage else []
+        if not values and not entry.note and not charts:
             continue
         out.append({
             "stage_number": entry.stage_number,
@@ -776,7 +782,52 @@ def submitted_summary(instance: WorkflowInstance, except_stage: int = None,
                                if entry.submitted_at else None),
             "note": entry.note,
             "values": values,
+            "charts": charts,
         })
+    return out
+
+
+def chart_inputs(cfg: dict) -> list:
+    """The field names a chart reads: its points and its catalogue pickers."""
+    names = []
+    for sr in (cfg or {}).get("series") or []:
+        cat = sr.get("catalogue")
+        if isinstance(cat, dict):
+            names += [cat.get("type"), cat.get("stages")]
+        else:
+            names += list(sr.get("x") or []) + list(sr.get("y") or [])
+    return [n for n in names if isinstance(n, str) and n]
+
+
+def stage_charts(stage: WorkflowStage, values: dict) -> list:
+    """The «نمودار» fields of a stage's forms, with the answers they draw.
+
+    A chart stores nothing, so a summary has to hand over the chart itself and
+    the numbers behind it: the approver sees what the sender saw (the
+    workshop's test against the catalogue, for one).
+    """
+    import json as _json
+    out = []
+    section_ids = [i.section_id for i in sorted(stage.items, key=lambda i: i.sort_order or 0)
+                   if i.section_id]
+    if not section_ids:
+        return out
+    fields = (FormField.query.filter(FormField.section_id.in_(section_ids),
+                                     FormField.field_type == "chart",
+                                     FormField.is_active.is_(True)).all())
+    order = {sid: n for n, sid in enumerate(section_ids)}
+    for f in sorted(fields, key=lambda f: (order.get(f.section_id, 0), f.sort_order or 0)):
+        if f.section is not None and not f.section.is_active:
+            continue
+        try:
+            cfg = _json.loads(f.chart_config) if f.chart_config else {}
+        except ValueError:
+            continue
+        names = chart_inputs(cfg)
+        got = {n: values.get(n) for n in names if values.get(n) not in (None, "", [], {})}
+        if not got:
+            continue
+        out.append({"field_name": f.field_name, "label": f.label, "chart": cfg, "values": got})
     return out
 
 
@@ -795,6 +846,23 @@ def _ensure_entry(instance: WorkflowInstance, stage: WorkflowStage):
         db.session.add(entry)
         instance.entries.append(entry)
     return entry
+
+
+def well_center_scope(user):
+    """The مرکزها whose wells this person may pick, or None for any well.
+
+    A مرکز آبرسانی user — متولی of a stage the process builder routes «به
+    مرکز چاه», with مرکزها set on their user page — works on their own wells
+    only. Everyone else (the expert, the workshops, the admin) sees them all.
+    """
+    if user is None or getattr(user, "role", None) == "admin" or not user.centers:
+        return None
+    routed = (WorkflowStage.query.filter(WorkflowStage.route_by_center.is_(True),
+                                         WorkflowStage.is_active.is_(True))
+              .filter(WorkflowStage.owners.any(id=user.id)).first())
+    if routed is None:
+        return None
+    return {c.id for c in user.centers}
 
 
 def may_start(user) -> bool:
@@ -841,6 +909,10 @@ def start_instance(payload: dict, user) -> WorkflowInstance:
     if well is None:
         raise WorkflowError(f"چاهی با نام «{raw}» در فهرست چاه‌ها نیست. "
                             f"از فهرست پیشنهادی یک چاه را انتخاب کنید.")
+    scope = well_center_scope(user)
+    if scope is not None and well.center_id not in scope:
+        raise WorkflowError(f"چاه «{well.name}» از مرکز شما نیست؛ فقط چاه‌های "
+                            "مرکز خودتان را می‌توانید انتخاب کنید.")
     # «فرایند نصب» for an install, «فرایند کشیدن» for a pull.
     workflow = workflow_for(kind)
     if workflow is None:
@@ -1010,7 +1082,8 @@ def clone_workflow(source: WorkflowDefinition, name: str, kind: str | None,
                 stage_id=new.id, section_id=item.section_id,
                 field_id=item.field_id, sort_order=item.sort_order,
                 applies_to=item.applies_to, is_optional=item.is_optional,
-                is_read_only=item.is_read_only, locked_fields=item.locked_fields))
+                is_read_only=item.is_read_only, locked_fields=item.locked_fields,
+                hidden_fields=item.hidden_fields))
     db.session.flush()
     return workflow
 

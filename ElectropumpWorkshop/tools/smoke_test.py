@@ -2078,7 +2078,7 @@ def main():
             if well is None:
                 continue
             inst = start_instance({"operation_kind": "کشیدن",
-                                   "well": well.name}, people[0])
+                                   "well": well.name}, owner)
             sync_entries(inst)
             _db.session.commit()
             seen.append(owners_of(inst, stage) == [owner.id])
@@ -2090,9 +2090,23 @@ def main():
         orphan = Well.query.filter(
             Well.center_id.notin_([i.id for i in pair]),
             Well.is_active.is_(True)).first()
+        # a مرکز user picks only their own مرکز's wells
+        from app.services.workflow import WorkflowError, well_center_scope
+        try:
+            start_instance({"operation_kind": "کشیدن", "well": orphan.name}, people[0])
+            refused = False
+        except WorkflowError:
+            refused = True
+        _db.session.rollback()
+        check("کاربر مرکز فقط چاه‌های مرکز خودش را می‌تواند انتخاب کند",
+              refused and well_center_scope(people[0]) == {pair[0].id})
+        own_centres = list(people[0].centers)
+        people[0].centers = []                 # an office without a مرکز opens it
+        _db.session.flush()
         inst = start_instance({"operation_kind": "کشیدن",
                                "well": orphan.name}, people[0])
         sync_entries(inst)
+        people[0].centers = own_centres
         _db.session.commit()
         check("چاهی که مرکزش متولی ندارد نزد اداره‌ی شروع‌کننده می‌ماند",
               owners_of(inst, stage) == [people[0].id])
@@ -2788,6 +2802,68 @@ def main():
               and child.payload.get("x") == 1 and "op_jdate" not in child.payload)
         check("دوباره شروع نمی‌شود اگر هنوز در جریان است", _wf6.spawn_after(inst6, sa[4], admin6) is None)
         _db6.session.rollback()
+
+    print("\n— کاتالوگ پمپ، فرمول‌های CAT_*، نمودار کاتالوگ و فیلد پنهان در مرحله —")
+    with app.app_context():
+        import json as _json7
+        from app.extensions import db as _db7
+        from app.models import (PumpCatalogModel as _PC, FormField as _FF7, FormSection as _FS7,
+                                WorkflowDefinition as _WD7, WorkflowStage as _WS7,
+                                WorkflowStageItem as _WSI7, WorkflowInstance as _WI7, Well as _W7)
+        from app.services import catalogue as _cat
+        from app.services import workflow as _wf7
+        from app.services.formfields import compute_formulas as _cf7
+        check("کاتالوگ گازار بارگذاری شده", _PC.query.count() >= 290, str(_PC.query.count()))
+        m = _cat.model("384", 10.0)
+        check("مدل 384/10 با موتور 73.5 و جریان 155", m and m["kw"] == 73.5 and m["a"] == 155,
+              m and m["full_title"])
+        check("CAT_Q در نقطه‌ی کاتالوگ (هد 189 ← 100 m³/h)",
+              abs(_cat.call("CAT_Q", ["384", "10", 189]) - 100 / 3.6) < 1e-6)
+        check("CAT_H میان دو نقطه خطی خوانده می‌شود",
+              abs(_cat.call("CAT_H", ["384", "10", 25]) - 204) < 1e-6)
+        check("بیرون از منحنی چیزی برنمی‌گرداند", _cat.call("CAT_Q", ["384", "10", 500]) is None)
+        check("مدل a از کاتالوگ", (_cat.call("CAT_TITLE", ["384", "3a"]) or "").startswith("384/3a"))
+        sec7 = _FS7(code="t_r7", title="آزمون R7", is_active=True)
+        _db7.session.add(sec7); _db7.session.flush()
+        for name, ftype, formula, rt in (
+                ("t7_t", "text", None, None), ("t7_s", "text", None, None), ("t7_e", "number", None, None),
+                ("t7_q", "formula", "CAT_Q([t7_t], [t7_s], 189)", None),
+                ("t7_title", "formula", 'CONCAT([t7_s], "a")', "text"),
+                ("t7_mean", "formula", "MEAN(2, [t7_e], 4)", None)):
+            _db7.session.add(_FF7(section_id=sec7.id, field_name=name, label=name, field_type=ftype,
+                                  formula=formula, result_type=rt, is_active=True, is_builtin=False))
+        _db7.session.flush()
+        got = _cf7({"t7_t": "384", "t7_s": "10"})
+        check("فرمول فرم CAT_Q و CONCAT عدد صحیح و MEAN بدون خالی‌ها",
+              abs((got.get("t7_q") or 0) - 27.7778) < 1e-3 and got.get("t7_title") == "10a"
+              and got.get("t7_mean") == 3, str(got))
+        # hidden field on one stage, and the chart handed to the summary
+        fh = _FF7(section_id=sec7.id, field_name="t7_hide", label="پنهان", field_type="number",
+                  is_active=True, is_builtin=False)
+        ch = _FF7(section_id=sec7.id, field_name="t7_chart", label="نمودار", field_type="chart",
+                  is_active=True, is_builtin=False, chart_config=_json7.dumps({"series": [
+                      {"label": "کاتالوگ", "catalogue": {"type": "t7_t", "stages": "t7_s"}, "x": "head"}]}))
+        _db7.session.add_all([fh, ch]); _db7.session.flush()
+        wf7 = _WD7(code="t_r7wf", name="آزمون R7", operation_kind="pull", is_active=False)
+        _db7.session.add(wf7); _db7.session.flush()
+        s1 = _WS7(workflow_id=wf7.id, stage_number=1, title="م۱", applies_to="both")
+        _db7.session.add(s1); _db7.session.flush()
+        _db7.session.add(_WSI7(stage_id=s1.id, section_id=sec7.id, sort_order=0, applies_to="both",
+                               hidden_fields="t7_hide"))
+        _db7.session.flush()
+        w7 = _W7.query.filter(_W7.is_active.is_(True)).first()
+        i7 = _WI7(workflow_id=wf7.id, operation_kind="pull", well_id=w7.id, current_stage=1,
+                  entry_stage=1, status="open")
+        i7.set_payload({"t7_t": "384", "t7_s": "10"})
+        _db7.session.add(i7); _db7.session.flush()
+        _db7.session.refresh(wf7); _db7.session.refresh(s1)
+        _wf7.sync_entries(i7)
+        names = [f["field_name"] for b in _wf7.stage_form(i7, s1)["sections"] for f in b["fields"]]
+        check("فیلد «پنهان در این مرحله» نشان داده نمی‌شود", "t7_hide" not in names and "t7_t" in names)
+        charts = _wf7.stage_charts(s1, i7.payload)
+        check("نمودار مرحله با مقادیرش به خلاصه داده می‌شود",
+              len(charts) == 1 and charts[0]["values"] == {"t7_t": "384", "t7_s": "10"})
+        _db7.session.rollback()
 
     print("\n— خروجی PDF بدون کتابخانه‌ی reportlab پیام روشن می‌دهد —")
     import sys as _sys

@@ -348,12 +348,35 @@
             : A.esc(v.value);
           return '<dt>' + A.esc(v.label) + '</dt><dd>' + val + '</dd>';
         }).join('') + '</dl>'
+      + (b.charts || []).map(function (c) {
+          var id = 'sc' + (++sumChartSeq);
+          sumCharts[id] = c;
+          return '<div class="sum-chart"><div class="sum-chart-title">📈 ' + A.esc(c.label) + '</div>'
+            + '<div class="form-chart" data-sum-chart="' + id + '"></div>'
+            + '<div class="form-chart-eq hint" data-sum-chart-eq="' + id + '"></div></div>';
+        }).join('')
       + '</details>';
+  }
+  /* «نمودار» in a summary: drawn once its box is open and has a size. */
+  var sumCharts = {}, sumChartSeq = 0;
+  function drawSumCharts(scope) {
+    if (!window.FormEngine || !window.FormEngine.drawStaticChart) return;
+    A.qsa('[data-sum-chart]', scope || document).forEach(function (box) {
+      var c = sumCharts[box.dataset.sumChart];
+      if (!c || !box.offsetParent) return;
+      var eq = A.qs('[data-sum-chart-eq="' + box.dataset.sumChart + '"]', scope || document);
+      window.FormEngine.drawStaticChart(box, eq, c.chart, c.values).catch(function () {
+        box.innerHTML = '<div class="hint">کتابخانه‌ی نمودار بارگذاری نشد.</div>';
+      });
+    });
   }
   document.addEventListener('toggle', function (ev) {
     var d = ev.target;
-    if (d && d.matches && d.matches('details.sum-block[data-fold]')) setFolded(d.dataset.fold, !d.open);
-    if (d && d.id === 'wf-summary-wrap') setFolded('all', !d.open);
+    if (d && d.matches && d.matches('details.sum-block[data-fold]')) {
+      setFolded(d.dataset.fold, !d.open);
+      if (d.open) drawSumCharts(d);
+    }
+    if (d && d.id === 'wf-summary-wrap') { setFolded('all', !d.open); if (d.open) drawSumCharts(d); }
   }, true);
 
   function renderSummary(detail) {
@@ -388,16 +411,19 @@
     if (!blocks.length) {
       fill('#wf-summary', parentHtml + (scoped
            || '<div class="hint">هنوز مرحله‌ای پیش از این ثبت نشده است.</div>'));
+      setTimeout(function () { drawSumCharts(A.qs('#wf-summary')); }, 60);
       return;
     }
     fill('#wf-summary', tools + parentHtml + scoped + blocks.map(function (b) {
       return sumBlockHtml(b, '');
     }).join(''));
+    setTimeout(function () { drawSumCharts(A.qs('#wf-summary')); }, 60);
   }
   document.addEventListener('click', function (ev) {
     var b = ev.target.closest && ev.target.closest('[data-sum-all]');
     if (!b) return;
     A.qsa('#wf-summary details.sum-block').forEach(function (d) { d.open = b.dataset.sumAll === 'open'; });
+    setTimeout(function () { drawSumCharts(A.qs('#wf-summary')); }, 60);
   });
 
   /* The label of the «مستند» field a document was uploaded into. */

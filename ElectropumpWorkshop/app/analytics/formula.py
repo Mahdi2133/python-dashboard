@@ -176,6 +176,14 @@ FUNCTIONS = {
     "ABS": (1, 1, "ABS(عدد)"),
     "QFIT_A": (4, None, "QFIT_A(x1، …، xn، y1، …، yn) — ضریب a در برازش y = a·x² + b·x (خط روند درجه ۲ از مبدأ)"),
     "QFIT_B": (4, None, "QFIT_B(x1، …، xn، y1، …، yn) — ضریب b در برازش y = a·x² + b·x"),
+    "CAT_Q": (3, 3, "CAT_Q(تیپ پمپ، تعداد طبقات، هد) — دبی کاتالوگ (l/s) در این هد"),
+    "CAT_H": (3, 3, "CAT_H(تیپ پمپ، تعداد طبقات، دبی l/s) — هد کاتالوگ (m) در این دبی"),
+    "CAT_EFF": (3, 3, "CAT_EFF(تیپ پمپ، تعداد طبقات، دبی l/s) — راندمان پمپ کاتالوگ (%)"),
+    "CAT_KW": (2, 2, "CAT_KW(تیپ پمپ، تعداد طبقات) — توان الکتروموتور کاتالوگ (kW)"),
+    "CAT_MEFF": (2, 2, "CAT_MEFF(تیپ پمپ، تعداد طبقات) — راندمان الکتروموتور در کاتالوگ (%)"),
+    "CAT_A": (2, 2, "CAT_A(تیپ پمپ، تعداد طبقات) — جریان نامی کاتالوگ (A)"),
+    "CAT_TITLE": (2, 2, "CAT_TITLE(تیپ پمپ، تعداد طبقات) — نام مدل در کاتالوگ، مثل 384/10 + 73.5"),
+    "MEAN": (1, None, "MEAN(a، b، …) — میانگین مقادیر پرشده (خالی‌ها حساب نمی‌شوند)"),
     "MIN": (1, None, "MIN(a، b، …) یا در گزارش گروهی MIN([فیلد])"),
     "MAX": (1, None, "MAX(a، b، …) یا در گزارش گروهی MAX([فیلد])"),
     "CONCAT": (1, None, "CONCAT(متن۱، متن۲، …)"),
@@ -519,16 +527,32 @@ class Evaluator:
         if name in ("QFIT_A", "QFIT_B"):
             vals = [_num(ev(a)) for a in args]
             return qfit(vals, name == "QFIT_A")
+        if name.startswith("CAT_"):
+            from ..services.catalogue import call as catalogue_call
+            try:
+                return catalogue_call(name, [ev(a) for a in args])
+            except Exception:  # noqa: BLE001 — no catalogue table yet, say
+                return None
         if name == "ABS":
             v = _num(ev(args[0]))
             return abs(v) if v is not None else None
+        if name == "MEAN":
+            vals = [v for v in (_num(ev(a)) for a in args) if v is not None]
+            return sum(vals) / len(vals) if vals else None
         if name in ("MIN", "MAX"):
             vals = [_num(ev(a)) for a in args]
             vals = [v for v in vals if v is not None]
             return (min(vals) if name == "MIN" else max(vals)) if vals else None
         if name == "CONCAT":
-            return "".join("" if v is None else ("، ".join(map(str, v)) if isinstance(v, list) else str(v))
-                           for v in (ev(a) for a in args))
+            def piece(v):
+                if v is None:
+                    return ""
+                if isinstance(v, list):
+                    return "، ".join(map(piece, v))
+                if isinstance(v, float) and v.is_integer():
+                    return str(int(v))              # «10»، not «10.0»
+                return str(v)
+            return "".join(piece(ev(a)) for a in args)
         if name == "COALESCE":
             for a in args:
                 v = ev(a)
