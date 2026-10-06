@@ -3342,18 +3342,27 @@ a.sm-outlet__card:focus-visible {
    هفده چهره با یک قالبِ یکسان، تفاوتِ یک برنده‌ی نوبل با بقیه را گم
    می‌کرد. این سه از صف بیرون کشیده شده‌اند و کارتِ بزرگ‌تر و تیره‌تری
    دارند تا در نگاهِ اول دیده شوند.
+
+   ⚠️ نامِ کلاس‌ها sm-anchorcard است، نه sm-hero.
+
+      بارِ اول sm-hero گذاشته بودم و با سکشنِ هیروی صفحه‌ی اصلی تصادم
+      کرد: قاعده‌ی border-radius:50% این فایل روی عکسِ هیروی صفحه‌ی
+      اصلی هم افتاد و آن را به یک بیضیِ تمام‌صفحه تبدیل کرد.
+
+      پیش از ساختنِ هر کلاسِ تازه، اول grep کنید که آن نام جای دیگری
+      استفاده نشده باشد.
    ========================================================================== */
 
-.sm-heroes {
+.sm-anchors {
   background: linear-gradient(160deg, var(--sm-navy-950) 0%, var(--sm-navy-800) 60%, var(--sm-navy-700) 100%);
   color: var(--sm-text-invert);
 }
 
-.sm-heroes .sm-section__title { color: #fff; }
-.sm-heroes .sm-eyebrow { color: var(--sm-gold-300); }
-.sm-heroes .sm-lead { color: var(--sm-navy-100); }
+.sm-anchors .sm-section__title { color: #fff; }
+.sm-anchors .sm-eyebrow { color: var(--sm-gold-300); }
+.sm-anchors .sm-lead { color: var(--sm-navy-100); }
 
-.sm-heroes__list {
+.sm-anchors__list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 1.1rem;
@@ -3363,10 +3372,10 @@ a.sm-outlet__card:focus-visible {
 }
 
 @media (min-width: 52rem) {
-  .sm-heroes__list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sm-anchors__list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-.sm-hero {
+.sm-anchorcard {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3378,13 +3387,13 @@ a.sm-outlet__card:focus-visible {
   transition: transform .28s cubic-bezier(.2, .7, .3, 1), border-color .28s ease, background .28s ease;
 }
 
-.sm-hero:hover {
+.sm-anchorcard:hover {
   transform: translateY(-5px);
   border-color: var(--sm-gold-400);
   background: rgba(255, 255, 255, .08);
 }
 
-.sm-hero__badge {
+.sm-anchorcard__badge {
   display: inline-flex;
   align-items: center;
   gap: .4rem;
@@ -3399,13 +3408,13 @@ a.sm-outlet__card:focus-visible {
 }
 
 /* فقط نوبل نشانِ طلاییِ پررنگ‌تر می‌گیرد */
-.sm-hero__badge--nobel {
+.sm-anchorcard__badge--nobel {
   background: linear-gradient(135deg, #8A6A26, var(--sm-gold-400) 55%, #E6CE95);
   color: #2B2008;
   box-shadow: 0 4px 14px rgba(198, 160, 90, .3);
 }
 
-.sm-hero__photo {
+.sm-anchorcard__photo {
   width: 6.5rem;
   height: 6.5rem;
   margin-block-end: .9rem;
@@ -3414,7 +3423,7 @@ a.sm-outlet__card:focus-visible {
   border: 3px solid rgba(220, 193, 137, .5);
 }
 
-.sm-hero__name {
+.sm-anchorcard__name {
   margin: 0;
   font-size: 1.15rem;
   font-weight: 800;
@@ -3422,21 +3431,21 @@ a.sm-outlet__card:focus-visible {
   color: #fff;
 }
 
-.sm-hero__en {
+.sm-anchorcard__en {
   margin: .15rem 0 .6rem;
   font-size: .8rem;
   color: var(--sm-navy-200);
   unicode-bidi: embed;
 }
 
-.sm-hero__place {
+.sm-anchorcard__place {
   margin: 0;
   font-size: .86rem;
   line-height: 1.95;
   color: var(--sm-gold-200);
 }
 
-.sm-hero__pitch {
+.sm-anchorcard__pitch {
   margin: .8rem 0 0;
   padding-block-start: .8rem;
   border-block-start: 1px solid rgba(255, 255, 255, .14);
@@ -3445,7 +3454,7 @@ a.sm-outlet__card:focus-visible {
   color: var(--sm-navy-100);
 }
 
-.sm-hero__link {
+.sm-anchorcard__link {
   margin-block-start: auto;
   padding-block-start: 1rem;
   font-size: .82rem;
@@ -3454,12 +3463,12 @@ a.sm-outlet__card:focus-visible {
   text-decoration: none;
 }
 
-.sm-hero__link:hover,
-.sm-hero__link:focus-visible { color: #fff; text-decoration: underline; }
+.sm-anchorcard__link:hover,
+.sm-anchorcard__link:focus-visible { color: #fff; text-decoration: underline; }
 
-.sm-js .sm-heroes .sm-reveal { transition-delay: calc(var(--sm-i, 0) * 90ms); }
+.sm-js .sm-anchors .sm-reveal { transition-delay: calc(var(--sm-i, 0) * 90ms); }
 
 @media (prefers-reduced-motion: reduce) {
-  .sm-hero { transition: none; }
-  .sm-hero:hover { transform: none; }
+  .sm-anchorcard { transition: none; }
+  .sm-anchorcard:hover { transform: none; }
 }
