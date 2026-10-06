@@ -861,7 +861,8 @@
     var fields = whenFields(s);
     var field = fields.find(function (f) { return f.name === on; });
     var flows = (definition.workflows || []).filter(function (w) { return w.id !== definition.workflow.id; });
-    var count = (waits.length ? 1 : 0) + (on ? 1 : 0) + (s.spawn_workflow_id ? 1 : 0);
+    var count = (waits.length ? 1 : 0) + (on ? 1 : 0) + (s.spawn_workflow_id ? 1 : 0) + (s.spawn_when ? 1 : 0);
+    var spawnRules = String(s.spawn_when || '').split(';').filter(function (x) { return x.indexOf('=') !== -1; });
     return '<details class="wf-refer wf-order"' + (count ? ' open' : '') + '>'
       + '<summary>🔀 ترتیب و مسیر<span class="wf-refer-tag">' + (count ? J.toFaDigits(count) + ' تنظیم'
           : 'از شروع فرایند باز است') + '</span></summary>'
@@ -889,8 +890,36 @@
             + A.esc(w.name) + (w.is_active ? '' : ' (غیرفعال)') + '</option>';
         }).join('') + '</select>'
       + '<span class="hint">فرایند تازه با اطلاعات همین پرونده در کارتابل متولی مرحله‌ی شروعِ آن باز می‌شود '
-      + '(مثلاً «فرایند نصب» پس از تأیید ساخت الکتروپمپ).</span></div>'
+      + '(مثلاً «فرایند نصب» پس از تأیید ساخت الکتروپمپ).</span>'
+      + '<label class="mt-1">… فقط وقتی شروع شود که (همه‌ی شرط‌ها برقرار باشد):</label>'
+      + '<div class="wf-spawn-rules">' + (spawnRules.length ? spawnRules : ['']).map(function (r) {
+          return spawnRuleRow(s, r);
+        }).join('') + '</div>'
+      + '<button type="button" class="btn-sm btn-ghost wf-sw-add">➕ شرط دیگر</button>'
+      + '<span class="hint">بدون شرط: همیشه. مثلاً «اقدام کارشناس» یکی از گزینه‌های ۲ و ۳ و «وضعیت کشیدن» = '
+      + 'کشیدن انجام شد.</span></div>'
       + '</details>';
+  }
+  function spawnRuleRow(s, rule) {
+    var on = (rule || '').split('=')[0] || '';
+    var picked = (rule || '').indexOf('=') !== -1 ? rule.split('=').slice(1).join('=').split('|') : [];
+    var fields = whenFields(s);
+    var field = fields.find(function (f) { return f.name === on; });
+    return '<div class="wf-sw-row">'
+      + '<select class="wf-sw-on"><option value="">— پرسش —</option>'
+      + fields.map(function (f) {
+          return '<option value="' + A.esc(f.name) + '"' + (f.name === on ? ' selected' : '') + '>«'
+            + A.esc(f.label) + '» یکی از این‌ها باشد:</option>';
+        }).join('') + '</select>'
+      + '<button type="button" class="btn-sm btn-del wf-sw-del" title="حذف شرط">×</button>'
+      + '<div class="wf-sw-values">' + spawnValues(field, picked) + '</div></div>';
+  }
+  function spawnValues(field, picked) {
+    if (!field) return '';
+    return field.options.map(function (v) {
+      return '<label class="mini-check' + (picked.indexOf(v) !== -1 ? ' on' : '') + '"><input type="checkbox" class="wf-sw-val" value="'
+        + A.esc(v) + '"' + (picked.indexOf(v) !== -1 ? ' checked' : '') + '> ' + A.esc(v) + '</label>';
+    }).join('');
   }
   function visitValues(field, picked) {
     if (!field) return '';
@@ -906,6 +935,11 @@
     var vals = A.qsa('.wf-visit-val:checked', card).map(function (b) { return b.value; });
     body.visit_when = on && vals.length ? on + '=' + vals.join('|') : '';
     body.spawn_workflow_id = card.querySelector('.wf-spawn').value || null;
+    body.spawn_when = A.qsa('.wf-sw-row', card).map(function (row) {
+      var on = row.querySelector('.wf-sw-on').value;
+      var vals = A.qsa('.wf-sw-val:checked', row).map(function (b) { return b.value; });
+      return on && vals.length ? on + '=' + vals.join('|') : '';
+    }).filter(Boolean).join(';');
   }
 
   function actionsEditor(s) {
@@ -1786,6 +1820,18 @@
     });
 
     A.qs('#wf-stages').addEventListener('click', function (ev) {
+      var swAdd = ev.target.closest('.wf-sw-add'), swDel = ev.target.closest('.wf-sw-del');
+      if (swAdd || swDel) {
+        var scard = (swAdd || swDel).closest('.wf-stage');
+        if (swAdd) {
+          var sst = definition.workflow.stages.find(function (x) { return String(x.id) === scard.dataset.stage; });
+          scard.querySelector('.wf-spawn-rules').insertAdjacentHTML('beforeend', spawnRuleRow(sst || {}, ''));
+        } else {
+          swDel.closest('.wf-sw-row').remove();
+        }
+        markDirty(scard);
+        return;
+      }
       var remove = ev.target.closest('.remove');
       if (remove) {
         var li = remove.closest('.wf-drop-item');
@@ -1916,6 +1962,15 @@
           return String(x.id) === card.dataset.stage; });
         var vf = whenFields(vst || {}).find(function (x) { return x.name === ev.target.value; });
         card.querySelector('.wf-visit-values').innerHTML = visitValues(vf, []);
+      }
+      if (ev.target.classList.contains('wf-sw-on')) {
+        var sst = definition.workflow.stages.find(function (x) {
+          return String(x.id) === card.dataset.stage; });
+        var sf = whenFields(sst || {}).find(function (x) { return x.name === ev.target.value; });
+        ev.target.closest('.wf-sw-row').querySelector('.wf-sw-values').innerHTML = spawnValues(sf, []);
+      }
+      if (ev.target.classList.contains('wf-sw-val')) {
+        ev.target.closest('label').classList.toggle('on', ev.target.checked);
       }
       if (ev.target.classList.contains('wf-wait') || ev.target.classList.contains('wf-visit-val')) {
         ev.target.closest('label').classList.toggle('on', ev.target.checked);

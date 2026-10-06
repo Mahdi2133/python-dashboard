@@ -1499,3 +1499,5 @@ table.sum-table { width:100%; border-collapse:collapse; font-size:12px; }
 table.sum-table th, table.sum-table td { border:1px solid #e3eaf0; padding:4px 6px; text-align:center; }
 table.sum-table thead th { background:#f4f8fb; color:var(--primary); white-space:nowrap; }
 table.sum-table tbody th { text-align:right; font-weight:600; background:#fafcfd; white-space:nowrap; }
+.wf-sw-row { border:1px dashed var(--border); border-radius:6px; padding:6px; margin:4px 0; }
+.wf-sw-row select { max-width:calc(100% - 40px); }

@@ -752,6 +752,14 @@ def update_stage(stage_id):
                             "انتخاب کنید.", 422)
             when = on.strip() + "=" + "|".join(values)
         stage.visit_when = when or None
+    if "spawn_when" in payload:
+        from ..services.conditions import join_rules, parse_rules
+        rules = []
+        for on, values in parse_rules(payload.get("spawn_when") or ""):
+            if not FormField.query.filter_by(field_name=on).first() or not values:
+                return fail("برای «فقط وقتی شروع شود که…»، هر شرط پرسش و دست‌کم یک پاسخ لازم دارد.", 422)
+            rules.append((on, values))
+        stage.spawn_when = join_rules(rules) if rules else None
     if "spawn_workflow_id" in payload:
         raw = payload.get("spawn_workflow_id")
         if raw in (None, "", 0, "0"):

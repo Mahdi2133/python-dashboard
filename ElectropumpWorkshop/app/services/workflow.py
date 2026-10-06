@@ -2219,6 +2219,8 @@ def spawn_after(instance: WorkflowInstance, stage: WorkflowStage, user):
     target = stage.spawn_workflow
     if target is None or not target.is_active:
         return None
+    if not spawn_ok(instance, stage):
+        return None
     running = WorkflowInstance.query.filter_by(
         parent_id=instance.id, workflow_id=target.id, status=INSTANCE_OPEN).first()
     if running is not None:
@@ -2228,11 +2230,43 @@ def spawn_after(instance: WorkflowInstance, stage: WorkflowStage, user):
     # کشیدن answers belong to the کشیدن record, not to the نصب that follows
     # the build.
     chain = _upstream(instance, stage)
-    mine, beside = set(), set()
+    mine, beside, own = set(), set(), set()
     for e in instance.entries:
         keys = set((e.payload or {}).keys())
         (mine if e.stage_number in chain else beside).update(keys)
-    return spawn_instance(instance, target, user, drop=beside - mine)
+        if e.stage_number == stage.stage_number:
+            own |= keys
+    # This stage's own work goes along where the new process asks for it, or
+    # where it is the record's own column (the pump built); the rest — how
+    # many metres were pulled — stays on this run's record, not counted twice.
+    asked = _asked_by(target)
+    builtin = {f.field_name for f in FormField.query.filter_by(is_builtin=True).all()}
+    stay = {k for k in own if k not in asked and k not in builtin}
+    return spawn_instance(instance, target, user, drop=(beside - mine) | stay)
+
+
+def spawn_ok(instance: WorkflowInstance, stage: WorkflowStage) -> bool:
+    """«… فقط وقتی شروع شود که»: every rule met by the run's answers."""
+    raw = (stage.spawn_when or "").strip()
+    if not raw:
+        return True
+    from .conditions import matches, parse_rules
+    values = {**_settled_values(instance, None), **(instance.payload or {})}
+    return all(values.get(on) not in (None, "", [], {}) and matches(values.get(on), wanted)
+               for on, wanted in parse_rules(raw))
+
+
+def _asked_by(workflow: WorkflowDefinition) -> set:
+    """Field names any stage of ``workflow`` asks (mirrors by what they write)."""
+    names = set()
+    for st in workflow.stages:
+        for item in st.items:
+            fields = item.section.fields if item.section else ([item.field] if item.field else [])
+            for f in fields:
+                d = f.render_dict() if f.is_active else None
+                if d:
+                    names.add(d["field_name"])
+    return names
 
 
 def _upstream(instance: WorkflowInstance, stage: WorkflowStage) -> set:

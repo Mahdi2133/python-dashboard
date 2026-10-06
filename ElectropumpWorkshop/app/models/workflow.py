@@ -284,6 +284,9 @@ class WorkflowStage(db.Model):
     # «پس از ثبت (و تأیید) این مرحله، فرایند … برای همین چاه شروع شود».
     spawn_workflow_id = db.Column(db.Integer, db.ForeignKey(
         "workflow_definitions.id", ondelete="SET NULL"))
+    # «… فقط وقتی شروع شود که»: rules on answers («a=x|y;b=z»), all of which
+    # must hold; empty = always.
+    spawn_when = db.Column(db.Text)
 
     workflow = db.relationship("WorkflowDefinition", back_populates="stages",
                                foreign_keys=[workflow_id])
@@ -399,6 +402,7 @@ class WorkflowStage(db.Model):
             "waits_for": self.waits_for_list,
             "visit_when": self.visit_when,
             "spawn_workflow_id": self.spawn_workflow_id,
+            "spawn_when": self.spawn_when,
             "items": [i.to_dict() for i in self.items],
         }
 

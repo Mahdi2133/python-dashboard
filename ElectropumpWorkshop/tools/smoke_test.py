@@ -2796,6 +2796,10 @@ def main():
         check("با پاسخ شرط، مرحله دوباره در مسیر است", 3 in nums())
         fb6.is_active = True
         admin6 = _AU6.query.filter_by(username="admin").first()
+        sa[4].spawn_when = "t_dec=خیر;x=1"
+        check("با شرطِ برقرارنشده، فرایند بعدی شروع نمی‌شود", _wf6.spawn_after(inst6, sa[4], admin6) is None)
+        sa[4].spawn_when = "t_dec=بله;x=1"
+        check("وقتی همه‌ی شرط‌ها برقرار است شروع می‌شود (شرط‌ها با هم)", _wf6.spawn_ok(inst6, sa[4]))
         child = _wf6.spawn_after(inst6, sa[4], admin6)
         check("پس از ثبت مرحله، فرایند بعدی برای همان چاه شروع می‌شود",
               child is not None and child.parent_id == inst6.id and child.well_id == w6.id
