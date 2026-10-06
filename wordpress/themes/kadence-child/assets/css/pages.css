@@ -3334,3 +3334,132 @@ a.sm-outlet__card:focus-visible {
   .sm-vizbar__fill,
   .sm-vizrise__fill { animation: none; }
 }
+
+
+/* ==========================================================================
+   نوارِ سه کارتِ شاخصِ صفحه‌ی شورا  —  /book/council/
+   --------------------------------------------------------------------------
+   هفده چهره با یک قالبِ یکسان، تفاوتِ یک برنده‌ی نوبل با بقیه را گم
+   می‌کرد. این سه از صف بیرون کشیده شده‌اند و کارتِ بزرگ‌تر و تیره‌تری
+   دارند تا در نگاهِ اول دیده شوند.
+   ========================================================================== */
+
+.sm-heroes {
+  background: linear-gradient(160deg, var(--sm-navy-950) 0%, var(--sm-navy-800) 60%, var(--sm-navy-700) 100%);
+  color: var(--sm-text-invert);
+}
+
+.sm-heroes .sm-section__title { color: #fff; }
+.sm-heroes .sm-eyebrow { color: var(--sm-gold-300); }
+.sm-heroes .sm-lead { color: var(--sm-navy-100); }
+
+.sm-heroes__list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.1rem;
+  margin: clamp(1.75rem, 1.2rem + 2vw, 2.75rem) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 52rem) {
+  .sm-heroes__list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.sm-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 1.6rem 1.35rem 1.5rem;
+  border: 1px solid rgba(233, 214, 170, .22);
+  border-radius: var(--sm-radius-lg);
+  background: rgba(255, 255, 255, .05);
+  transition: transform .28s cubic-bezier(.2, .7, .3, 1), border-color .28s ease, background .28s ease;
+}
+
+.sm-hero:hover {
+  transform: translateY(-5px);
+  border-color: var(--sm-gold-400);
+  background: rgba(255, 255, 255, .08);
+}
+
+.sm-hero__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  margin: 0 0 1rem;
+  padding: .4rem .9rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--sm-gold-600), var(--sm-gold-500));
+  font-size: .76rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: #fff;
+}
+
+/* فقط نوبل نشانِ طلاییِ پررنگ‌تر می‌گیرد */
+.sm-hero__badge--nobel {
+  background: linear-gradient(135deg, #8A6A26, var(--sm-gold-400) 55%, #E6CE95);
+  color: #2B2008;
+  box-shadow: 0 4px 14px rgba(198, 160, 90, .3);
+}
+
+.sm-hero__photo {
+  width: 6.5rem;
+  height: 6.5rem;
+  margin-block-end: .9rem;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid rgba(220, 193, 137, .5);
+}
+
+.sm-hero__name {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1.7;
+  color: #fff;
+}
+
+.sm-hero__en {
+  margin: .15rem 0 .6rem;
+  font-size: .8rem;
+  color: var(--sm-navy-200);
+  unicode-bidi: embed;
+}
+
+.sm-hero__place {
+  margin: 0;
+  font-size: .86rem;
+  line-height: 1.95;
+  color: var(--sm-gold-200);
+}
+
+.sm-hero__pitch {
+  margin: .8rem 0 0;
+  padding-block-start: .8rem;
+  border-block-start: 1px solid rgba(255, 255, 255, .14);
+  font-size: .84rem;
+  line-height: 2;
+  color: var(--sm-navy-100);
+}
+
+.sm-hero__link {
+  margin-block-start: auto;
+  padding-block-start: 1rem;
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--sm-gold-300);
+  text-decoration: none;
+}
+
+.sm-hero__link:hover,
+.sm-hero__link:focus-visible { color: #fff; text-decoration: underline; }
+
+.sm-js .sm-heroes .sm-reveal { transition-delay: calc(var(--sm-i, 0) * 90ms); }
+
+@media (prefers-reduced-motion: reduce) {
+  .sm-hero { transition: none; }
+  .sm-hero:hover { transform: none; }
+}

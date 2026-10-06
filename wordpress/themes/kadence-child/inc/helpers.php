@@ -386,16 +386,44 @@ function sm_home_council( $c ) {
 
 	$photos = ! empty( $council['photos_enabled'] );
 
+	/*
+	 * چه کسانی در صفحه‌ی اصلی می‌آیند؟
+	 *
+	 * هر کسی که در inc/content-book.php کلیدِ 'home' => true داشته
+	 * باشد — نه «n نفرِ اول». دلیلش این است که ترتیبِ فهرستِ کامل
+	 * ممکن است عوض شود، ولی انتخابِ صفحه‌ی اصلی عمدی است: یک برنده‌ی
+	 * نوبل، یک مدیرِ سابقِ WHO و یک استادِ هاروارد، و در کنارشان سه
+	 * قهرمانِ المپیک. اگر خواستید کسی را جابه‌جا کنید، فقط همان کلید
+	 * را در فایلِ محتوا بگذارید یا بردارید.
+	 */
+	$pick = function ( $people ) {
+		$out = array();
+
+		foreach ( (array) $people as $p ) {
+			if ( ! empty( $p['home'] ) ) {
+				$out[] = $p;
+			}
+		}
+
+		return $out;
+	};
+
 	$groups = array(
 		array(
 			'title'  => $cfg['experts_title'],
-			'people' => array_slice( $council['experts']['people'], 0, (int) $cfg['experts_count'] ),
+			'people' => $pick( $council['experts']['people'] ),
 		),
 		array(
 			'title'  => $cfg['athletes_title'],
-			'people' => array_slice( $council['athletes']['people'], 0, (int) $cfg['athletes_count'] ),
+			'people' => $pick( $council['athletes']['people'] ),
 		),
 	);
+
+	/* اگر هیچ‌کس علامت نخورده بود، به رفتارِ قبلی برمی‌گردیم. */
+	if ( empty( $groups[0]['people'] ) && empty( $groups[1]['people'] ) ) {
+		$groups[0]['people'] = array_slice( $council['experts']['people'], 0, (int) $cfg['experts_count'] );
+		$groups[1]['people'] = array_slice( $council['athletes']['people'], 0, (int) $cfg['athletes_count'] );
+	}
 	?>
 	<section class="sm-section sm-hcouncil" aria-labelledby="sm-hcouncil-title">
 		<div class="sm-wrap">
@@ -406,24 +434,53 @@ function sm_home_council( $c ) {
 				<p class="sm-hcouncil__lead"><?php echo esc_html( $cfg['lead'] ); ?></p>
 			</header>
 
-			<?php foreach ( $groups as $g ) : ?>
+			<?php foreach ( $groups as $gi => $g ) : ?>
 				<?php if ( empty( $g['people'] ) ) { continue; } ?>
 				<div class="sm-hcouncil__group">
 					<h3 class="sm-hcouncil__gtitle"><?php echo esc_html( $g['title'] ); ?></h3>
 					<ul class="sm-hcouncil__list">
-						<?php foreach ( $g['people'] as $p ) : ?>
+						<?php foreach ( $g['people'] as $i => $p ) : ?>
 							<?php $src = $photos && ! empty( $p['photo'] ) ? sm_img_src( 'people/' . $p['photo'] ) : ''; ?>
-							<li class="sm-hcard sm-reveal">
+							<li class="sm-hcard sm-reveal" style="--sm-i: <?php echo (int) $i; ?>">
+
+								<?php if ( ! empty( $p['badge'] ) ) : ?>
+									<span class="sm-hcard__badge sm-hcard__badge--<?php echo esc_attr( $p['mark'] ?? 'plain' ); ?>">
+										<?php sm_council_mark( $p['mark'] ?? '' ); ?>
+										<?php echo esc_html( $p['badge'] ); ?>
+									</span>
+								<?php endif; ?>
+
 								<?php if ( $src ) : ?>
 									<img class="sm-hcard__photo" src="<?php echo esc_url( $src ); ?>"
 									     alt="<?php echo esc_attr( $p['name'] ); ?>"
 									     width="480" height="480" loading="lazy" decoding="async">
 								<?php endif; ?>
+
 								<span class="sm-hcard__name"><?php echo esc_html( $p['name'] ); ?></span>
-								<span class="sm-hcard__role"><?php echo esc_html( $p['role'] ); ?></span>
-								<?php if ( ! empty( $p['org'] ) ) : ?>
-									<span class="sm-hcard__org"><?php echo esc_html( $p['org'] ); ?></span>
+								<?php if ( ! empty( $p['en'] ) ) : ?>
+									<span class="sm-hcard__en" dir="ltr"><?php echo esc_html( $p['en'] ); ?></span>
 								<?php endif; ?>
+
+								<?php
+								/*
+								 * 'place' جمله‌ی بلندترِ جایگاه است (نامِ دانشگاه
+								 * و سمت). اگر نبود، همان 'role' و 'org'ِ قدیمی
+								 * نشان داده می‌شود تا کارتِ کسی خالی نماند.
+								 */
+								?>
+								<?php if ( ! empty( $p['place'] ) ) : ?>
+									<span class="sm-hcard__place"><?php echo esc_html( $p['place'] ); ?></span>
+								<?php else : ?>
+									<span class="sm-hcard__role"><?php echo esc_html( $p['role'] ); ?></span>
+									<?php if ( ! empty( $p['org'] ) ) : ?>
+										<span class="sm-hcard__org"><?php echo esc_html( $p['org'] ); ?></span>
+									<?php endif; ?>
+								<?php endif; ?>
+
+								<?php if ( ! empty( $p['pitch'] ) ) : ?>
+									<span class="sm-hcard__pitch"><?php echo esc_html( $p['pitch'] ); ?></span>
+								<?php endif; ?>
+
 							</li>
 						<?php endforeach; ?>
 					</ul>
@@ -431,7 +488,7 @@ function sm_home_council( $c ) {
 			<?php endforeach; ?>
 
 			<p class="sm-hcouncil__more">
-				<a class="sm-btn sm-btn--ghost" href="<?php echo esc_url( home_url( $cfg['cta_link'] ) ); ?>">
+				<a class="sm-btn sm-btn--outline" href="<?php echo esc_url( home_url( $cfg['cta_link'] ) ); ?>">
 					<?php echo esc_html( $cfg['cta_text'] ); ?>
 				</a>
 			</p>
@@ -439,6 +496,41 @@ function sm_home_council( $c ) {
 		</div>
 	</section>
 	<?php
+}
+
+
+/**
+ * نشانِ کوچکِ کنارِ بجِ هر کارتِ شورا.
+ *
+ * عمداً SVG است نه ایموجی: ایموجی روی ویندوز و اندروید و مک سه شکلِ
+ * متفاوت دارد و رنگش هم دستِ ما نیست. این‌ها با رنگِ متنِ کنارشان
+ * هماهنگ می‌مانند.
+ *
+ * @param string $mark nobel | who | harvard | gold | science
+ */
+function sm_council_mark( $mark ) {
+
+	$paths = array(
+		// مدال
+		'nobel'   => '<circle cx="12" cy="9" r="5.2"/><path d="M8.5 13.5 6.5 21l5.5-3 5.5 3-2-7.5"/>',
+		// ساختمانِ نهاد
+		'who'     => '<path d="M3 10h18M5 10v9m4-9v9m6-9v9m4-9v9M3 19h18M12 3 3 8h18Z"/>',
+		// کلاهِ فارغ‌التحصیلی
+		'harvard' => '<path d="M12 4 2 9l10 5 10-5-10-5Z"/><path d="M6 11.5V16c0 1.5 2.7 3 6 3s6-1.5 6-3v-4.5"/>',
+		// جامِ قهرمانی
+		'gold'    => '<path d="M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M7 6H4.5a2.5 2.5 0 0 0 2.5 4M17 6h2.5a2.5 2.5 0 0 1-2.5 4M9 20h6M12 14v6"/>',
+		// مولکول
+		'science' => '<circle cx="12" cy="12" r="2.2"/><ellipse cx="12" cy="12" rx="9.5" ry="4" /><ellipse cx="12" cy="12" rx="9.5" ry="4" transform="rotate(60 12 12)"/>',
+	);
+
+	if ( empty( $paths[ $mark ] ) ) {
+		return;
+	}
+
+	printf(
+		'<svg class="sm-mark" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">%s</svg>',
+		$paths[ $mark ] // phpcs:ignore WordPress.Security.EscapeOutput — رشته‌ی ثابت، نه ورودی کاربر
+	);
 }
 
 

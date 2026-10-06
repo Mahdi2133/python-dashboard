@@ -113,56 +113,102 @@ get_header();
 	</section>
 
 
-	<?php /* ============ ۴ — معرفی پروتکل SMP ============ */ ?>
-	<section class="sm-section sm-protocol" aria-labelledby="sm-protocol-title">
+	<?php /* ============ ۴ — پروتکل ۱۰۰ روزه ============
+	   دو سکشنِ قبلی («معرفی پروتکل» و «در ۱۰۰ روز چه اتفاقی می‌افتد؟»)
+	   در همین یکی ادغام شده‌اند. متن‌ها در inc/content-home.php کلید
+	   'protocol' هستند.
+	   ============================================================ */ ?>
+	<?php $pr = $c['protocol']; ?>
+	<section class="sm-section sm-roadmap" aria-labelledby="sm-protocol-title">
 		<div class="sm-wrap">
+
 			<header class="sm-section__head sm-section__head--center">
-				<p class="sm-eyebrow"><?php echo esc_html( $c['protocol']['eyebrow'] ); ?></p>
-				<h2 id="sm-protocol-title" class="sm-section__title"><?php echo esc_html( $c['protocol']['title'] ); ?></h2>
-				<p class="sm-lead sm-lead--center"><?php echo esc_html( $c['protocol']['lead'] ); ?></p>
+				<p class="sm-eyebrow" dir="auto"><?php echo esc_html( $pr['eyebrow'] ); ?></p>
+				<h2 id="sm-protocol-title" class="sm-section__title"><?php echo esc_html( $pr['title'] ); ?></h2>
+				<p class="sm-lead sm-lead--center"><?php echo esc_html( $pr['lead'] ); ?></p>
 			</header>
 
-			<ol class="sm-phases">
-				<?php foreach ( $c['protocol']['phases'] as $i => $ph ) : ?>
-					<li class="sm-phase sm-reveal">
-						<span class="sm-phase__num" aria-hidden="true"><?php echo esc_html( sm_fa_digits( $i + 1 ) ); ?></span>
-						<span class="sm-phase__en"><?php echo esc_html( $ph['en'] ); ?></span>
-						<h3 class="sm-phase__fa"><?php echo esc_html( $ph['fa'] ); ?></h3>
-						<p class="sm-phase__text"><?php echo esc_html( $ph['text'] ); ?></p>
+			<?php
+			/*
+			 * نوارِ پیوسته‌ی روز ۰ تا ۱۰۰.
+			 *
+			 * هر فاز سهمِ خودش را از نوار می‌گیرد و درصدش از همان
+			 * 'from' و 'to' حساب می‌شود، نه از عددِ دستی. پس اگر مرزِ
+			 * فازها عوض شد، نوار هم خودش جابه‌جا می‌شود.
+			 *
+			 * aria-hidden است چون همان اطلاعات، با متن، داخلِ کارت‌ها
+			 * هم هست؛ برای صفحه‌خوان تکرارِ بی‌فایده می‌شد.
+			 */
+			?>
+			<div class="sm-roadmap__axis" aria-hidden="true">
+				<span class="sm-roadmap__cap"><?php echo esc_html( $pr['axis_start'] ); ?></span>
+
+				<div class="sm-roadmap__bar">
+					<?php foreach ( $pr['phases'] as $i => $ph ) : ?>
+						<?php
+						$from = max( 0, min( 100, (int) $ph['from'] - 1 ) );
+						$to   = max( 0, min( 100, (int) $ph['to'] ) );
+						?>
+						<span class="sm-roadmap__seg sm-roadmap__seg--<?php echo (int) ( $i + 1 ); ?>"
+						      style="--sm-from: <?php echo esc_attr( $from ); ?>%; --sm-to: <?php echo esc_attr( $to ); ?>%;"></span>
+						<span class="sm-roadmap__pin" style="--sm-at: <?php echo esc_attr( $to ); ?>%;">
+							<span class="sm-roadmap__pin-n"><?php echo esc_html( $ph['gate_no'] ); ?></span>
+						</span>
+					<?php endforeach; ?>
+				</div>
+
+				<span class="sm-roadmap__cap"><?php echo esc_html( $pr['axis_end'] ); ?></span>
+			</div>
+
+			<ol class="sm-roadmap__track">
+				<?php foreach ( $pr['phases'] as $i => $ph ) : ?>
+					<li class="sm-rphase sm-reveal<?php echo ! empty( $ph['final'] ) ? ' sm-rphase--final' : ''; ?>"
+					    style="--sm-i: <?php echo (int) $i; ?>">
+
+						<p class="sm-rphase__tag"><?php echo esc_html( $ph['tag'] ); ?></p>
+
+						<p class="sm-rphase__en" dir="ltr"><?php echo esc_html( $ph['en'] ); ?></p>
+						<h3 class="sm-rphase__fa"><?php echo esc_html( $ph['fa'] ); ?></h3>
+
+						<p class="sm-rphase__lbl"><?php echo esc_html( $pr['label_focus'] ); ?></p>
+						<ul class="sm-ticklist sm-rphase__focus">
+							<?php foreach ( $ph['focus'] as $t ) : ?>
+								<li><?php echo esc_html( $t ); ?></li>
+							<?php endforeach; ?>
+						</ul>
+
+						<div class="sm-rgate">
+							<span class="sm-rgate__badge">
+								<span class="screen-reader-text"><?php echo esc_html( $pr['label_gate'] ); ?> </span>
+								<?php echo esc_html( $ph['gate_no'] ); ?>
+							</span>
+							<span class="sm-rgate__body">
+								<span class="sm-rgate__day"><?php echo esc_html( $ph['gate_day'] ); ?></span>
+								<span class="sm-rgate__text"><?php echo esc_html( $ph['gate_text'] ); ?></span>
+							</span>
+						</div>
+
 					</li>
 				<?php endforeach; ?>
 			</ol>
 
-			<p class="sm-center">
-				<a class="sm-btn sm-btn--navy" href="<?php echo esc_url( home_url( $c['protocol']['cta_link'] ) ); ?>">
-					<?php echo esc_html( $c['protocol']['cta_text'] ); ?>
+			<?php if ( ! empty( $pr['highlight'] ) ) : ?>
+				<p class="sm-roadmap__highlight"><?php echo esc_html( $pr['highlight'] ); ?></p>
+			<?php endif; ?>
+
+			<?php if ( ! empty( $pr['note'] ) ) : ?>
+				<p class="sm-note sm-center"><?php echo esc_html( $pr['note'] ); ?></p>
+			<?php endif; ?>
+
+			<p class="sm-roadmap__actions">
+				<a class="sm-btn sm-btn--gold" href="<?php echo esc_url( home_url( $pr['cta_link'] ) ); ?>">
+					<?php echo esc_html( $pr['cta_text'] ); ?>
+				</a>
+				<a class="sm-btn sm-btn--outline" href="<?php echo esc_url( home_url( $pr['more_link'] ) ); ?>">
+					<?php echo esc_html( $pr['more_text'] ); ?>
 				</a>
 			</p>
-		</div>
-	</section>
 
-
-	<?php /* ============ ۵ — برنامه ۱۰۰ روزه ============ */ ?>
-	<section class="sm-section sm-weeks" aria-labelledby="sm-weeks-title">
-		<div class="sm-wrap">
-			<header class="sm-section__head sm-section__head--center">
-				<p class="sm-eyebrow"><?php echo esc_html( $c['weeks']['eyebrow'] ); ?></p>
-				<h2 id="sm-weeks-title" class="sm-section__title"><?php echo esc_html( $c['weeks']['title'] ); ?></h2>
-			</header>
-
-			<ol class="sm-weeks__track">
-				<?php foreach ( $c['weeks']['items'] as $w ) : ?>
-					<li class="sm-week sm-reveal">
-						<span class="sm-week__range"><?php echo esc_html( $w['range'] ); ?></span>
-						<h3 class="sm-week__title"><?php echo esc_html( $w['title'] ); ?></h3>
-						<p class="sm-week__text"><?php echo esc_html( $w['text'] ); ?></p>
-					</li>
-				<?php endforeach; ?>
-			</ol>
-
-			<?php if ( ! empty( $c['weeks']['note'] ) ) : ?>
-				<p class="sm-note"><?php echo esc_html( $c['weeks']['note'] ); ?></p>
-			<?php endif; ?>
 		</div>
 	</section>
 

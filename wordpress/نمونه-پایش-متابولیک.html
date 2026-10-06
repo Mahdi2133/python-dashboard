@@ -1,0 +1,1101 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>نمونه پرونده پایش متابولیک — آکادمی تندرستی سعادت‌مهر</title>
+<meta name="description" content="نمونه‌ی داشبورد پایش پروتکل ۱۰۰ روزه: ترکیب بدن، آزمایش خون، پایبندی روزانه و فهرست داده‌های لازم. همه‌ی عددها ساختگی‌اند.">
+<meta name="robots" content="noindex">
+<style>
+/* ==========================================================================
+   پالت
+   --------------------------------------------------------------------------
+   سه رنگِ داده‌ای با اسکریپتِ اعتبارسنجیِ پالت آزموده شده‌اند و در هر دو
+   حالتِ روشن و تیره همه‌ی گیت‌ها را رد می‌کنند:
+
+     روشن، روی کارتِ سفید   #A8752A · #2A78D6 · #12916A
+     تیره، روی #101C27      #B98A32 · #3C85DA · #189B72
+
+   کمترین فاصله‌ی دو رنگِ همسایه در دیدِ رنگ‌پریش ΔE ۱۷٫۶ است (آستانه ۸)
+   و در دیدِ عادی ΔE ۱۹٫۱ (آستانه ۱۵). با این حال هر سری برچسبِ مستقیم و
+   جدولِ داده هم دارد، چون رنگ هیچ‌وقت نباید تنها حاملِ معنا باشد.
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  --bg:          #F4F1EA;
+  --surface:     #FFFFFF;
+  --surface-2:   #FAF8F3;
+  --line:        #E2DCCF;
+  --line-soft:   #EFEAE0;
+
+  --ink:         #10161C;
+  --ink-2:       #46525E;
+  --ink-3:       #6B7680;
+
+  --brand:       #0C243C;
+  --brand-2:     #12314F;
+  --gold:        #A8843C;
+
+  --series-1:    #A8752A;   /* چربی */
+  --series-2:    #2A78D6;   /* وزن و اندازه */
+  --series-3:    #12916A;   /* عضله */
+
+  --ok:          #146B47;
+  --warn:        #8A5D0E;
+  --bad:         #A6342A;
+
+  --ok-bg:       #E8F3ED;
+  --warn-bg:     #FBF2DF;
+  --bad-bg:      #FAEDEB;
+
+  --radius:      14px;
+  --radius-sm:   8px;
+  --shadow:      0 1px 2px rgba(12,36,60,.05), 0 8px 24px rgba(12,36,60,.07);
+
+  --font: "Vazirmatn", "Segoe UI", Tahoma, "Iranian Sans", system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg:        #0B141C;
+    --surface:   #101C27;
+    --surface-2: #16242F;
+    --line:      #273745;
+    --line-soft: #1D2B37;
+    --ink:       #F2F5F8;
+    --ink-2:     #B6C3CE;
+    --ink-3:     #8A98A4;
+    --brand:     #DCE5EE;
+    --brand-2:   #B9C8D8;
+    --gold:      #DCC189;
+    --series-1:  #B98A32;
+    --series-2:  #3C85DA;
+    --series-3:  #189B72;
+    --ok:        #5FC79B;
+    --warn:      #E0B457;
+    --bad:       #EC8278;
+    --ok-bg:     #11291F;
+    --warn-bg:   #2A2211;
+    --bad-bg:    #2B1714;
+    --shadow:    0 1px 2px rgba(0,0,0,.3), 0 10px 28px rgba(0,0,0,.35);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:        #0B141C;  --surface:   #101C27;  --surface-2: #16242F;
+  --line:      #273745;  --line-soft: #1D2B37;
+  --ink:       #F2F5F8;  --ink-2:     #B6C3CE;  --ink-3:     #8A98A4;
+  --brand:     #DCE5EE;  --brand-2:   #B9C8D8;  --gold:      #DCC189;
+  --series-1:  #B98A32;  --series-2:  #3C85DA;  --series-3:  #189B72;
+  --ok:        #5FC79B;  --warn:      #E0B457;  --bad:       #EC8278;
+  --ok-bg:     #11291F;  --warn-bg:   #2A2211;  --bad-bg:    #2B1714;
+  --shadow:    0 1px 2px rgba(0,0,0,.3), 0 10px 28px rgba(0,0,0,.35);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.9;
+  -webkit-text-size-adjust: 100%;
+}
+
+.wrap { width: min(100% - 2rem, 1180px); margin-inline: auto; }
+
+h1, h2, h3 { line-height: 1.5; margin: 0; }
+
+/* ---------- نوارِ «این یک نمونه است» ---------- */
+
+.demo {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  padding: .55rem 1rem;
+  background: var(--gold);
+  color: #1B1407;
+  font-size: .84rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+:root[data-theme="dark"] .demo,
+@media (prefers-color-scheme: dark) { }
+
+/* ---------- سربرگ ---------- */
+
+.head {
+  padding: clamp(1.75rem, 1.2rem + 2.5vw, 3rem) 0 clamp(1.5rem, 1rem + 2vw, 2.5rem);
+  background: linear-gradient(155deg, #071A2B, #0C243C 55%, #12314F);
+  color: #F4F7FA;
+}
+
+.head__eyebrow {
+  margin: 0 0 .5rem;
+  font-size: .76rem;
+  font-weight: 700;
+  letter-spacing: .14em;
+  color: #DCC189;
+}
+
+.head__title {
+  font-size: clamp(1.45rem, 1.1rem + 1.7vw, 2.3rem);
+  font-weight: 800;
+}
+
+.head__sub {
+  margin: .7rem 0 0;
+  max-width: 62ch;
+  font-size: .98rem;
+  color: #B9C8D8;
+}
+
+.head__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.head__meta li {
+  padding: .35rem .85rem;
+  border: 1px solid rgba(233,214,170,.3);
+  border-radius: 999px;
+  font-size: .8rem;
+  color: #E9D6AA;
+}
+
+/* ---------- بخش و کارت ---------- */
+
+.sec { padding-block: clamp(1.75rem, 1.2rem + 2vw, 2.75rem); }
+
+.sec__head { margin-block-end: 1.1rem; }
+
+.sec__n {
+  display: inline-grid;
+  place-items: center;
+  width: 1.7rem; height: 1.7rem;
+  margin-inline-end: .5rem;
+  border-radius: 50%;
+  background: var(--brand);
+  color: var(--surface);
+  font-size: .8rem; font-weight: 800;
+  vertical-align: middle;
+}
+
+.sec__title { display: inline; font-size: clamp(1.1rem, .95rem + .7vw, 1.4rem); font-weight: 800; }
+
+.sec__note { margin: .5rem 0 0; font-size: .89rem; color: var(--ink-3); max-width: 78ch; }
+
+.card {
+  padding: 1.25rem 1.3rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.card__title { font-size: .98rem; font-weight: 800; margin-block-end: .25rem; }
+.card__sub   { font-size: .83rem; color: var(--ink-3); margin: 0 0 1rem; }
+
+.grid { display: grid; gap: 1rem; }
+.grid--4 { grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+
+/*
+ * شش کارتِ «داده‌های لازم» با auto-fit می‌شد ۵ تا و بعد یکی تنها.
+ * ستون‌ها را صریح می‌گذاریم تا همیشه ۳+۳ باشد.
+ */
+.grid--3 { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 46rem) { .grid--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 70rem) { .grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.grid--2 { grid-template-columns: minmax(0, 1fr); }
+
+@media (min-width: 60rem) { .grid--2 { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); } }
+
+/* ---------- کارتِ عددِ کلیدی ---------- */
+
+.kpi { display: flex; flex-direction: column; gap: .2rem; }
+
+.kpi__label { font-size: .84rem; color: var(--ink-2); font-weight: 700; }
+
+.kpi__row { display: flex; align-items: baseline; gap: .45rem; margin-block-start: .35rem; }
+
+.kpi__now {
+  font-size: clamp(1.8rem, 1.4rem + 1.6vw, 2.5rem);
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi__unit { font-size: .82rem; color: var(--ink-3); font-weight: 700; }
+
+.kpi__from {
+  margin-block-start: .3rem;
+  font-size: .82rem;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi__delta {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  align-self: flex-start;
+  margin-block-start: .55rem;
+  padding: .22rem .6rem;
+  border-radius: 999px;
+  font-size: .8rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi__delta--good { background: var(--ok-bg);  color: var(--ok); }
+.kpi__delta--bad  { background: var(--bad-bg); color: var(--bad); }
+
+.kpi__note { margin: .6rem 0 0; font-size: .78rem; line-height: 1.8; color: var(--ink-3); }
+
+/* ---------- نمودار ---------- */
+
+/*
+ * direction: ltr روی خودِ SVG عمدی است.
+ *
+ * داخلِ یک صفحه‌ی راست‌به‌چپ، text-anchor معنایش برعکس می‌شود و
+ * برچسبِ محور سرِ جای اشتباه می‌نشیند. جای‌گذاریِ افقی را خودمان
+ * در PHP/پایتون حساب کرده‌ایم (روز ۰ سمت راست)، پس SVG باید
+ * مختصاتِ خام را بدونِ دخالت رسم کند. فقط متن‌هایی که کلمه‌ی
+ * فارسی دارند دوباره rtl می‌شوند.
+ */
+.ch { width: 100%; height: auto; overflow: visible; direction: ltr; }
+
+.ch__tick--x, .ch__dlabel { direction: rtl; }
+
+.ch__grid  { stroke: var(--line-soft); stroke-width: 1; }
+.ch__line  { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ch__dot   { stroke: var(--surface); stroke-width: 2; }
+.ch__tick  { font-size: 11px; fill: var(--ink-3); text-anchor: start; }
+.ch__dlabel{ paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
+.ch__tick--x { text-anchor: middle; }
+.ch__dlabel{ font-size: 12px; font-weight: 800; text-anchor: end; }
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem 1.1rem;
+  margin: .9rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: .84rem;
+  color: var(--ink-2);
+}
+
+.legend li { display: flex; align-items: center; gap: .4rem; }
+
+.legend i {
+  width: .85rem; height: .85rem;
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+
+/* ---------- پیکره‌ی بدن ---------- */
+
+.figs { display: flex; gap: 1rem; justify-content: center; align-items: flex-start; }
+
+.figs figure { margin: 0; text-align: center; flex: 1 1 0; }
+
+.figs figcaption { font-size: .8rem; font-weight: 700; color: var(--ink-2); margin-block-start: .4rem; }
+
+.fig { width: 100%; max-width: 160px; height: auto; }
+
+.fig__inert { fill: var(--line-soft); }
+
+.fig__seg {
+  stroke: var(--surface);
+  stroke-width: 1.5;
+  cursor: help;
+  transition: filter .18s ease;
+}
+
+.fig__seg:hover, .fig__seg:focus { filter: brightness(1.12); outline: none; }
+
+/* رمپِ تک‌رنگ: کم‌رنگ = پایین‌تر از نرمال، پررنگ = بالاتر */
+.fig__seg--l1 { fill: #CFE3DA; }
+.fig__seg--l2 { fill: #93C6B0; }
+.fig__seg--l3 { fill: #3F9E79; }
+.fig__seg--l4 { fill: #12916A; }
+
+:root[data-theme="dark"] .fig__seg--l1 { fill: #22453A; }
+:root[data-theme="dark"] .fig__seg--l2 { fill: #2E6B55; }
+:root[data-theme="dark"] .fig__seg--l3 { fill: #178763; }
+:root[data-theme="dark"] .fig__seg--l4 { fill: #1FB184; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .fig__seg--l1 { fill: #22453A; }
+  :root:not([data-theme="light"]) .fig__seg--l2 { fill: #2E6B55; }
+  :root:not([data-theme="light"]) .fig__seg--l3 { fill: #178763; }
+  :root:not([data-theme="light"]) .fig__seg--l4 { fill: #1FB184; }
+}
+
+.ramp { display: flex; align-items: center; gap: .45rem; margin-block-start: .9rem; font-size: .78rem; color: var(--ink-3); }
+
+/* نمونه‌رنگ‌های رمپ همان چهار پله‌ی پیکره‌اند، پس باید با تمِ تیره
+   هم عوض شوند — به همین خاطر کلاس‌اند نه رنگِ درون‌خطی. */
+.ramp__s { width: 1.6rem; height: .55rem; border-radius: 2px; flex: 0 0 auto; }
+
+.ramp__s--l1 { background: #CFE3DA; }
+.ramp__s--l2 { background: #93C6B0; }
+.ramp__s--l3 { background: #3F9E79; }
+.ramp__s--l4 { background: #12916A; }
+
+:root[data-theme="dark"] .ramp__s--l1 { background: #22453A; }
+:root[data-theme="dark"] .ramp__s--l2 { background: #2E6B55; }
+:root[data-theme="dark"] .ramp__s--l3 { background: #178763; }
+:root[data-theme="dark"] .ramp__s--l4 { background: #1FB184; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ramp__s--l1 { background: #22453A; }
+  :root:not([data-theme="light"]) .ramp__s--l2 { background: #2E6B55; }
+  :root:not([data-theme="light"]) .ramp__s--l3 { background: #178763; }
+  :root:not([data-theme="light"]) .ramp__s--l4 { background: #1FB184; }
+}
+
+/* ---------- جدول ---------- */
+
+.tbl-wrap { overflow-x: auto; }
+
+table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+
+caption {
+  text-align: start;
+  font-size: .82rem;
+  color: var(--ink-3);
+  padding-block-end: .6rem;
+}
+
+th, td { padding: .6rem .7rem; text-align: start; border-block-end: 1px solid var(--line-soft); }
+
+thead th {
+  font-size: .78rem;
+  font-weight: 800;
+  color: var(--ink-2);
+  border-block-end: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+tbody tr:hover { background: var(--surface-2); }
+
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.grouprow th {
+  padding-block: 1rem .5rem;
+  font-size: .8rem;
+  color: var(--gold);
+  border-block-end: 0;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .15rem .55rem;
+  border-radius: 999px;
+  font-size: .76rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.tag--ok   { background: var(--ok-bg);   color: var(--ok); }
+.tag--warn { background: var(--warn-bg); color: var(--warn); }
+.tag--bad  { background: var(--bad-bg);  color: var(--bad); }
+
+/* عددِ شروع، وقتی بیرونِ محدوده‌ی مرجع بوده. رنگ تنها حاملِ معنا
+   نیست: یک علامت هم کنارش می‌آید. */
+.out {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  color: var(--bad);
+  font-weight: 700;
+}
+
+.tag svg { flex: 0 0 auto; }
+
+/* ---------- دامبل ---------- */
+
+.db { width: 100%; max-width: 230px; height: auto; display: block; }
+
+.db__ref  { fill: var(--line-soft); }
+.db__bar  { stroke: var(--line); stroke-width: 3; stroke-linecap: round; }
+.db__a    { fill: var(--ink-3); }
+.db__b    { fill: var(--series-3); stroke: var(--surface); stroke-width: 2; }
+
+/* ---------- سنجه ---------- */
+
+.mt { width: 100%; height: auto; overflow: visible; }
+
+.mt__track { fill: var(--line-soft); }
+.mt__ok    { fill: var(--ok-bg); }
+.mt__limit { stroke: var(--ink-3); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.mt__cap   { font-size: 11px; fill: var(--ink-3); text-anchor: middle; }
+.mt__val   { font-size: 12px; font-weight: 800; fill: var(--ink); text-anchor: middle; }
+.mt__a     { fill: var(--ink-3); }
+.mt__b     { fill: var(--ok); stroke: var(--surface); stroke-width: 2; }
+
+/* ---------- پایبندی ---------- */
+
+.ad { width: 100%; }
+
+.ad td { vertical-align: middle; }
+
+.ad__track {
+  display: block;
+  width: 100%;
+  min-width: 4.5rem;
+  height: .55rem;
+  border-radius: 999px;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+
+.ad__fill { display: block; height: 100%; width: var(--v); border-radius: 999px; }
+
+/* ---------- فهرستِ داده‌های لازم ---------- */
+
+.need {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 1.3rem 1.3rem 1.4rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.need__top { display: flex; align-items: flex-start; gap: .75rem; margin-block-end: .9rem; }
+
+.need__icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 2.5rem; height: 2.5rem;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--gold);
+}
+
+.need__title { font-size: 1.02rem; font-weight: 800; }
+
+.need__when { font-size: .8rem; color: var(--series-2); font-weight: 700; margin-block-start: .15rem; }
+
+.need__who { margin: 0 0 .9rem; font-size: .8rem; color: var(--ink-3); }
+
+.need__list { margin: 0 0 1rem; padding: 0; list-style: none; }
+
+.need__list li {
+  position: relative;
+  padding-inline-start: 1.25rem;
+  font-size: .88rem;
+  line-height: 1.95;
+  color: var(--ink-2);
+}
+
+.need__list li::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: .85em;
+  width: .45rem; height: .45rem;
+  border-radius: 50%;
+  background: var(--gold);
+}
+
+.need__note {
+  margin: auto 0 0;
+  padding: .7rem .8rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border-inline-start: 3px solid var(--gold);
+  font-size: .8rem;
+  line-height: 1.85;
+  color: var(--ink-2);
+}
+
+/* ---------- جزئیاتِ جدولِ داده زیرِ هر نمودار ---------- */
+
+details.data {
+  margin-block-start: 1rem;
+  border-block-start: 1px dashed var(--line);
+  padding-block-start: .8rem;
+}
+
+details.data summary {
+  cursor: pointer;
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--series-2);
+  list-style: none;
+}
+
+details.data summary::-webkit-details-marker { display: none; }
+
+details.data summary::before { content: "⌄ "; font-weight: 800; }
+details.data[open] summary::before { content: "⌃ "; }
+
+details.data table { margin-block-start: .7rem; }
+
+/* ---------- پاورقی ---------- */
+
+.foot {
+  padding-block: 1.75rem 2.5rem;
+  border-block-start: 1px solid var(--line);
+  font-size: .82rem;
+  line-height: 2;
+  color: var(--ink-3);
+}
+
+.foot strong { color: var(--ink-2); }
+
+/* ---------- تمِ روشن/تیره ---------- */
+
+.themebtn {
+  position: fixed;
+  inset-block-end: 1rem;
+  inset-inline-end: 1rem;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  width: 2.75rem; height: 2.75rem;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-2);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+@media print {
+  .demo, .themebtn, details.data { position: static; }
+  details.data { display: block; }
+  body { background: #fff; }
+}
+</style>
+</head>
+<body>
+<p class="demo">⚠️ این صفحه یک نمونه است. همه‌ی عددها ساختگی‌اند و به هیچ فرد واقعی‌ای مربوط نیستند.</p>
+
+<header class="head">
+  <div class="wrap">
+    <p class="head__eyebrow">آکادمی تندرستی سعادت‌مهر — پروتکل ۱۰۰ روزه SMP</p>
+    <h1 class="head__title">پرونده‌ی پایش متابولیک</h1>
+    <p class="head__sub">این صفحه نشان می‌دهد در طول صد روز چه داده‌ای جمع می‌شود، چطور کنار هم خوانده می‌شود، و در پایان چه تصویری از بدن به دست می‌دهد.</p>
+    <ul class="head__meta">
+      <li>مراجع نمونه · مرد · ۳۸ ساله</li>
+      <li>دوره: روز ۰ تا روز ۱۰۰</li>
+      <li>۴ نوبت اندازه‌گیری · ۳ نوبت آزمایش خون</li>
+    </ul>
+  </div>
+</header>
+
+<main>
+<section class="sec" aria-labelledby="s1">
+  <div class="wrap">
+    <header class="sec__head">
+      <span class="sec__n">۱</span><h2 class="sec__title" id="s1">عددهای کلیدی پایان دوره</h2>
+      <p class="sec__note">چهار عددی که در اولین نگاه وضعیت را می‌گویند. هر کدام، هم مقدار پایان را نشان می‌دهد هم نقطه‌ی شروع را — چون عددِ تنها بدونِ مبدأ معنا ندارد.</p>
+    </header>
+    <div class="grid grid--4"><article class="card kpi">
+  <p class="kpi__label">درصد چربی بدن</p>
+  <p class="kpi__row">
+    <span class="kpi__now">۲۲٫۱</span>
+    <span class="kpi__unit">٪</span>
+  </p>
+  <p class="kpi__from">در شروع: ۳۱٫۴ ٪</p>
+  <p class="kpi__delta kpi__delta--good">
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg> −۹٫۳ ٪
+  </p>
+  <p class="kpi__note">محدوده‌ی هدف برای این فرد: ۱۸ تا ۲۴٪</p>
+</article><article class="card kpi">
+  <p class="kpi__label">توده عضلانی اسکلتی</p>
+  <p class="kpi__row">
+    <span class="kpi__now">۳۱٫۲</span>
+    <span class="kpi__unit">کیلوگرم</span>
+  </p>
+  <p class="kpi__from">در شروع: ۲۸٫۶ کیلوگرم</p>
+  <p class="kpi__delta kpi__delta--good">
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg> +۲٫۶ کیلوگرم
+  </p>
+  <p class="kpi__note">افزایش هم‌زمان با کاهش وزن کل</p>
+</article><article class="card kpi">
+  <p class="kpi__label">وزن</p>
+  <p class="kpi__row">
+    <span class="kpi__now">۸۳٫۱</span>
+    <span class="kpi__unit">کیلوگرم</span>
+  </p>
+  <p class="kpi__from">در شروع: ۹۲٫۴ کیلوگرم</p>
+  <p class="kpi__delta kpi__delta--good">
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg> −۹٫۳ کیلوگرم
+  </p>
+  <p class="kpi__note">۹٫۳ کیلوگرم، تقریباً همه از بافت چربی</p>
+</article><article class="card kpi">
+  <p class="kpi__label">سطح چربی احشایی</p>
+  <p class="kpi__row">
+    <span class="kpi__now">۸</span>
+    <span class="kpi__unit"></span>
+  </p>
+  <p class="kpi__from">در شروع: ۱۴ </p>
+  <p class="kpi__delta kpi__delta--good">
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg> −۶ 
+  </p>
+  <p class="kpi__note">زیر ۱۰ یعنی خروج از محدوده‌ی پرخطر</p>
+</article></div>
+  </div>
+</section>
+<section class="sec" aria-labelledby="s2">
+  <div class="wrap">
+    <header class="sec__head">
+      <span class="sec__n">۲</span><h2 class="sec__title" id="s2">تحلیل ترکیب بدن</h2>
+      <p class="sec__note">هر دو سریِ نمودار درصدِ وزنِ بدن‌اند، پس روی یک محور نشسته‌اند. نمودارِ دو محوره عمداً استفاده نشده — خواننده را گمراه می‌کند.</p>
+    </header>
+
+    <div class="grid grid--2">
+      <article class="card">
+        <h3 class="card__title">درصد چربی در برابر درصد عضله</h3>
+        <p class="card__sub">چهار نقطه‌ی اندازه‌گیری، هم‌تراز با گیت‌های پروتکل</p>
+        <svg viewBox="0 0 640 300" class="ch" role="img" aria-label="روند درصد چربی و درصد عضله در چهار نقطه‌ی اندازه‌گیری">
+<line class="ch__grid" x1="54" y1="260.0" x2="586" y2="260.0"/>
+<text class="ch__tick" x="594" y="264.0">۱۵٪</text>
+<line class="ch__grid" x1="54" y1="212.4" x2="586" y2="212.4"/>
+<text class="ch__tick" x="594" y="216.4">۲۰٪</text>
+<line class="ch__grid" x1="54" y1="164.8" x2="586" y2="164.8"/>
+<text class="ch__tick" x="594" y="168.8">۲۵٪</text>
+<line class="ch__grid" x1="54" y1="117.2" x2="586" y2="117.2"/>
+<text class="ch__tick" x="594" y="121.2">۳۰٪</text>
+<line class="ch__grid" x1="54" y1="69.6" x2="586" y2="69.6"/>
+<text class="ch__tick" x="594" y="73.6">۳۵٪</text>
+<line class="ch__grid" x1="54" y1="22.0" x2="586" y2="22.0"/>
+<text class="ch__tick" x="594" y="26.0">۴۰٪</text>
+<text class="ch__tick ch__tick--x" x="586.0" y="284">روز ۰</text>
+<text class="ch__tick ch__tick--x" x="408.7" y="284">روز ۳۰</text>
+<text class="ch__tick ch__tick--x" x="231.3" y="284">روز ۶۵</text>
+<text class="ch__tick ch__tick--x" x="54.0" y="284">روز ۱۰۰</text>
+<path class="ch__line" style="stroke:var(--series-1)" d="M586.0 103.9 L408.7 138.1 L231.3 171.5 L54.0 192.4"/>
+<circle class="ch__dot" style="fill:var(--series-1)" cx="586.0" cy="103.9" r="5"><title>چربی — روز ۰: ۳۱٫۴٪</title></circle>
+<circle class="ch__dot" style="fill:var(--series-1)" cx="408.7" cy="138.1" r="5"><title>چربی — روز ۳۰: ۲۷٫۸٪</title></circle>
+<circle class="ch__dot" style="fill:var(--series-1)" cx="231.3" cy="171.5" r="5"><title>چربی — روز ۶۵: ۲۴٫۳٪</title></circle>
+<circle class="ch__dot" style="fill:var(--series-1)" cx="54.0" cy="192.4" r="5"><title>چربی — روز ۱۰۰: ۲۲٫۱٪</title></circle>
+<text class="ch__dlabel" style="fill:var(--series-1)" x="44.0" y="180.4">چربی ۲۲٫۱٪</text>
+<path class="ch__line" style="stroke:var(--series-3)" d="M586.0 107.7 L408.7 86.7 L231.3 65.8 L54.0 45.8"/>
+<circle class="ch__dot" style="fill:var(--series-3)" cx="586.0" cy="107.7" r="5"><title>عضله — روز ۰: ۳۱٫۰٪</title></circle>
+<circle class="ch__dot" style="fill:var(--series-3)" cx="408.7" cy="86.7" r="5"><title>عضله — روز ۳۰: ۳۳٫۲٪</title></circle>
+<circle class="ch__dot" style="fill:var(--series-3)" cx="231.3" cy="65.8" r="5"><title>عضله — روز ۶۵: ۳۵٫۴٪</title></circle>
+<circle class="ch__dot" style="fill:var(--series-3)" cx="54.0" cy="45.8" r="5"><title>عضله — روز ۱۰۰: ۳۷٫۵٪</title></circle>
+<text class="ch__dlabel" style="fill:var(--series-3)" x="44.0" y="33.8">عضله ۳۷٫۵٪</text>
+</svg>
+        <ul class="legend">
+          <li><i style="background:var(--series-1)"></i> درصد چربی بدن</li>
+          <li><i style="background:var(--series-3)"></i> درصد عضله‌ی اسکلتی</li>
+        </ul>
+        <details class="data">
+          <summary>نمایش جدول داده</summary>
+          <div class="tbl-wrap"><table>
+            <caption>همان عددهای نمودار، برای کسی که جدول را راحت‌تر می‌خواند.</caption>
+            <thead><tr><th>نقطه</th><th>درصد چربی</th><th>درصد عضله</th></tr></thead>
+            <tbody><tr><th scope="row">روز ۰</th><td class="num">۳۱٫۴٪</td><td class="num">۳۱٪</td></tr><tr><th scope="row">روز ۳۰</th><td class="num">۲۷٫۸٪</td><td class="num">۳۳٫۲٪</td></tr><tr><th scope="row">روز ۶۵</th><td class="num">۲۴٫۳٪</td><td class="num">۳۵٫۴٪</td></tr><tr><th scope="row">روز ۱۰۰</th><td class="num">۲۲٫۱٪</td><td class="num">۳۷٫۵٪</td></tr></tbody>
+          </table></div>
+        </details>
+      </article>
+
+      <article class="card">
+        <h3 class="card__title">آنالیز بخش‌به‌بخش عضله</h3>
+        <p class="card__sub">همان خروجی که دستگاه InBody می‌دهد — روی هر بخش نگه دارید</p>
+        <div class="figs">
+          <figure><svg viewBox="0 0 200 270" class="fig" role="img" aria-label="پیکره‌ی بدن، توده‌ی عضلانی هر بخش پیش از پروتکل">
+<path class="fig__inert" d="M100 14a17 17 0 1 1 0 34 17 17 0 0 1 0-34Z"/>
+<path class="fig__seg fig__seg--l1" d="M100 52c-15 0-27 5-30 10-2 4-3 14-3 26 0 16 2 30 5 44 1 6 2 10 4 13h48c2-3 3-7 4-13 3-14 5-28 5-44 0-12-1-22-3-26-3-5-15-10-30-10Z" tabindex="0"><title>تنه: ۲۲٫۴ کیلوگرم (+۰٫۰٪ نسبت به شروع) — محدوده‌ی نرمال ۲۲٫۰ تا ۲۶٫۹</title></path>
+<path class="fig__seg fig__seg--l1" d="M67 64c-7 3-11 8-13 16-3 12-6 30-7 44-1 7-1 13 0 17 1 4 7 5 9 1 2-4 3-10 4-17 2-14 5-30 7-40 1-6 2-12 0-21Z" tabindex="0"><title>بازوی راست: ۲٫۹ کیلوگرم (+۰٫۰٪ نسبت به شروع) — محدوده‌ی نرمال ۲٫۸ تا ۳٫۶</title></path>
+<path class="fig__seg fig__seg--l1" d="M133 64c7 3 11 8 13 16 3 12 6 30 7 44 1 7 1 13 0 17-1 4-7 5-9 1-2-4-3-10-4-17-2-14-5-30-7-40-1-6-2-12 0-21Z" tabindex="0"><title>بازوی چپ: ۲٫۸ کیلوگرم (+۰٫۰٪ نسبت به شروع) — محدوده‌ی نرمال ۲٫۸ تا ۳٫۶</title></path>
+<path class="fig__seg fig__seg--l1" d="M96 145H76c-2 10-3 22-3 34 0 18 2 40 4 56 1 8 1 14 1 19 0 5 7 6 9 1 2-5 3-11 4-19 3-18 6-40 7-56 1-12 1-24-2-35Z" tabindex="0"><title>پای راست: ۸٫۱ کیلوگرم (+۰٫۰٪ نسبت به شروع) — محدوده‌ی نرمال ۸٫۴ تا ۱۰٫۲</title></path>
+<path class="fig__seg fig__seg--l1" d="M104 145h20c2 10 3 22 3 34 0 18-2 40-4 56-1 8-1 14-1 19 0 5-7 6-9 1-2-5-3-11-4-19-3-18-6-40-7-56-1-12-1-24 2-35Z" tabindex="0"><title>پای چپ: ۸٫۰ کیلوگرم (+۰٫۰٪ نسبت به شروع) — محدوده‌ی نرمال ۸٫۴ تا ۱۰٫۲</title></path>
+</svg><figcaption>روز ۰</figcaption></figure>
+          <figure><svg viewBox="0 0 200 270" class="fig" role="img" aria-label="پیکره‌ی بدن، توده‌ی عضلانی هر بخش پس از پروتکل">
+<path class="fig__inert" d="M100 14a17 17 0 1 1 0 34 17 17 0 0 1 0-34Z"/>
+<path class="fig__seg fig__seg--l2" d="M100 52c-15 0-27 5-30 10-2 4-3 14-3 26 0 16 2 30 5 44 1 6 2 10 4 13h48c2-3 3-7 4-13 3-14 5-28 5-44 0-12-1-22-3-26-3-5-15-10-30-10Z" tabindex="0"><title>تنه: ۲۴٫۱ کیلوگرم (+۷٫۶٪ نسبت به شروع) — محدوده‌ی نرمال ۲۲٫۰ تا ۲۶٫۹</title></path>
+<path class="fig__seg fig__seg--l2" d="M67 64c-7 3-11 8-13 16-3 12-6 30-7 44-1 7-1 13 0 17 1 4 7 5 9 1 2-4 3-10 4-17 2-14 5-30 7-40 1-6 2-12 0-21Z" tabindex="0"><title>بازوی راست: ۳٫۳ کیلوگرم (+۱۳٫۸٪ نسبت به شروع) — محدوده‌ی نرمال ۲٫۸ تا ۳٫۶</title></path>
+<path class="fig__seg fig__seg--l2" d="M133 64c7 3 11 8 13 16 3 12 6 30 7 44 1 7 1 13 0 17-1 4-7 5-9 1-2-4-3-10-4-17-2-14-5-30-7-40-1-6-2-12 0-21Z" tabindex="0"><title>بازوی چپ: ۳٫۲ کیلوگرم (+۱۴٫۳٪ نسبت به شروع) — محدوده‌ی نرمال ۲٫۸ تا ۳٫۶</title></path>
+<path class="fig__seg fig__seg--l1" d="M96 145H76c-2 10-3 22-3 34 0 18 2 40 4 56 1 8 1 14 1 19 0 5 7 6 9 1 2-5 3-11 4-19 3-18 6-40 7-56 1-12 1-24-2-35Z" tabindex="0"><title>پای راست: ۹٫۰ کیلوگرم (+۱۱٫۱٪ نسبت به شروع) — محدوده‌ی نرمال ۸٫۴ تا ۱۰٫۲</title></path>
+<path class="fig__seg fig__seg--l1" d="M104 145h20c2 10 3 22 3 34 0 18-2 40-4 56-1 8-1 14-1 19 0 5-7 6-9 1-2-5-3-11-4-19-3-18-6-40-7-56-1-12-1-24 2-35Z" tabindex="0"><title>پای چپ: ۸٫۹ کیلوگرم (+۱۱٫۳٪ نسبت به شروع) — محدوده‌ی نرمال ۸٫۴ تا ۱۰٫۲</title></path>
+</svg><figcaption>روز ۱۰۰</figcaption></figure>
+        </div>
+        <p class="ramp">
+          <svg width="0" height="0" aria-hidden="true" style="position:absolute"></svg>
+          <span class="ramp__s ramp__s--l1"></span>
+          <span class="ramp__s ramp__s--l2"></span>
+          <span class="ramp__s ramp__s--l3"></span>
+          <span class="ramp__s ramp__s--l4"></span>
+          کم‌رنگ: پایین‌تر از محدوده‌ی نرمال &nbsp;←&nbsp; پررنگ: داخل یا بالاتر از آن
+        </p>
+        <details class="data">
+          <summary>نمایش جدول داده</summary>
+          <div class="tbl-wrap"><table>
+            <caption>توده‌ی عضلانی هر بخش، بر حسب کیلوگرم.</caption>
+            <thead><tr><th>بخش</th><th>روز ۰</th><th>روز ۱۰۰</th><th>تغییر</th><th>محدوده‌ی نرمال</th><th>وضعیت</th></tr></thead>
+            <tbody><tr>
+  <th scope="row">بازوی راست</th>
+  <td class="num">۲٫۹</td>
+  <td class="num">۳٫۳</td>
+  <td class="num">۱۳٫۸٪+</td>
+  <td class="num">۲٫۸ تا ۳٫۶</td>
+  <td><span class="tag tag--ok"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>در محدوده‌ی نرمال</span></td>
+</tr><tr>
+  <th scope="row">بازوی چپ</th>
+  <td class="num">۲٫۸</td>
+  <td class="num">۳٫۲</td>
+  <td class="num">۱۴٫۳٪+</td>
+  <td class="num">۲٫۸ تا ۳٫۶</td>
+  <td><span class="tag tag--ok"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>در محدوده‌ی نرمال</span></td>
+</tr><tr>
+  <th scope="row">تنه</th>
+  <td class="num">۲۲٫۴</td>
+  <td class="num">۲۴٫۱</td>
+  <td class="num">۷٫۶٪+</td>
+  <td class="num">۲۲٫۰ تا ۲۶٫۹</td>
+  <td><span class="tag tag--ok"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>در محدوده‌ی نرمال</span></td>
+</tr><tr>
+  <th scope="row">پای راست</th>
+  <td class="num">۸٫۱</td>
+  <td class="num">۹</td>
+  <td class="num">۱۱٫۱٪+</td>
+  <td class="num">۸٫۴ تا ۱۰٫۲</td>
+  <td><span class="tag tag--ok"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>در محدوده‌ی نرمال</span></td>
+</tr><tr>
+  <th scope="row">پای چپ</th>
+  <td class="num">۸</td>
+  <td class="num">۸٫۹</td>
+  <td class="num">۱۱٫۳٪+</td>
+  <td class="num">۸٫۴ تا ۱۰٫۲</td>
+  <td><span class="tag tag--ok"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>در محدوده‌ی نرمال</span></td>
+</tr></tbody>
+          </table></div>
+        </details>
+      </article>
+    </div>
+  </div>
+</section>
+<section class="sec" aria-labelledby="s3">
+  <div class="wrap">
+    <header class="sec__head">
+      <span class="sec__n">۳</span><h2 class="sec__title" id="s3">آزمایش خون</h2>
+      <p class="sec__note">هر ردیف دو نقطه دارد: شروع و پایان. نوارِ خاکستریِ پشتِ آن‌ها محدوده‌ی مرجعِ آزمایشگاه است — یعنی در یک نگاه معلوم می‌شود عدد وارد محدوده شده یا نه.</p>
+    </header>
+
+    <article class="card" style="margin-block-end:1rem">
+      <h3 class="card__title">شاخص مقاومت انسولینی (HOMA-IR)</h3>
+      <p class="card__sub">مهم‌ترین عددِ این صفحه برای یک پرونده‌ی متابولیک</p>
+      <svg viewBox="0 0 520 56" class="mt" role="img" aria-label="شاخص مقاومت انسولینی: از ۵٫۳۶ به ۱٫۸۴، مرز نرمال ۲٫۰">
+<rect class="mt__track" x="14" y="13" width="492" height="18" rx="9"/>
+<rect class="mt__ok" x="354.6" y="13" width="151.4" height="18" rx="9"/>
+<line class="mt__limit" x1="354.6" y1="8" x2="354.6" y2="36"/>
+<text class="mt__cap" x="354.6" y="52">مرز نرمال ۲٫۰</text>
+<circle class="mt__a" cx="100.3" cy="22" r="7"/>
+<text class="mt__val" x="100.3" y="6">۵٫۳۶</text>
+<circle class="mt__b" cx="366.7" cy="22" r="7"/>
+<text class="mt__val" x="366.7" y="6">۱٫۸۴</text>
+</svg>
+      <ul class="legend">
+        <li><i style="background:var(--ink-3)"></i> شروع</li>
+        <li><i style="background:var(--ok)"></i> پایان دوره</li>
+        <li><i style="background:var(--ok-bg);border:1px solid var(--line)"></i> محدوده‌ی نرمال</li>
+      </ul>
+    </article>
+
+    <article class="card">
+      <h3 class="card__title">پنل کامل</h3>
+      <p class="card__sub">دوازده شاخص، در چهار دسته</p>
+      <div class="tbl-wrap"><table>
+        <caption>نمونه — عددها ساختگی‌اند و به فرد واقعی‌ای مربوط نیستند.</caption>
+        <thead><tr><th>شاخص</th><th>پیش از پروتکل</th><th>پایان دوره</th><th>روند</th><th>محدوده‌ی مرجع</th><th>وضعیت</th></tr></thead>
+        <tbody><tr class="grouprow"><th colspan="6" scope="colgroup">قند و انسولین</th></tr><tr>
+  <th scope="row">قند خون ناشتا (FBS)</th>
+  <td class="num"><span class="out"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.5 20h19L12 4Z"/><path d="M12 10v4M12 17v.01"/></svg>۱۱۲ <span style="color:var(--ink-3);font-size:.9em">mg/dL</span></span></td>
+  <td class="num"><strong>۹۲</strong> <span style="color:var(--ink-3);font-size:.9em">mg/dL</span></td>
+  <td><svg viewBox="0 0 220 34" class="db" aria-hidden="true">
+<rect class="db__ref" x="82.0" y="8" width="101.5" height="18" rx="4"/>
+<line class="db__bar" x1="36.5" y1="17.0" x2="106.5" y2="17.0"/>
+<circle class="db__a" cx="36.5" cy="17.0" r="5"/>
+<circle class="db__b" cx="106.5" cy="17.0" r="6"/>
+</svg></td>
+  <td class="num">۷۰ تا ۹۹</td>
+  <td><span class="tag tag--ok"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>در محدوده‌ی نرمال</span></td>
+</tr><tr>
+  <th scope="row">انسولین ناشتا</th>
+  <td class="num">۱۹٫۴ <span style="color:var(--ink-3);font-size:.9em">µIU/mL</span></td>
+  <td class="num"><strong>۸٫۱</strong> <span style="color:var(--ink-3);font-size:.9em">µIU/mL</span></td>
+  <td><svg viewBox="0 0 220 34" class="db" aria-hidden="true">
+<rect class="db__ref" x="36.5" y="8" width="147.1" height="18" rx="4"/>
+<line class="db__bar" x1="72.7" y1="17.0" x2="147.3" y2="17.0"/>
+<circle class="db__a" cx="72.7" cy="17.0" r="5"/>
+<circle class="db__b" cx="147.3" cy="17.0" r="6"/>
+</svg></td>
+  <td class="num">۲٫۶ تا ۲۴٫۹</td>
+  <td><span class="tag tag--ok"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>در محدوده‌ی نرمال</span></td>
+</tr><tr>
+  <th scope="row">HOMA-IR (مقاومت انسولینی)</th>
+  <td class="num"><span class="out"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.5 20h19L12 4Z"/><path d="M12 10v4M12 17v.01"/></svg>۵٫۳۶</span></td>
+  <td class="num"><strong>۱٫۸۴</strong></td>
+  <td><svg viewBox="0 0 220 34" class="db" aria-hidden="true">
+<rect class="db__ref" x="176.8" y="8" width="33.2" height="18" rx="4"/>
+<line class="db__bar" x1="36.5" y1="17.0" x2="183.5" y2="17.0"/>
+<circle class="db__a" cx="36.5" cy="17.0" r="5"/>
+<circle class="db__b" cx="183.5" cy="17.0" r="6"/>
+</svg></td>
+  <td class="num">کمتر از ۲٫۰</td>
+  <td><span class="tag tag--ok"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>در محدوده‌ی نرمال</span></td>
+</tr><tr>
+  <th scope="row">HbA1c (قند سه‌ماهه)</th>
+  <td class="num"><span class="out"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.5 20h19L12 4Z"/><path d="M12 10v4M12 17v.01"/></svg>۶٫۱ <span style="color:var(--ink-3);font-size:.9em">٪</span></span></td>
+  <td class="num"><strong>۵٫۳</strong> <span style="color:var(--ink-3);font-size:.9em">٪</span></td>
+  <td><svg viewBox="0 0 220 34" class="db" aria-hidden="true">
+<rect class="db__ref" x="110.0" y="8" width="100.0" height="18" rx="4"/>
+<line class="db__bar" x1="36.5" y1="17.0" x2="183.5" y2="17.0"/>
+<circle class="db__a" cx="36.5" cy="17.0" r="5"/>
+<circle class="db__b" cx="183.5" cy="17.0" r="6"/>
+</svg></td>
+  <td class="num">کمتر از ۵٫۷</td>
+  <td><span class="tag tag--ok"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>در محدوده‌ی نرمال</span></td>
+</tr><tr class="grouprow"><th colspan="6" scope="colgroup">چربی خون</th></tr><tr>
+  <th scope="row">تری‌گلیسیرید</th>
+  <td class="num"><span class="out"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.5 20h19L12 4Z"/><path d="M12 10v4M12 17v.01"/></svg>۲۱۲ <span style="color:var(--ink-3);font-size:.9em">mg/dL</span></span></td>
+  <td class="num"><strong>۱۱۸</strong> <span style="color:var(--ink-3);font-size:.9em">mg/dL</span></td>
+  <td><svg viewBox="0 0 220 34" class="db" aria-hidden="true">
+<rect class="db__ref" x="133.5" y="8" width="76.5" height="18" rx="4"/>
+<line class="db__bar" x1="36.5" y1="17.0" x2="183.5" y2="17.0"/>
+<circle class="db__a" cx="36.5" cy="17.0" r="5"/>
+<circle class="db__b" cx="183.5" cy="17.0" r="6"/>
+</svg></td>
+  <td class="num">کمتر از ۱۵۰</td>
+  <td><span class="tag tag--ok"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>در محدوده‌ی نرمال</span></td>
+</tr><tr>
+  <th scope="row">کلسترول HDL</th>
+  <td class="num"><span class="out"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.5 20h19L12 4Z"/><path d="M12 10v4M12 17v.01"/></svg>۳۸ <span style="color:var(--ink-3);font-size:.9em">mg/dL</span></span></td>
+  <td class="num"><strong>۴۹</strong> <span style="color:var(--ink-3);font-size:.9em">mg/dL</span></td>
+  <td><svg viewBox="0 0 220 34" class="db" aria-hidden="true">
+<rect class="db__ref" x="10.0" y="8" width="146.8" height="18" rx="4"/>
+<line class="db__bar" x1="183.5" y1="17.0" x2="36.5" y2="17.0"/>
+<circle class="db__a" cx="183.5" cy="17.0" r="5"/>
+<circle class="db__b" cx="36.5" cy="17.0" r="6"/>
+</svg></td>
+  <td class="num">بیشتر از ۴۰</td>
+  <td><span class="tag tag--ok"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>در محدوده‌ی نرمال</span></td>
+</tr><tr>
+  <th scope="row">کلسترول LDL</th>
+  <td class="num"><span class="out"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.5 20h19L12 4Z"/><path d="M12 10v4M12 17v.01"/></svg>۱۴۸ <span style="color:var(--ink-3);font-size:.9em">mg/dL</span></span></td>
+  <td class="num"><strong>۱۰۹</strong> <span style="color:var(--ink-3);font-size:.9em">mg/dL</span></td>
+  <td><svg viewBox="0 0 220 34" class="db" aria-hidden="true">
+<rect class="db__ref" x="104.3" y="8" width="105.7" height="18" rx="4"/>
+<line class="db__bar" x1="36.5" y1="17.0" x2="183.5" y2="17.0"/>
+<circle class="db__a" cx="36.5" cy="17.0" r="5"/>
+<circle class="db__b" cx="183.5" cy="17.0" r="6"/>
+</svg></td>
+  <td class="num">کمتر از ۱۳۰</td>
+  <td><span class="tag tag--ok"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>در محدوده‌ی نرمال</span></td>
+</tr><tr class="grouprow"><th colspan="6" scope="colgroup">کبد و التهاب</th></tr><tr>
+  <th scope="row">آنزیم کبدی ALT</th>
+  <td class="num"><span class="out"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.5 20h19L12 4Z"/><path d="M12 10v4M12 17v.01"/></svg>۵۴ <span style="color:var(--ink-3);font-size:.9em">U/L</span></span></td>
+  <td class="num"><strong>۲۷</strong> <span style="color:var(--ink-3);font-size:.9em">U/L</span></td>
+  <td><svg viewBox="0 0 220 34" class="db" aria-hidden="true">
+<rect class="db__ref" x="107.3" y="8" width="102.7" height="18" rx="4"/>
+<line class="db__bar" x1="36.5" y1="17.0" x2="183.5" y2="17.0"/>
+<circle class="db__a" cx="36.5" cy="17.0" r="5"/>
+<circle class="db__b" cx="183.5" cy="17.0" r="6"/>
+</svg></td>
+  <td class="num">کمتر از ۴۱</td>
+  <td><span class="tag tag--ok"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>در محدوده‌ی نرمال</span></td>
+</tr><tr>
+  <th scope="row">CRP حساس (hs-CRP)</th>
+  <td class="num"><span class="out"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.5 20h19L12 4Z"/><path d="M12 10v4M12 17v.01"/></svg>۴٫۸ <span style="color:var(--ink-3);font-size:.9em">mg/L</span></span></td>
+  <td class="num"><strong>۱٫۱</strong> <span style="color:var(--ink-3);font-size:.9em">mg/L</span></td>
+  <td><svg viewBox="0 0 220 34" class="db" aria-hidden="true">
+<rect class="db__ref" x="108.0" y="8" width="102.0" height="18" rx="4"/>
+<line class="db__bar" x1="36.5" y1="17.0" x2="183.5" y2="17.0"/>
+<circle class="db__a" cx="36.5" cy="17.0" r="5"/>
+<circle class="db__b" cx="183.5" cy="17.0" r="6"/>
+</svg></td>
+  <td class="num">کمتر از ۳٫۰</td>
+  <td><span class="tag tag--ok"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>در محدوده‌ی نرمال</span></td>
+</tr><tr class="grouprow"><th colspan="6" scope="colgroup">ریزمغذی و هورمون</th></tr><tr>
+  <th scope="row">ویتامین D</th>
+  <td class="num"><span class="out"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.5 20h19L12 4Z"/><path d="M12 10v4M12 17v.01"/></svg>۱۷ <span style="color:var(--ink-3);font-size:.9em">ng/mL</span></span></td>
+  <td class="num"><strong>۳۸</strong> <span style="color:var(--ink-3);font-size:.9em">ng/mL</span></td>
+  <td><svg viewBox="0 0 220 34" class="db" aria-hidden="true">
+<rect class="db__ref" x="36.5" y="8" width="124.0" height="18" rx="4"/>
+<line class="db__bar" x1="183.5" y1="17.0" x2="146.3" y2="17.0"/>
+<circle class="db__a" cx="183.5" cy="17.0" r="5"/>
+<circle class="db__b" cx="146.3" cy="17.0" r="6"/>
+</svg></td>
+  <td class="num">۳۰ تا ۱۰۰</td>
+  <td><span class="tag tag--ok"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>در محدوده‌ی نرمال</span></td>
+</tr><tr>
+  <th scope="row">فریتین</th>
+  <td class="num">۶۸ <span style="color:var(--ink-3);font-size:.9em">ng/mL</span></td>
+  <td class="num"><strong>۹۴</strong> <span style="color:var(--ink-3);font-size:.9em">ng/mL</span></td>
+  <td><svg viewBox="0 0 220 34" class="db" aria-hidden="true">
+<rect class="db__ref" x="36.5" y="8" width="147.1" height="18" rx="4"/>
+<line class="db__bar" x1="168.4" y1="17.0" x2="158.1" y2="17.0"/>
+<circle class="db__a" cx="168.4" cy="17.0" r="5"/>
+<circle class="db__b" cx="158.1" cy="17.0" r="6"/>
+</svg></td>
+  <td class="num">۳۰ تا ۴۰۰</td>
+  <td><span class="tag tag--ok"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>در محدوده‌ی نرمال</span></td>
+</tr><tr>
+  <th scope="row">TSH (تیروئید)</th>
+  <td class="num">۳٫۱ <span style="color:var(--ink-3);font-size:.9em">mIU/L</span></td>
+  <td class="num"><strong>۲٫۴</strong> <span style="color:var(--ink-3);font-size:.9em">mIU/L</span></td>
+  <td><svg viewBox="0 0 220 34" class="db" aria-hidden="true">
+<rect class="db__ref" x="36.5" y="8" width="147.1" height="18" rx="4"/>
+<line class="db__bar" x1="73.2" y1="17.0" x2="101.8" y2="17.0"/>
+<circle class="db__a" cx="73.2" cy="17.0" r="5"/>
+<circle class="db__b" cx="101.8" cy="17.0" r="6"/>
+</svg></td>
+  <td class="num">۰٫۴ تا ۴٫۰</td>
+  <td><span class="tag tag--ok"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4.5 4.5L19 7"/></svg>در محدوده‌ی نرمال</span></td>
+</tr></tbody>
+      </table></div>
+    </article>
+  </div>
+</section>
+<section class="sec" aria-labelledby="s4">
+  <div class="wrap">
+    <header class="sec__head">
+      <span class="sec__n">۴</span><h2 class="sec__title" id="s4">پایبندی روزانه</h2>
+      <p class="sec__note">این بخش از ثبتِ روزانه‌ی خودِ مراجع ساخته می‌شود، نه از آزمایش. بدونِ این داده، وقتی عددی تکان نمی‌خورد نمی‌شود فهمید مشکل از پروتکل است یا از اجرا.</p>
+    </header>
+    <article class="card">
+      <div class="tbl-wrap"><table class="ad">
+        <caption>درصد روزهایی که هر مورد انجام شده است.</caption>
+        <thead><tr><th>مورد</th><th>هفته ۱ تا ۴</th><th>هفته ۵ تا ۸</th><th>هفته ۹ تا ۱۲</th><th>هفته ۱۳ و ۱۴</th></tr></thead>
+        <tbody><tr><th scope="row">خواب ۷ ساعت یا بیشتر</th><td class="num" style="min-width:8rem"><span class="ad__track"><span class="ad__fill" style="--v:58%;background:var(--series-3)"></span></span><span style="font-size:.78rem;color:var(--ink-3)">۵۸٪</span></td><td class="num" style="min-width:8rem"><span class="ad__track"><span class="ad__fill" style="--v:71%;background:var(--series-3)"></span></span><span style="font-size:.78rem;color:var(--ink-3)">۷۱٪</span></td><td class="num" style="min-width:8rem"><span class="ad__track"><span class="ad__fill" style="--v:84%;background:var(--series-3)"></span></span><span style="font-size:.78rem;color:var(--ink-3)">۸۴٪</span></td><td class="num" style="min-width:8rem"><span class="ad__track"><span class="ad__fill" style="--v:92%;background:var(--series-3)"></span></span><span style="font-size:.78rem;color:var(--ink-3)">۹۲٪</span></td></tr><tr><th scope="row">ثبت کامل وعده‌ها</th><td class="num" style="min-width:8rem"><span class="ad__track"><span class="ad__fill" style="--v:74%;background:var(--series-3)"></span></span><span style="font-size:.78rem;color:var(--ink-3)">۷۴٪</span></td><td class="num" style="min-width:8rem"><span class="ad__track"><span class="ad__fill" style="--v:88%;background:var(--series-3)"></span></span><span style="font-size:.78rem;color:var(--ink-3)">۸۸٪</span></td><td class="num" style="min-width:8rem"><span class="ad__track"><span class="ad__fill" style="--v:95%;background:var(--series-3)"></span></span><span style="font-size:.78rem;color:var(--ink-3)">۹۵٪</span></td><td class="num" style="min-width:8rem"><span class="ad__track"><span class="ad__fill" style="--v:97%;background:var(--series-3)"></span></span><span style="font-size:.78rem;color:var(--ink-3)">۹۷٪</span></td></tr><tr><th scope="row">۸٬۰۰۰ قدم یا بیشتر</th><td class="num" style="min-width:8rem"><span class="ad__track"><span class="ad__fill" style="--v:41%;background:var(--series-3)"></span></span><span style="font-size:.78rem;color:var(--ink-3)">۴۱٪</span></td><td class="num" style="min-width:8rem"><span class="ad__track"><span class="ad__fill" style="--v:63%;background:var(--series-3)"></span></span><span style="font-size:.78rem;color:var(--ink-3)">۶۳٪</span></td><td class="num" style="min-width:8rem"><span class="ad__track"><span class="ad__fill" style="--v:79%;background:var(--series-3)"></span></span><span style="font-size:.78rem;color:var(--ink-3)">۷۹٪</span></td><td class="num" style="min-width:8rem"><span class="ad__track"><span class="ad__fill" style="--v:88%;background:var(--series-3)"></span></span><span style="font-size:.78rem;color:var(--ink-3)">۸۸٪</span></td></tr><tr><th scope="row">آب کافی</th><td class="num" style="min-width:8rem"><span class="ad__track"><span class="ad__fill" style="--v:62%;background:var(--series-3)"></span></span><span style="font-size:.78rem;color:var(--ink-3)">۶۲٪</span></td><td class="num" style="min-width:8rem"><span class="ad__track"><span class="ad__fill" style="--v:77%;background:var(--series-3)"></span></span><span style="font-size:.78rem;color:var(--ink-3)">۷۷٪</span></td><td class="num" style="min-width:8rem"><span class="ad__track"><span class="ad__fill" style="--v:86%;background:var(--series-3)"></span></span><span style="font-size:.78rem;color:var(--ink-3)">۸۶٪</span></td><td class="num" style="min-width:8rem"><span class="ad__track"><span class="ad__fill" style="--v:90%;background:var(--series-3)"></span></span><span style="font-size:.78rem;color:var(--ink-3)">۹۰٪</span></td></tr></tbody>
+      </table></div>
+    </article>
+  </div>
+</section>
+<section class="sec" aria-labelledby="s5" style="background:var(--surface-2);border-block:1px solid var(--line)">
+  <div class="wrap">
+    <header class="sec__head">
+      <span class="sec__n">۵</span><h2 class="sec__title" id="s5">چه داده‌ای از شما لازم است</h2>
+      <p class="sec__note">همه‌ی چیزی که در صفحات بالا دیدید، از همین شش دسته ساخته می‌شود. هیچ‌کدام سخت نیست؛ فقط باید منظم باشد.</p>
+    </header>
+    <div class="grid grid--3"><article class="need">
+  <div class="need__top">
+    <span class="need__icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11Z"/></svg></span>
+    <div>
+      <h3 class="need__title">آزمایش خون</h3>
+      <p class="need__when">سه نوبت: پیش از شروع · روز ۵۰ · روز ۱۰۰</p>
+    </div>
+  </div>
+  <p class="need__who">آزمایشگاه تشخیص طبی، با نسخه‌ی آکادمی</p>
+  <ul class="need__list"><li>قند ناشتا، انسولین ناشتا و HbA1c</li><li>پروفایل کامل چربی (تری‌گلیسیرید، HDL، LDL)</li><li>آنزیم‌های کبدی (ALT و AST) و hs-CRP</li><li>ویتامین D، فریتین، B12 و TSH</li></ul>
+  <p class="need__note">جواب آزمایش را به‌صورت فایل PDF بفرستید، نه عکسِ برگه.</p>
+</article><article class="need">
+  <div class="need__top">
+    <span class="need__icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16M6 20V9a6 6 0 0 1 12 0v11M9 9h6"/><circle cx="12" cy="13" r="2.5"/></svg></span>
+    <div>
+      <h3 class="need__title">آنالیز ترکیب بدن</h3>
+      <p class="need__when">هر ۳۰ روز، یک بار</p>
+    </div>
+  </div>
+  <p class="need__who">دستگاه InBody یا هر بادی‌کامپوزیشن‌آنالایزر معتبر</p>
+  <ul class="need__list"><li>درصد چربی و توده‌ی عضلانی اسکلتی</li><li>آنالیز بخش‌به‌بخش (دو دست، تنه، دو پا)</li><li>سطح چربی احشایی و آب بدن</li><li>متابولیسم پایه (BMR)</li></ul>
+  <p class="need__note">ترجیحاً همیشه با یک دستگاه و در یک ساعت از روز.</p>
+</article><article class="need">
+  <div class="need__top">
+    <span class="need__icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="8" width="19" height="8" rx="3"/><path d="M7 12v3M11 12v3M15 12v3M19 12v3"/></svg></span>
+    <div>
+      <h3 class="need__title">اندازه‌های بدنی</h3>
+      <p class="need__when">هفتگی، صبحِ ناشتا</p>
+    </div>
+  </div>
+  <p class="need__who">خودِ شما، با متر پارچه‌ای</p>
+  <ul class="need__list"><li>دور کمر (باریک‌ترین نقطه) و دور باسن</li><li>دور بازو و دور ران</li><li>وزن، روی یک ترازو و در یک ساعت ثابت</li></ul>
+  <p class="need__note">دور کمر مهم‌ترین عدد این فهرست است؛ حتی اگر بقیه را نفرستادید، این را بفرستید.</p>
+</article><article class="need">
+  <div class="need__top">
+    <span class="need__icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h6M9 16h4"/></svg></span>
+    <div>
+      <h3 class="need__title">ثبت روزانه</h3>
+      <p class="need__when">هر روز، کمتر از دو دقیقه</p>
+    </div>
+  </div>
+  <p class="need__who">خودِ شما، در فرم اختصاصی</p>
+  <ul class="need__list"><li>ساعت خواب و کیفیت بیداری صبح</li><li>وعده‌ها و میان‌وعده‌ها</li><li>تعداد قدم یا نوع تمرین</li><li>سطح انرژی و فشار کاری (۱ تا ۵)</li></ul>
+  <p class="need__note">این داده همان چیزی است که نمودارِ پایبندی از آن ساخته می‌شود.</p>
+</article><article class="need">
+  <div class="need__top">
+    <span class="need__icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="14" rx="3"/><circle cx="12" cy="13" r="3.5"/><path d="M8 6l1.5-2h5L16 6"/></svg></span>
+    <div>
+      <h3 class="need__title">عکس ثبت روند</h3>
+      <p class="need__when">روزهای ۰، ۳۰، ۶۵ و ۱۰۰</p>
+    </div>
+  </div>
+  <p class="need__who">خودِ شما، در خانه</p>
+  <ul class="need__list"><li>سه نما: روبه‌رو، نیم‌رخ، پشت</li><li>نور و فاصله و لباسِ یکسان در هر چهار نوبت</li></ul>
+  <p class="need__note">عکس‌ها محرمانه‌اند و بدون اجازه‌ی کتبی هیچ‌جا منتشر نمی‌شوند.</p>
+</article><article class="need">
+  <div class="need__top">
+    <span class="need__icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v5h5M10 12h6M10 16h6"/></svg></span>
+    <div>
+      <h3 class="need__title">سابقه‌ی پزشکی</h3>
+      <p class="need__when">یک بار، در شروع</p>
+    </div>
+  </div>
+  <p class="need__who">خودِ شما</p>
+  <ul class="need__list"><li>داروهای مصرفی و دوزشان</li><li>بیماری‌های تشخیص‌داده‌شده</li><li>سابقه‌ی جراحی و آسیب‌های حرکتی</li><li>حساسیت‌های غذایی و دارویی</li></ul>
+  <p class="need__note">تغییر یا قطع دارو فقط با نظر پزشک معالج انجام می‌شود.</p>
+</article></div>
+  </div>
+</section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <p><strong>درباره‌ی این فایل:</strong> این یک نمونه‌ی طراحی است، نه گزارشِ یک مراجع. هدفش این است که پیش از شروع، روشن باشد چه داده‌ای لازم است و خروجی چه شکلی خواهد داشت.</p>
+    <p>هیچ‌یک از عددهای این صفحه نتیجه‌ی قابل‌انتظار نیست. پاسخ هر بدن متفاوت است و این صفحه جایگزین تشخیص، تجویز یا درمان پزشکی نیست.</p>
+    <p>داده‌ی سلامت هر مراجع محرمانه است و فقط با رضایت کتبی خودش، و پس از حذف نشانه‌های هویتی، جایی منتشر می‌شود.</p>
+  </div>
+</footer>
+
+<button class="themebtn" type="button" id="theme" aria-label="تغییر روشن و تیره"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2 12h2M20 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg></button>
+
+<script>
+/* تمِ روشن/تیره. پیش‌فرض همان تنظیمِ سیستم است؛ این دکمه فقط
+   دستیِ آن را عوض می‌کند و انتخاب را نگه می‌دارد. */
+( function () {
+  var KEY = 'sm-dash-theme';
+  var root = document.documentElement;
+
+  try {
+    var saved = localStorage.getItem( KEY );
+    if ( saved ) { root.setAttribute( 'data-theme', saved ); }
+  } catch ( e ) { /* حالتِ ناشناس یا کوکیِ بسته — مهم نیست */ }
+
+  document.getElementById( 'theme' ).addEventListener( 'click', function () {
+    var dark = root.getAttribute( 'data-theme' ) === 'dark'
+      || ( ! root.hasAttribute( 'data-theme' )
+           && window.matchMedia( '(prefers-color-scheme: dark)' ).matches );
+    var next = dark ? 'light' : 'dark';
+    root.setAttribute( 'data-theme', next );
+    try { localStorage.setItem( KEY, next ); } catch ( e ) {}
+  } );
+}() );
+</script>
+</body>
+</html>

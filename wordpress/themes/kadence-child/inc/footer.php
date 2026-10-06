@@ -465,6 +465,50 @@ function sm_render_footer() {
 				</div>
 			<?php endif; ?>
 
+			<?php /* ---------- نوارِ دسته‌بندیِ مقالات ---------- */ ?>
+			<?php $topics = isset( $c['topics'] ) ? $c['topics'] : array(); ?>
+			<?php if ( ! empty( $topics['enabled'] ) ) : ?>
+				<?php
+				/*
+				 * دسته‌ها از خودِ وردپرس خوانده می‌شوند. hide_empty یعنی
+				 * دسته‌ای که هنوز مقاله‌ای ندارد نمایش داده نشود — لینکِ
+				 * به صفحه‌ی خالی، هم برای کاربر بد است هم برای گوگل.
+				 */
+				$cats = get_categories(
+					array(
+						'hide_empty' => true,
+						'number'     => max( 1, (int) ( $topics['limit'] ?? 8 ) ),
+						'orderby'    => 'count',
+						'order'      => 'DESC',
+					)
+				);
+				?>
+				<nav class="sm-foot__topics" aria-label="<?php echo esc_attr( $topics['title'] ); ?>">
+					<h2 class="sm-foot__topics-title"><?php echo esc_html( $topics['title'] ); ?></h2>
+
+					<ul class="sm-foot__topics-list">
+						<li>
+							<a class="sm-foot__topic sm-foot__topic--all" href="<?php echo esc_url( home_url( $topics['url'] ) ); ?>">
+								<?php echo esc_html( $topics['all'] ); ?>
+							</a>
+						</li>
+
+						<?php if ( empty( $cats ) ) : ?>
+							<li><span class="sm-foot__topic is-empty"><?php echo esc_html( $topics['empty'] ); ?></span></li>
+						<?php else : ?>
+							<?php foreach ( $cats as $cat ) : ?>
+								<li>
+									<a class="sm-foot__topic" href="<?php echo esc_url( get_category_link( $cat->term_id ) ); ?>">
+										<?php echo esc_html( $cat->name ); ?>
+										<span class="sm-foot__topic-n"><?php echo esc_html( sm_fa_digits( (int) $cat->count ) ); ?></span>
+									</a>
+								</li>
+							<?php endforeach; ?>
+						<?php endif; ?>
+					</ul>
+				</nav>
+			<?php endif; ?>
+
 			<?php /* ---------- سلب مسئولیت و کپی‌رایت ---------- */ ?>
 			<div class="sm-foot__bottom">
 				<?php if ( ! empty( $c['bottom']['disclaimer'] ) ) : ?>

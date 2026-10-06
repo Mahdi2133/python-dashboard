@@ -30,22 +30,49 @@
 			return;
 		}
 
-		var nav      = form.querySelector( '.sm-steps' );
-		var items    = nav ? Array.prototype.slice.call( nav.querySelectorAll( '.sm-steps__item' ) ) : [];
-		var btnNext  = form.querySelector( '.sm-form__next' );
-		var btnPrev  = form.querySelector( '.sm-form__prev' );
-		var btnSend  = form.querySelector( '.sm-form__submit' );
-		var consent  = form.querySelector( '.sm-field--consent' );
-		var current  = 0;
+		var nav     = form.querySelector( '.sm-steps' );
+		var items   = nav ? Array.prototype.slice.call( nav.querySelectorAll( '.sm-steps__item' ) ) : [];
+		var btnOld  = form.querySelector( '.sm-form__next' );
+		var btnPrev = form.querySelector( '.sm-form__prev' );
+		var btnMain = form.querySelector( '.sm-form__submit' );
+		var consent = form.querySelector( '.sm-field--consent' );
+		var box     = consent ? consent.querySelector( 'input[type="checkbox"]' ) : null;
+		var current = 0;
+
+		var LAST = steps.length - 1;
+		var TXT_NEXT = form.getAttribute( 'data-next-label' ) || 'مرحله بعد';
+		var TXT_SEND = form.getAttribute( 'data-send-label' ) || ( btnMain ? btnMain.textContent : 'ارسال' );
+		var TXT_TICK = form.getAttribute( 'data-consent-msg' ) || 'برای ارسال، لطفاً این مورد را تأیید کنید.';
+
+		// دکمه‌ی «مرحله بعد»ِ قدیمی اگر هنوز در صفحه باشد، برداشته می‌شود.
+		if ( btnOld ) { btnOld.parentNode.removeChild( btnOld ); }
 
 		if ( nav ) {
 			nav.hidden = false;
 			nav.removeAttribute( 'aria-hidden' );
 		}
 
-		function show( i ) {
+		/* پیامِ خطای رضایت — یک بار ساخته می‌شود و کنارِ خودِ تیک می‌نشیند. */
+		var tickMsg = null;
 
-			current = Math.max( 0, Math.min( i, steps.length - 1 ) );
+		function sayTick( on ) {
+			if ( ! consent ) { return; }
+
+			if ( ! tickMsg ) {
+				tickMsg = document.createElement( 'p' );
+				tickMsg.className = 'sm-form__tickmsg';
+				tickMsg.setAttribute( 'role', 'alert' );
+				tickMsg.textContent = TXT_TICK;
+				consent.appendChild( tickMsg );
+			}
+
+			tickMsg.hidden = ! on;
+			consent.classList.toggle( 'is-missing', !! on );
+		}
+
+		function show( i, quiet ) {
+
+			current = Math.max( 0, Math.min( i, LAST ) );
 
 			steps.forEach( function ( s, n ) {
 				s.hidden = n !== current;
@@ -56,49 +83,100 @@
 				li.classList.toggle( 'is-done', n < current );
 			} );
 
-			var last = current === steps.length - 1;
+			var last = current === LAST;
 
 			if ( btnPrev ) { btnPrev.hidden = current === 0; }
-			if ( btnNext ) { btnNext.hidden = last; }
-			if ( btnSend ) { btnSend.hidden = ! last; }
 			if ( consent ) { consent.hidden = ! last; }
+
+			/*
+			 * همان یک دکمه، با برچسبِ کارِ همان گام. در گامِ آخر هم
+			 * ظاهرش فرق می‌کند تا معلوم باشد این «ارسال» است نه «بعدی».
+			 */
+			if ( btnMain ) {
+				btnMain.textContent = last ? TXT_SEND : TXT_NEXT;
+				btnMain.classList.toggle( 'sm-form__submit--send', last );
+			}
+
+			if ( ! last ) { sayTick( false ); }
 
 			// اولین فیلد گام تازه را در دید کاربر بیاور
 			var head = steps[ current ].querySelector( '.sm-fieldset__legend' );
-			if ( head && form.dataset.smStarted ) {
+			if ( head && form.dataset.smStarted && ! quiet ) {
 				head.scrollIntoView( { behavior: 'smooth', block: 'center' } );
 			}
 			form.dataset.smStarted = '1';
 		}
 
 		/**
-		 * فقط فیلدهای گام جاری را اعتبارسنجی می‌کند.
-		 * checkValidity روی کل فرم، فیلدهای پنهانِ گام‌های بعدی را هم
-		 * می‌بیند و پیام خطا روی چیزی می‌گذارد که کاربر اصلاً نمی‌بیند.
+		 * فیلدهای یک گام را اعتبارسنجی می‌کند.
+		 *
+		 * چرا گام‌به‌گام و نه کلِ فرم: checkValidity روی کل فرم،
+		 * فیلدهای پنهانِ گام‌های دیگر را هم می‌بیند و مرورگر پیام خطا
+		 * را روی چیزی می‌گذارد که کاربر اصلاً نمی‌بیند — یعنی یک
+		 * خطای نامرئی که هیچ‌وقت رفع نمی‌شود.
 		 */
-		function stepValid() {
+		function validStep( n, focus ) {
 
-			var fields = steps[ current ].querySelectorAll( 'input, select, textarea' );
+			var fields = steps[ n ].querySelectorAll( 'input, select, textarea' );
 			var ok     = true;
 
 			Array.prototype.forEach.call( fields, function ( el ) {
-				if ( ! el.checkValidity() ) {
-					if ( ok ) { el.reportValidity(); }
-					ok = false;
-				}
+				if ( el.checkValidity() ) { return; }
+				if ( ok && focus ) { el.reportValidity(); }
+				ok = false;
 			} );
 
 			return ok;
 		}
 
-		if ( btnNext ) {
-			btnNext.addEventListener( 'click', function () {
-				if ( stepValid() ) { show( current + 1 ); }
-			} );
+		/**
+		 * پیش از ارسالِ واقعی: همه‌ی گام‌ها، بعد تیکِ رضایت.
+		 * اگر گامی ایراد داشت، همان گام باز می‌شود — نه اینکه فرم
+		 * بی‌صدا برود و سرور ردش کند و کاربر به گامِ یک پرت شود.
+		 */
+		function readyToSend() {
+
+			for ( var n = 0; n <= LAST; n++ ) {
+				if ( validStep( n, false ) ) { continue; }
+				show( n );
+				validStep( n, true );
+				return false;
+			}
+
+			if ( box && ! box.checked ) {
+				sayTick( true );
+				box.focus();
+				consent.scrollIntoView( { behavior: 'smooth', block: 'center' } );
+				return false;
+			}
+
+			sayTick( false );
+			return true;
 		}
+
+		/*
+		 * تنها نقطه‌ی تصمیم. دکمه از نوعِ submit است، پس چه با موس
+		 * زده شود چه با Enter، از همین‌جا رد می‌شود.
+		 */
+		form.addEventListener( 'submit', function ( e ) {
+
+			if ( current < LAST ) {
+				e.preventDefault();
+				if ( validStep( current, true ) ) { show( current + 1 ); }
+				return;
+			}
+
+			if ( ! readyToSend() ) { e.preventDefault(); }
+		} );
 
 		if ( btnPrev ) {
 			btnPrev.addEventListener( 'click', function () { show( current - 1 ); } );
+		}
+
+		if ( box ) {
+			box.addEventListener( 'change', function () {
+				if ( box.checked ) { sayTick( false ); }
+			} );
 		}
 
 		items.forEach( function ( li, n ) {
@@ -107,7 +185,12 @@
 			} );
 		} );
 
-		show( 0 );
+		/*
+		 * اگر سرور فرم را رد کرده باشد (sm=err)، از گامِ آخر شروع
+		 * می‌کنیم. کاربر همان‌جا بود؛ پرت کردنش به گامِ یک یعنی از
+		 * نو شروع کند.
+		 */
+		show( form.hasAttribute( 'data-open-last' ) ? LAST : 0, true );
 	}
 
 

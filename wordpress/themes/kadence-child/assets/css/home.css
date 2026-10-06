@@ -1058,112 +1058,281 @@
   background: var(--sm-gold-500);
 }
 
-/* ---------- ۴ سه فاز ---------- */
+/* ---------- ۴ پروتکل ۱۰۰ روزه ----------
+   جای دو سکشنِ قبلی («سه فاز» و «برنامه ۱۰۰ روزه») را گرفته است.
 
-.sm-protocol { background: var(--sm-surface); }
+   سه چیز با هم این بخش را می‌سازند:
 
-.sm-phases {
-  list-style: none; margin: 0; padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-  gap: var(--sm-gap);
-  counter-reset: phase;
-}
+     ۱) نوارِ پیوسته‌ی روز ۰ تا ۱۰۰، با سه قطعه و سه پینِ گیت
+     ۲) سه کارتِ فاز، با خطوطِ اتصالِ نوری بینشان
+     ۳) باکسِ برجسته و دو دکمه
 
-.sm-phase {
+   محلِ هر قطعه و هر پین روی نوار از --sm-from / --sm-to / --sm-at
+   می‌آید که PHP از روی روزِ شروع و پایانِ فاز حساب می‌کند. هیچ عددی
+   در این فایل دستی نوشته نشده، پس اگر مرزِ فازها عوض شود، نوار هم
+   خودش جابه‌جا می‌شود. */
+
+.sm-roadmap {
   position: relative;
-  background: var(--sm-paper);
-  border: 1px solid var(--sm-rule);
-  border-radius: var(--sm-radius-lg);
-  padding: 2.1rem 1.4rem 1.5rem;
-  text-align: center;
-  transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
-}
-.sm-phase:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--sm-shadow);
-  border-color: var(--sm-gold-300);
+  isolation: isolate;
+  background:
+    radial-gradient(70% 90% at 50% 0%, rgba(168, 132, 60, .07) 0%, transparent 60%),
+    var(--sm-paper);
 }
 
-.sm-phase__num {
-  position: absolute;
-  top: -1.05rem;
-  inset-inline-start: 50%;
-  transform: translateX(-50%);
-  width: 2.1rem; height: 2.1rem;
-  display: grid; place-items: center;
-  border-radius: 50%;
-  background: var(--sm-navy-800);
-  color: #fff;
-  font-size: .9rem;
-  font-weight: 700;
+.sm-roadmap .sm-eyebrow { unicode-bidi: embed; }
+
+
+/* ---------- نوارِ روز ۰ تا ۱۰۰ ---------- */
+
+.sm-roadmap__axis {
+  display: flex;
+  align-items: center;
+  gap: .9rem;
+  margin: clamp(1.75rem, 1.2rem + 2vw, 3rem) 0 clamp(1.5rem, 1rem + 2vw, 2.5rem);
 }
 
-.sm-phase__en {
-  display: block;
+.sm-roadmap__cap {
+  flex: 0 0 auto;
   font-size: .78rem;
-  font-weight: 500;
-  color: var(--sm-gold-700);
-  direction: ltr;
-  margin-bottom: .2rem;
-}
-
-.sm-phase__fa {
-  margin: 0 0 .5rem;
-  font-size: 1.2rem;
   font-weight: 700;
-  color: var(--sm-navy-800);
-}
-
-.sm-phase__text {
-  margin: 0;
-  font-size: .92rem;
+  font-variant-numeric: tabular-nums;
   color: var(--sm-text-muted);
-  line-height: 2;
+  white-space: nowrap;
 }
 
-/* ---------- ۵ برنامه ۱۰۰ روزه ---------- */
+.sm-roadmap__bar {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--sm-paper-alt);
+  box-shadow: inset 0 0 0 1px var(--sm-rule);
+}
 
-.sm-weeks { background: var(--sm-paper-alt); }
+/*
+ * هر قطعه از --sm-from تا --sm-to کشیده می‌شود. در RTL، inset-inline
+ * خودش راست و چپ را جابه‌جا می‌کند، پس «روز ۰» سمت راست می‌افتد —
+ * همان‌جا که خواننده‌ی فارسی شروع می‌کند.
+ */
+.sm-roadmap__seg {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: var(--sm-from, 0%);
+  inline-size: calc(var(--sm-to, 0%) - var(--sm-from, 0%));
+  border-radius: 999px;
+}
 
-.sm-weeks__track {
-  list-style: none; margin: 0; padding: 0;
+.sm-roadmap__seg--1 { background: linear-gradient(90deg, var(--sm-navy-400), var(--sm-navy-600)); }
+.sm-roadmap__seg--2 { background: linear-gradient(90deg, var(--sm-gold-400), var(--sm-gold-500)); }
+.sm-roadmap__seg--3 { background: linear-gradient(90deg, var(--sm-leaf-500), var(--sm-leaf-600)); }
+
+/* پینِ انتهای هر فاز = همان گیتِ ارزیابی */
+.sm-roadmap__pin {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: var(--sm-at, 0%);
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-  gap: var(--sm-gap);
+  place-items: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  margin-block-start: -.725rem;
+  margin-inline-start: -.725rem;
+  border-radius: 50%;
+  background: var(--sm-surface);
+  border: 2px solid var(--sm-gold-500);
+  box-shadow: 0 2px 6px rgba(12, 36, 60, .18);
 }
 
-.sm-week {
+.sm-roadmap__pin-n {
+  font-size: .66rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--sm-gold-700);
+}
+
+
+/* ---------- سه کارتِ فاز ---------- */
+
+.sm-roadmap__track {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: sm-rphase;
+}
+
+@media (min-width: 56rem) {
+  .sm-roadmap__track { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.sm-rphase {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem 1.4rem 1.4rem;
   background: var(--sm-surface);
   border: 1px solid var(--sm-rule);
   border-radius: var(--sm-radius-lg);
-  padding: 1.5rem 1.35rem;
-  border-top: 3px solid var(--sm-gold-500);
+  box-shadow: var(--sm-shadow-sm);
+  transition: transform .28s cubic-bezier(.2, .7, .3, 1), box-shadow .28s ease, border-color .28s ease;
 }
 
-.sm-week__range {
-  display: inline-block;
-  font-size: .8rem;
-  font-weight: 500;
-  color: var(--sm-gold-700);
-  background: var(--sm-gold-50);
-  border-radius: 100px;
-  padding: .15rem .7rem;
-  margin-bottom: .7rem;
+.sm-rphase:hover {
+  transform: translateY(-4px);
+  border-color: var(--sm-gold-300);
+  box-shadow: var(--sm-shadow);
 }
 
-.sm-week__title {
-  margin: 0 0 .4rem;
-  font-size: 1.1rem;
+/*
+ * خطِ اتصالِ بین کارت‌ها. فقط در دسکتاپ و فقط بین کارت‌ها، نه بعد
+ * از آخری. در موبایل که کارت‌ها زیرِ هم‌اند، خط عمودی می‌شود.
+ */
+@media (min-width: 56rem) {
+  .sm-rphase:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    inset-block-start: 2.1rem;
+    inset-inline-start: 100%;
+    width: 1.1rem;
+    height: 1px;
+    background: linear-gradient(90deg, var(--sm-gold-400), transparent);
+  }
+}
+
+.sm-rphase__tag {
+  margin: 0 0 .9rem;
+  padding: .35rem .75rem;
+  align-self: flex-start;
+  border-radius: 999px;
+  background: var(--sm-navy-50);
+  border: 1px solid var(--sm-navy-100);
+  font-size: .74rem;
   font-weight: 700;
+  line-height: 1.6;
+  color: var(--sm-navy-700);
+}
+
+.sm-rphase--final .sm-rphase__tag {
+  background: var(--sm-leaf-50);
+  border-color: var(--sm-leaf-200);
+  color: var(--sm-leaf-800);
+}
+
+.sm-rphase__en {
+  margin: 0 0 .25rem;
+  font-size: .74rem;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--sm-gold-600);
+  unicode-bidi: embed;
+}
+
+.sm-rphase__fa {
+  margin: 0 0 1.1rem;
+  font-size: 1.08rem;
+  font-weight: 800;
+  line-height: 1.75;
   color: var(--sm-navy-800);
 }
 
-.sm-week__text {
-  margin: 0;
-  font-size: .93rem;
+.sm-rphase__lbl {
+  margin: 0 0 .5rem;
+  font-size: .74rem;
+  font-weight: 700;
+  letter-spacing: .02em;
   color: var(--sm-text-muted);
-  line-height: 2;
+}
+
+.sm-rphase__focus {
+  margin: 0 0 1.2rem;
+  font-size: .9rem;
+  line-height: 1.95;
+}
+
+/* گیتِ ارزیابی، ته هر کارت */
+
+.sm-rgate {
+  display: flex;
+  align-items: flex-start;
+  gap: .7rem;
+  margin-block-start: auto;
+  padding: .85rem .9rem;
+  border-radius: var(--sm-radius);
+  background: var(--sm-gold-50);
+  border: 1px dashed var(--sm-gold-200);
+}
+
+.sm-rphase--final .sm-rgate {
+  background: var(--sm-leaf-50);
+  border-style: solid;
+  border-color: var(--sm-leaf-200);
+}
+
+.sm-rgate__badge {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  background: var(--sm-gold-500);
+  color: #fff;
+  font-size: .76rem;
+  font-weight: 800;
+}
+
+.sm-rphase--final .sm-rgate__badge { background: var(--sm-leaf-600); }
+
+.sm-rgate__body { display: block; }
+
+.sm-rgate__day {
+  display: block;
+  font-size: .78rem;
+  font-weight: 800;
+  color: var(--sm-gold-800);
+}
+
+.sm-rphase--final .sm-rgate__day { color: var(--sm-leaf-800); }
+
+.sm-rgate__text {
+  display: block;
+  margin-block-start: .2rem;
+  font-size: .82rem;
+  line-height: 1.85;
+  color: var(--sm-text-soft);
+}
+
+
+/* ---------- باکسِ برجسته و دکمه‌ها ---------- */
+
+.sm-roadmap__highlight {
+  margin: clamp(1.5rem, 1rem + 2vw, 2.5rem) 0 0;
+  padding: 1.1rem 1.35rem;
+  border-radius: var(--sm-radius-lg);
+  background: linear-gradient(145deg, var(--sm-navy-900), var(--sm-navy-700));
+  border-inline-start: 3px solid var(--sm-gold-500);
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 2.05;
+  color: var(--sm-gold-100);
+  text-align: center;
+}
+
+.sm-roadmap__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: .75rem;
+  margin: 1.5rem 0 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sm-rphase { transition: none; }
+  .sm-rphase:hover { transform: none; }
 }
 
 /* ---------- ۶ نقل‌قول‌ها ---------- */
@@ -1350,6 +1519,79 @@
   color: var(--sm-navy-200);
 }
 
+/* ---------- بج، جایگاه و پیامِ متابولیک ----------
+   بج بالای کارت می‌نشیند و قوی‌ترین سیگنالِ اعتبار است (نوبل، WHO،
+   هاروارد، طلای المپیک). نشانِ کنارش SVG است نه ایموجی، چون ایموجی
+   روی هر سیستم‌عامل یک شکل دارد و رنگش هم دستِ ما نیست. */
+
+.sm-hcard__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  margin-block-end: .5rem;
+  padding: .3rem .7rem;
+  border-radius: 999px;
+  border: 1px solid var(--sm-gold-400);
+  background: rgba(168, 132, 60, .18);
+  font-size: .72rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--sm-gold-200);
+}
+
+.sm-hcard__badge .sm-mark { flex: 0 0 auto; }
+
+/* نوبل و طلای المپیک پررنگ‌تر از بقیه — همان «سیگنالِ نفوذناپذیر». */
+.sm-hcard__badge--nobel,
+.sm-hcard__badge--gold {
+  background: linear-gradient(135deg, var(--sm-gold-600), var(--sm-gold-500));
+  border-color: transparent;
+  color: #fff;
+}
+
+.sm-hcard__en {
+  font-size: .76rem;
+  letter-spacing: .01em;
+  color: var(--sm-navy-200);
+  unicode-bidi: embed;
+}
+
+.sm-hcard__place {
+  font-size: .83rem;
+  line-height: 1.9;
+  color: var(--sm-navy-100);
+}
+
+/*
+ * پیامِ متابولیک. با یک خطِ جداکننده از جایگاه فاصله می‌گیرد تا
+ * معلوم باشد این «حرفِ ما درباره‌ی اوست»، نه عنوانِ رسمیِ خودش.
+ */
+.sm-hcard__pitch {
+  margin-block-start: .65rem;
+  padding-block-start: .65rem;
+  border-block-start: 1px solid rgba(255, 255, 255, .12);
+  font-size: .8rem;
+  line-height: 1.95;
+  color: var(--sm-navy-200);
+}
+
+/* کارت‌ها به‌ترتیب و با فاصله‌ی کوچکِ زمانی می‌آیند */
+.sm-js .sm-hcouncil .sm-reveal { transition-delay: calc(var(--sm-i, 0) * 80ms); }
+
 .sm-hcouncil__more { margin: clamp(2rem, 1.6rem + 2vw, 3rem) 0 0; text-align: center; }
+
+/* دکمه‌ی «مشاهده اعضای کامل» روی زمینه‌ی سرمه‌ای است، پس outline
+   باید روشن باشد نه سرمه‌ای. */
+.sm-hcouncil .sm-btn--outline {
+  color: var(--sm-gold-200);
+  border-color: var(--sm-gold-400);
+}
+
+.sm-hcouncil .sm-btn--outline:hover,
+.sm-hcouncil .sm-btn--outline:focus {
+  background: var(--sm-gold-500);
+  border-color: var(--sm-gold-500);
+  color: #fff;
+}
 
 .sm-media__more { margin: 1.75rem 0 0; text-align: center; }

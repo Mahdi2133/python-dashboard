@@ -1059,3 +1059,30 @@
   line-height: 1.95;
   color: var(--sm-leaf-800);
 }
+
+
+/* ---------- فرمِ چندمرحله‌ای: دکمه‌ی اصلی و تیکِ رضایت ---------- */
+
+/*
+ * در گامِ آخر همان یک دکمه کمی پررنگ‌تر می‌شود تا معلوم باشد این بار
+ * «ارسال» است نه «بعدی». رنگ عوض نمی‌شود؛ فقط وزن و سایه.
+ */
+.sm-form__submit--send {
+  padding-inline: 2rem;
+  box-shadow: 0 6px 18px rgba(168, 132, 60, .32);
+}
+
+/* تیکِ رضایت وقتی زده نشده و کاربر ارسال زده */
+.sm-field--consent.is-missing {
+  border-radius: var(--sm-radius);
+  outline: 2px solid #C0705F;
+  outline-offset: 4px;
+}
+
+.sm-form__tickmsg {
+  margin: .55rem 0 0;
+  font-size: .86rem;
+  font-weight: 600;
+  line-height: 1.8;
+  color: #8C2A1F;
+}

@@ -74,7 +74,20 @@ get_header();
 					<p class="sm-formerror" role="alert"><?php echo esc_html( $c['error_text'] ); ?></p>
 				<?php endif; ?>
 
-				<form class="sm-form" method="post" action="<?php echo esc_url( home_url( add_query_arg( array() ) ) ); ?>" novalidate>
+				<?php
+				/*
+				 * dataها را به جاوااسکریپت می‌دهیم تا برچسبِ تنها دکمه‌ی
+				 * اصلی در هر گام عوض شود، و اگر سرور فرم را رد کرد،
+				 * کاربر به همان گامِ آخر برگردد نه به گامِ یک.
+				 */
+				?>
+				<form class="sm-form" method="post"
+					action="<?php echo esc_url( home_url( add_query_arg( array() ) ) ); ?>"
+					data-next-label="<?php echo esc_attr( $c['next'] ); ?>"
+					data-send-label="<?php echo esc_attr( $c['submit'] ); ?>"
+					data-consent-msg="<?php echo esc_attr( $c['consent_msg'] ?? 'برای ارسال، لطفاً این مورد را تأیید کنید.' ); ?>"
+					<?php echo $error ? ' data-open-last="1"' : ''; ?>
+					novalidate>
 
 					<input type="hidden" name="sm_lead_form" value="1">
 					<input type="hidden" name="sm_t" value="<?php echo esc_attr( time() ); ?>">
@@ -115,9 +128,25 @@ get_header();
 						</label>
 					</div>
 
+					<?php
+					/*
+					 * ⚠️ چرا فقط یک دکمه‌ی اصلی:
+					 *
+					 * قبلاً در گامِ سوم دو دکمه بود — «مرحله بعد» که پنهان
+					 * می‌شد و «ارسال درخواست…» که ظاهر می‌شد. کاربر دنبالِ
+					 * همان دکمه‌ای می‌گشت که دو بار قبل زده بود و متوجه
+					 * نمی‌شد دکمه عوض شده.
+					 *
+					 * حالا یک دکمه بیشتر نیست: در گام‌های ۱ و ۲ «مرحله بعد»
+					 * می‌نویسد و جلو می‌برد، در گامِ آخر «ارسال درخواست
+					 * ارزیابی اولیه» می‌نویسد و واقعاً ارسال می‌کند.
+					 *
+					 * بدونِ جاوااسکریپت هم همین دکمه یک submit واقعی است و
+					 * فرمِ یک‌صفحه‌ای را می‌فرستد.
+					 */
+					?>
 					<div class="sm-form__actions">
 						<button type="button" class="sm-btn sm-btn--ghost sm-form__prev" hidden><?php echo esc_html( $c['prev'] ); ?></button>
-						<button type="button" class="sm-btn sm-btn--gold sm-form__next" hidden><?php echo esc_html( $c['next'] ); ?></button>
 						<button type="submit" class="sm-btn sm-btn--gold sm-form__submit"><?php echo esc_html( $c['submit'] ); ?></button>
 					</div>
 
