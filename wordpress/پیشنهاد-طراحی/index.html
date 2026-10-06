@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>آکادمی تندرستی سعادت‌مهر</title>
+<meta name="description" content="پروتکل ۱۰۰ روزه SMP برای مدیرانی که بدنشان سخت‌افزار اصلی کارشان است. ارزیابی فردی، پایش آزمایشگاهی، بازطراحی متابولیسم.">
+<meta name="robots" content="noindex">
+
+<style>
+/* ===========================================================================
+   آکادمی تندرستی سعادت‌مهر — پیشنهاد بازطراحی صفحه‌ی اصلی
+   ---------------------------------------------------------------------------
+   حالت: بازطراحیِ زبانِ بصری، با حفظِ کاملِ برند.
+     نگه داشته شد : رنگ‌های سرمه‌ای و طلایی، فونت وزیرمتن، لوگو، عکس‌های واقعی،
+                    نشانی صفحه‌ها، لحنِ متن.
+     عوض شد      : چیدمان، ریتم تایپوگرافی، لایه‌ی حرکت، ساختار هیرو و تایم‌لاین.
+
+   پایه: CSS بومی. نه تیلویند، نه کتابخانه‌ی انیمیشن.
+   دلیلش این است که مقصدِ نهایی یک قالبِ فرزندِ وردپرس است که تمامش
+   CSS دست‌نویس است؛ افزودنِ یک بیلد-استپ فقط برای این صفحه، بدهیِ
+   بی‌دلیل می‌ساخت.
+   =========================================================================== */
+
+@font-face { font-family: Vazirmatn; src: url(../themes/kadence-child/assets/fonts/Vazirmatn-Regular.woff2) format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: Vazirmatn; src: url(../themes/kadence-child/assets/fonts/Vazirmatn-Medium.woff2)  format('woff2'); font-weight: 500; font-display: swap; }
+@font-face { font-family: Vazirmatn; src: url(../themes/kadence-child/assets/fonts/Vazirmatn-Bold.woff2)    format('woff2'); font-weight: 700; font-display: swap; }
+@font-face { font-family: Vazirmatn; src: url(../themes/kadence-child/assets/fonts/Vazirmatn-Black.woff2)   format('woff2'); font-weight: 900; font-display: swap; }
+
+/* ---------- توکن‌ها ----------
+   رنگ‌ها عیناً از همان پالتِ برند آمده‌اند. یک رنگِ تأکیدی و بس:
+   طلایی. هیچ رنگِ تازه‌ای وارد نشده. */
+
+:root {
+  color-scheme: light;
+
+  --navy-950:#050F1A; --navy-900:#071A2B; --navy-800:#0C243C;
+  --navy-700:#12314F; --navy-600:#1B3A5C; --navy-400:#5E7B9B;
+  --navy-200:#B9C8D8; --navy-100:#DCE5EE; --navy-50:#EFF3F8;
+
+  --gold-700:#7A5C21; --gold-600:#8F6E2C; --gold-500:#A8843C;
+  --gold-400:#C6A05A; --gold-300:#DCC189; --gold-200:#E9D6AA;
+  --gold-100:#F2E7CE; --gold-50:#FAF4E7;
+
+  --paper:#F7F4ED;  --paper-2:#EFEAE0;  --surface:#FFFFFF;
+  --rule:#DFD8C9;
+  --ink:#10161C;  --ink-2:#3A4752;  --ink-3:#66717B;
+
+  /* یک مقیاس گوشه برای کلِ صفحه: ۲ پیکسل. تیز، نه گِرد، نه قرصی.
+     هر جا گوشه‌ای هست، همین است. */
+  --r:2px;
+
+  --wrap: min(100% - 2.5rem, 1320px);
+  --shell: Vazirmatn, "Segoe UI", Tahoma, system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper:#0A1017;  --paper-2:#0E1620;  --surface:#131D28;
+    --rule:#243341;
+    --ink:#EEF3F8;  --ink-2:#AEBDC9;  --ink-3:#7E8D99;
+    --navy-50:#141F2B;  --navy-100:#1B2937;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper:#0A1017;  --paper-2:#0E1620;  --surface:#131D28;
+  --rule:#243341;
+  --ink:#EEF3F8;  --ink-2:#AEBDC9;  --ink-3:#7E8D99;
+  --navy-50:#141F2B;  --navy-100:#1B2937;
+}
+
+*,*::before,*::after { box-sizing:border-box; }
+
+body {
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--shell);
+  font-size:16px;
+  line-height:1.95;
+  -webkit-font-smoothing:antialiased;
+}
+
+h1,h2,h3 { margin:0; line-height:1.3; font-weight:900; letter-spacing:-.015em; }
+p { margin:0; }
+img { display:block; max-width:100%; height:auto; }
+/* height:auto اجباری است: صفت‌های width/height روی <img> ارتفاع را قطعی
+   می‌کنند و aspect-ratio را بی‌اثر می‌گذارند. بدون این خط، عکسِ ۳×۴
+   به اندازه‌ی ارتفاعِ ذاتی‌اش کشیده می‌شود. */
+a { color:inherit; }
+
+.wrap { width:var(--wrap); margin-inline:auto; }
+
+/* ---------- ناوبری: یک خط، ۶۴ پیکسل ---------- */
+
+.nav {
+  position:sticky; top:0; z-index:40;
+  height:64px;
+  display:flex; align-items:center; gap:1.5rem;
+  background:color-mix(in srgb, var(--paper) 86%, transparent);
+  backdrop-filter:blur(14px) saturate(140%);
+  border-block-end:1px solid var(--rule);
+}
+.nav__in { display:flex; align-items:center; gap:1.75rem; width:var(--wrap); margin-inline:auto; }
+.nav__logo { height:34px; width:auto; }
+.nav__links { display:none; gap:1.5rem; margin-inline-start:auto; font-size:.88rem; font-weight:500; }
+.nav__links a { text-decoration:none; color:var(--ink-2); transition:color .2s; }
+.nav__links a:hover { color:var(--gold-600); }
+@media (min-width:1024px){ .nav__links{ display:flex; } }
+
+/* ---------- دکمه‌ها ----------
+   یک مقیاس، یک رنگ تأکیدی. کنتراست هر دو حالت آزموده شده. */
+
+.btn {
+  display:inline-flex; align-items:center; justify-content:center; gap:.5rem;
+  padding:.85rem 1.6rem;
+  border-radius:var(--r);
+  font:inherit; font-weight:700; font-size:.95rem;
+  white-space:nowrap;
+  text-decoration:none;
+  border:1px solid transparent;
+  cursor:pointer;
+  transition:transform .18s cubic-bezier(.2,.7,.3,1), background .2s, border-color .2s;
+}
+.btn:active { transform:translateY(1px) scale(.99); }
+
+.btn--gold  { background:var(--gold-500); color:#160F03; }
+.btn--gold:hover  { background:var(--gold-400); }
+
+.btn--line  { background:transparent; color:var(--ink); border-color:var(--ink-3); }
+.btn--line:hover  { border-color:var(--ink); }
+
+.btn--onDark { background:transparent; color:#fff; border-color:rgba(255,255,255,.5); }
+.btn--onDark:hover { border-color:#fff; background:rgba(255,255,255,.08); }
+
+.nav .btn { padding:.55rem 1.1rem; font-size:.85rem; }
+
+/* ===========================================================================
+   ۱ — هیرو: اسپلیتِ نامتقارن
+   ---------------------------------------------------------------------------
+   ستونِ متن باریک‌تر از ستونِ عکس است (۴۷/۵۳) و عکس از لبه‌ی صفحه
+   بیرون می‌زند. تقارنِ ۵۰/۵۰ عمداً شکسته شده.
+   =========================================================================== */
+
+.hero {
+  position:relative;
+  background:var(--navy-900);
+  color:#fff;
+  overflow:hidden;
+}
+.hero__grid {
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  min-height:auto;
+}
+.hero__text {
+  padding-block:clamp(2.5rem,2rem + 3vw,4rem) clamp(2.5rem,2rem + 3vw,4rem);
+  padding-inline:0;
+  align-self:center;
+}
+.hero__eyebrow {
+  font-size:.74rem; font-weight:700; letter-spacing:.2em;
+  color:var(--gold-300);
+  margin-block-end:1.1rem;
+}
+.hero__h1 {
+  font-size:clamp(2.1rem,1.5rem + 2.9vw,3.9rem);
+  line-height:1.22;
+  color:#fff;
+}
+.hero__h1 b { color:var(--gold-300); font-weight:900; }
+.hero__sub {
+  margin-block-start:1.35rem;
+  max-width:40ch;
+  font-size:clamp(1rem,.95rem + .25vw,1.12rem);
+  line-height:1.95;
+  color:var(--navy-200);
+}
+.hero__cta { display:flex; flex-wrap:wrap; gap:.75rem; margin-block-start:2rem; }
+
+.hero__media { position:relative; }
+.hero__media img {
+  width:100%; height:100%; object-fit:cover;
+  aspect-ratio:16/11;
+}
+/* پرده‌ی تیره تا متن روی عکس خوانده شود و هر دو حالت یک ظاهر بدهند */
+.hero__media::after {
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(to left, transparent 35%, var(--navy-900) 96%);
+}
+
+@media (min-width:980px){
+  .hero__grid {
+    grid-template-columns:minmax(0,47fr) minmax(0,53fr);
+    align-items:stretch;
+    min-height:min(82vh,760px);
+  }
+  .hero__text { padding-block:clamp(3rem,2rem + 4vw,5.5rem); padding-inline-end:3.5rem; }
+  .hero__media img { height:100%; aspect-ratio:auto; }
+  .hero__media::after { background:linear-gradient(to left, transparent 42%, var(--navy-900) 99%); }
+}
+
+/* ===========================================================================
+   ۲ — نوار اعتبار: چهره‌های واقعی، زیرِ هیرو
+   ---------------------------------------------------------------------------
+   طبق قاعده‌ی «دیوارِ اعتبار زیرِ هیرو می‌نشیند، نه داخلش».
+   عکس‌ها واقعی‌اند و از همان پوشه‌ی سایت آمده‌اند.
+   =========================================================================== */
+
+.proof {
+  background:var(--navy-800);
+  color:#fff;
+  padding-block:1.6rem;
+  border-block-start:1px solid rgba(220,193,137,.18);
+}
+.proof__in { display:flex; flex-wrap:wrap; align-items:center; gap:1rem 2.25rem; }
+.proof__label {
+  font-size:.78rem; font-weight:700; color:var(--gold-300);
+  flex:0 0 auto;
+}
+.proof__list { display:flex; flex-wrap:wrap; gap:1.1rem 1.75rem; margin:0; padding:0; list-style:none; }
+.proof__item { display:flex; align-items:center; gap:.6rem; }
+.proof__item img {
+  width:38px; height:38px; border-radius:50%; object-fit:cover;
+  border:1px solid rgba(220,193,137,.45);
+}
+.proof__who { font-size:.8rem; line-height:1.5; }
+.proof__who b { display:block; font-weight:700; color:#fff; }
+.proof__who span { color:var(--navy-200); }
+
+/* ===========================================================================
+   ۳ — بیانیه: تایپوگرافیِ بزرگ، بدون کارت
+   =========================================================================== */
+
+.manifesto { padding-block:clamp(4rem,3rem + 5vw,7rem); background:var(--paper); }
+.manifesto__q {
+  font-size:clamp(1.45rem,1.1rem + 1.9vw,2.6rem);
+  font-weight:700; line-height:1.72;
+  max-width:24ch;
+  color:var(--ink);
+}
+.manifesto__q em { font-style:normal; color:var(--gold-600); }
+.manifesto__body {
+  margin-block-start:1.75rem;
+  max-width:52ch;
+  margin-inline-start:auto;
+  font-size:1.03rem;
+  color:var(--ink-2);
+}
+
+@media (min-width:900px){
+  .manifesto__in { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); gap:clamp(2rem,1rem + 4vw,5rem); align-items:end; }
+  .manifesto__body { margin-block-start:0; }
+}
+
+/* ===========================================================================
+   ۴ — تایم‌لاینِ ۱۰۰ روزه: نوارِ پیوسته‌ی افقی
+   ---------------------------------------------------------------------------
+   امضای بصریِ این صفحه. نوار با اسکرول پر می‌شود، با
+   animation-timeline بومیِ CSS. نه شنونده‌ی اسکرول، نه کتابخانه.
+   =========================================================================== */
+
+.road { padding-block:clamp(4rem,3rem + 5vw,7rem); background:var(--paper-2); }
+.road__head { max-width:46ch; margin-block-end:clamp(2rem,1.5rem + 2vw,3rem); }
+.road__eyebrow { font-size:.74rem; font-weight:700; letter-spacing:.2em; color:var(--gold-600); margin-block-end:.9rem; }
+.road__h2 { font-size:clamp(1.55rem,1.2rem + 1.6vw,2.4rem); }
+.road__lead { margin-block-start:1rem; color:var(--ink-2); max-width:52ch; }
+
+.road__rail { position:relative; height:2px; background:var(--rule); margin-block-end:2.25rem; }
+.road__fill {
+  position:absolute; inset-block:0; inset-inline-start:0;
+  width:100%;
+  transform-origin:100% 50%;   /* RTL: از راست پر می‌شود */
+  transform:scaleX(1);
+  background:linear-gradient(to left, var(--gold-500), var(--gold-300));
+}
+@supports (animation-timeline:view()) {
+  @media (prefers-reduced-motion:no-preference) {
+    .road__fill {
+      transform:scaleX(0);
+      animation:railGrow linear both;
+      animation-timeline:view();
+      animation-range:cover 12% cover 72%;
+    }
+  }
+}
+@keyframes railGrow { from{transform:scaleX(0)} to{transform:scaleX(1)} }
+
+.road__steps { display:grid; gap:1.25rem; grid-template-columns:minmax(0,1fr); margin:0; padding:0; list-style:none; counter-reset:none; }
+@media (min-width:860px){ .road__steps{ grid-template-columns:repeat(3,minmax(0,1fr)); gap:clamp(1.25rem,.5rem + 2vw,2.75rem); } }
+
+.step { position:relative; padding-block-start:1.5rem; }
+.step::before {
+  content:""; position:absolute; inset-block-start:-2.9rem; inset-inline-start:0;
+  width:11px; height:11px; border-radius:50%;
+  background:var(--paper-2); border:2px solid var(--gold-500);
+}
+.step__day { font-size:.78rem; font-weight:700; color:var(--gold-600); letter-spacing:.02em; }
+.step__t { margin-block-start:.45rem; font-size:1.12rem; line-height:1.6; }
+.step__b { margin-block-start:.7rem; color:var(--ink-2); font-size:.95rem; }
+.step__gate {
+  margin-block-start:1.1rem; padding-block-start:.9rem;
+  border-block-start:1px solid var(--rule);
+  font-size:.86rem; color:var(--ink-3);
+}
+.step__gate b { color:var(--ink-2); font-weight:700; }
+
+/* ===========================================================================
+   ۵ — سنجه‌ها: عددِ درشت، بدونِ کارت و بدونِ نوارِ پیشرفت
+   =========================================================================== */
+
+.metrics { padding-block:clamp(4rem,3rem + 5vw,7rem); background:var(--paper); }
+.metrics__in { display:grid; gap:clamp(2rem,1rem + 4vw,4.5rem); grid-template-columns:minmax(0,1fr); align-items:center; }
+/* عکس عمداً ستونِ باریک‌ترِ این بخش است.
+   نسخه‌ی اول ۴:۵ و تقریباً نصفِ عرض بود؛ نتیجه‌اش این شد که ستونِ
+   متن به یک نوارِ باریک تبدیل شد و عددها، که حرفِ اصلیِ این بخش‌اند،
+   له شدند. عکس اینجا پشتیبان است نه موضوع. */
+@media (min-width:900px){ .metrics__in{ grid-template-columns:minmax(0,.72fr) minmax(0,1.28fr); } }
+
+.metrics__fig { position:relative; }
+.metrics__fig img { width:100%; aspect-ratio:3/4; object-fit:cover; object-position:58% center; border-radius:var(--r); }
+
+.metrics__h2 { font-size:clamp(1.55rem,1.2rem + 1.6vw,2.4rem); max-width:26ch; }
+.metrics__note { margin-block-start:1rem; color:var(--ink-2); max-width:48ch; }
+
+.mlist { margin-block-start:2.5rem; display:grid; gap:1.4rem; }
+.m {
+  display:grid;
+  grid-template-columns:minmax(4.5rem,auto) 1fr;
+  gap:.15rem 1.35rem;
+  align-items:baseline;
+  padding-block-end:1.4rem;
+  border-block-end:1px solid var(--rule);
+}
+.m:last-child { border-block-end:0; padding-block-end:0; }
+.m__n {
+  font-size:clamp(2.6rem,2rem + 2.4vw,3.9rem); font-weight:900; line-height:.95;
+  color:var(--gold-600);
+  /* tabular-nums عمداً نیست: رقم‌های جدولیِ وزیرمتن عرضِ ثابت و پهن دارند
+     و «۶۰» را به «۶ ۰» باز می‌کنند. این سه عدد ثابت‌اند و در ستون با هم
+     تراز نمی‌شوند، پس رقمِ تناسبی درست‌تر است. */
+  grid-row:span 2; align-self:center;
+}
+.m__t { font-weight:700; font-size:1.08rem; line-height:1.5; }
+.m__s { font-size:.9rem; color:var(--ink-3); line-height:1.7; }
+
+.metrics__src { margin-block-start:2rem; font-size:.82rem; color:var(--ink-3); max-width:50ch; }
+
+/* ===========================================================================
+   ۶ — مطبوعات: کُلاژِ هم‌پوشان
+   =========================================================================== */
+
+.press { padding-block:clamp(4rem,3rem + 5vw,7rem); background:var(--navy-900); color:#fff; }
+.press__h2 { font-size:clamp(1.55rem,1.2rem + 1.6vw,2.4rem); color:#fff; max-width:22ch; }
+.press__lead { margin-block-start:1rem; color:var(--navy-200); max-width:50ch; }
+
+.clip { display:grid; gap:1rem; grid-template-columns:repeat(2,minmax(0,1fr)); margin-block-start:clamp(2rem,1.5rem + 2vw,3rem); }
+@media (min-width:760px){ .clip{ grid-template-columns:repeat(4,minmax(0,1fr)); align-items:start; } }
+
+.clip figure { margin:0; }
+.clip img {
+  width:100%; aspect-ratio:3/4; object-fit:cover; object-position:top;
+  border-radius:var(--r);
+  filter:saturate(.3) contrast(1.04);
+  transition:filter .35s, transform .35s cubic-bezier(.2,.7,.3,1);
+}
+.clip figure:hover img { filter:none; transform:translateY(-5px); }
+.clip figcaption { margin-block-start:.6rem; font-size:.82rem; color:var(--navy-200); }
+
+/* ستونِ دوم و چهارم کمی پایین‌تر: تقارن شکسته می‌شود */
+@media (min-width:760px){
+  .clip figure:nth-child(2n){ margin-block-start:2.5rem; }
+}
+
+.press__foot { margin-block-start:clamp(2rem,1.5rem + 2vw,3rem); display:flex; flex-wrap:wrap; gap:1rem; align-items:center; }
+.press__count { font-size:.9rem; color:var(--navy-200); }
+
+/* ===========================================================================
+   ۷ — کتاب: اسپلیت با جلدِ واقعی
+   =========================================================================== */
+
+.book { padding-block:clamp(4rem,3rem + 5vw,7rem); background:var(--paper); }
+.book__in { display:grid; gap:clamp(2rem,1rem + 4vw,4rem); grid-template-columns:minmax(0,1fr); align-items:center; }
+@media (min-width:900px){ .book__in{ grid-template-columns:minmax(0,.62fr) minmax(0,1fr); } }
+
+.book__cover {
+  width:min(78%,280px);
+  box-shadow:0 22px 48px rgba(12,36,60,.22), 0 2px 6px rgba(12,36,60,.1);
+  border-radius:var(--r);
+  transform:rotate(-2.2deg);
+  transition:transform .4s cubic-bezier(.2,.7,.3,1);
+}
+.book__cover:hover { transform:rotate(0deg) translateY(-6px); }
+
+.book__h2 { font-size:clamp(1.55rem,1.2rem + 1.6vw,2.4rem); max-width:22ch; }
+.book__b { margin-block-start:1.1rem; color:var(--ink-2); max-width:54ch; }
+.book__cta { margin-block-start:1.9rem; display:flex; flex-wrap:wrap; gap:.75rem; }
+
+/* ===========================================================================
+   ۸ — فراخوان پایانی
+   =========================================================================== */
+
+.end { padding-block:clamp(4rem,3rem + 5vw,7rem); background:var(--navy-800); color:#fff; text-align:center; }
+.end__h2 { font-size:clamp(1.6rem,1.2rem + 1.9vw,2.7rem); color:#fff; max-width:20ch; margin-inline:auto; }
+.end__b { margin-block-start:1.1rem; color:var(--navy-200); max-width:46ch; margin-inline:auto; }
+.end__cta { margin-block-start:2rem; display:flex; justify-content:center; flex-wrap:wrap; gap:.75rem; }
+.end__meta { margin-block-start:2.5rem; font-size:.84rem; color:var(--navy-400); }
+
+.foot { padding-block:1.5rem 2.5rem; background:var(--navy-950); color:var(--navy-400); font-size:.82rem; }
+.foot__in { display:flex; flex-wrap:wrap; gap:.75rem 2rem; align-items:center; justify-content:space-between; }
+
+/* ===========================================================================
+   حرکت
+   ---------------------------------------------------------------------------
+   MOTION 6/10. چهار چیز، هرکدام با یک دلیل:
+     ورودِ هیرو          سلسله‌مراتب: چشم اول تیتر را می‌گیرد بعد بقیه را
+     ظاهرشدنِ سکشن‌ها     روایت: محتوا به ترتیبِ خواندن می‌آید
+     پر شدنِ نوارِ ۱۰۰ روز  همان چیزی که سکشن می‌گوید را نشان می‌دهد
+     بازخوردِ دکمه و عکس   تأیید عمل کاربر
+   هیچ‌کدام با شنونده‌ی اسکرول کار نمی‌کنند.
+   =========================================================================== */
+
+@media (prefers-reduced-motion:no-preference){
+  .rise { opacity:0; transform:translateY(22px); transition:opacity .7s cubic-bezier(.16,1,.3,1), transform .7s cubic-bezier(.16,1,.3,1); transition-delay:calc(var(--i,0)*80ms); }
+  .rise.on { opacity:1; transform:none; }
+
+  .hero__eyebrow,.hero__h1,.hero__sub,.hero__cta { animation:heroIn .9s cubic-bezier(.16,1,.3,1) both; }
+  .hero__eyebrow{animation-delay:.05s} .hero__h1{animation-delay:.14s}
+  .hero__sub{animation-delay:.26s}     .hero__cta{animation-delay:.38s}
+}
+@keyframes heroIn { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:none} }
+
+/* دکمه‌ی تم */
+.themebtn {
+  position:fixed; inset-block-end:1.25rem; inset-inline-end:1.25rem; z-index:50;
+  width:2.9rem; height:2.9rem; display:grid; place-items:center;
+  border-radius:50%; border:1px solid var(--rule);
+  background:var(--surface); color:var(--ink-2);
+  box-shadow:0 6px 20px rgba(12,36,60,.14);
+  cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+
+<!-- ============================ ناوبری ============================ -->
+<header class="nav">
+  <div class="nav__in">
+    <a href="/"><img class="nav__logo" src="../themes/kadence-child/assets/images/logo-header.png" alt="آکادمی تندرستی سعادت‌مهر"></a>
+    <nav class="nav__links">
+      <a href="/smp/">پروتکل SMP</a>
+      <a href="/book/">کتاب</a>
+      <a href="/cases/">پرونده‌ها</a>
+      <a href="/media/">رسانه‌ها</a>
+      <a href="/blog/">بینش‌های علمی</a>
+    </nav>
+    <a class="btn btn--gold" href="/smp/start/" style="margin-inline-start:auto">درخواست ارزیابی</a>
+  </div>
+</header>
+
+<main>
+
+<!-- ============================ ۱ هیرو ============================ -->
+<section class="hero">
+  <div class="hero__grid wrap">
+    <div class="hero__text">
+      <p class="hero__eyebrow">پروتکل ۱۰۰ روزه SMP</p>
+      <h1 class="hero__h1">بدن شما <b>سخت‌افزار اصلی</b> کسب‌وکارتان است</h1>
+      <p class="hero__sub">صد روز پایش آزمایشگاهی و بازطراحی متابولیسم، طراحی‌شده برای تقویمی که جای خالی ندارد.</p>
+      <div class="hero__cta">
+        <a class="btn btn--gold" href="/smp/start/">درخواست ارزیابی</a>
+        <a class="btn btn--onDark" href="/smp/">پروتکل چطور کار می‌کند</a>
+      </div>
+    </div>
+    <div class="hero__media">
+      <img src="../themes/kadence-child/assets/images/team-smp.webp" alt="حسین و یاسمن سعادت‌مهر در آکادمی تندرستی سعادت‌مهر" width="2400" height="1351" fetchpriority="high">
+    </div>
+  </div>
+</section>
+
+<!-- ======================= ۲ نوار اعتبار ======================= -->
+<section class="proof" aria-label="پشتوانه علمی">
+  <div class="proof__in wrap">
+    <p class="proof__label">پشتوانه علمی کتاب معماری متابولیک</p>
+    <ul class="proof__list">
+      <li class="proof__item">
+        <img src="../themes/kadence-child/assets/images/people/frank.jpg" alt="" width="38" height="38">
+        <span class="proof__who"><b>پروفسور یواخیم فرانک</b><span>نوبل شیمی ۲۰۱۷، دانشگاه کلمبیا</span></span>
+      </li>
+      <li class="proof__item">
+        <img src="../themes/kadence-child/assets/images/people/krech.jpg" alt="" width="38" height="38">
+        <span class="proof__who"><b>دکتر رودیگر کرچ</b><span>مدیر ارشد سابق ارتقای سلامت، WHO</span></span>
+      </li>
+      <li class="proof__item">
+        <img src="../themes/kadence-child/assets/images/people/manson.jpg" alt="" width="38" height="38">
+        <span class="proof__who"><b>پروفسور جوآن منسون</b><span>دانشکده پزشکی هاروارد</span></span>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<!-- ========================= ۳ بیانیه ========================= -->
+<section class="manifesto">
+  <div class="manifesto__in wrap">
+    <h2 class="manifesto__q rise">بیشترِ رژیم‌ها شکست نمی‌خورند. بدن آن‌ها را <em>تهدید</em> حساب می‌کند.</h2>
+    <p class="manifesto__body rise" style="--i:1">وقتی کالری ناگهان کم می‌شود، بدن این را قحطی می‌خواند و واکنشی می‌دهد که برای بقا ساخته شده: کورتیزول بالا، متابولیسم پایین، ذخیره‌سازی بیشتر. هرچه فشار بیشتر، مقاومت بیشتر. پروتکل SMP از جای دیگری شروع می‌کند؛ اول امنیت زیستی، بعد تغییر.</p>
+  </div>
+</section>
+
+<!-- ===================== ۴ تایم‌لاین ۱۰۰ روزه ===================== -->
+<section class="road">
+  <div class="wrap">
+    <div class="road__head">
+      <p class="road__eyebrow">معماری مسیر</p>
+      <h2 class="road__h2">صد روز، سه فاز، سه گیت ارزیابی</h2>
+      <p class="road__lead">هر فاز با یک بررسی آزمایشگاهی بسته می‌شود. بدون آن عدد، فاز بعدی شروع نمی‌شود.</p>
+    </div>
+
+    <div class="road__rail" aria-hidden="true"><span class="road__fill"></span></div>
+
+    <ol class="road__steps">
+      <li class="step rise">
+        <p class="step__day">روز ۱ تا ۳۰</p>
+        <h3 class="step__t">بازنشانی بیوشیمیایی</h3>
+        <p class="step__b">مهار مقاومت به انسولین، تنظیم ریتم شبانه‌روزی و کاهش بار کورتیزول.</p>
+        <p class="step__gate"><b>گیت روز ۳۰:</b> حساسیت انسولینی، کیفیت خواب عمیق، ثبات انرژی.</p>
+      </li>
+      <li class="step rise" style="--i:1">
+        <p class="step__day">روز ۳۱ تا ۶۵</p>
+        <h3 class="step__t">فعال‌سازی موتور هیبریدی</h3>
+        <p class="step__b">آموزش بدن برای سوزاندن چربی به عنوان سوخت اول و بازبرنامه‌ریزی تمرین.</p>
+        <p class="step__gate"><b>گیت روز ۶۵:</b> ترکیب بدنی، نرخ اکسیداسیون چربی، توان عملکردی.</p>
+      </li>
+      <li class="step rise" style="--i:2">
+        <p class="step__day">روز ۶۶ تا ۱۰۰</p>
+        <h3 class="step__t">تثبیت بدون بازگشت</h3>
+        <p class="step__b">پروتکل خروج ایمن و نهادینه‌سازی الگوی زیستی شخصی‌شده.</p>
+        <p class="step__gate"><b>گیت روز ۱۰۰:</b> شناسنامه متابولیک اختصاصی و استقلال کامل.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- ========================= ۵ سنجه‌ها ========================= -->
+<section class="metrics">
+  <div class="metrics__in wrap">
+    <figure class="metrics__fig rise" style="margin:0">
+      <img src="../themes/kadence-child/assets/images/media/interview-hero.webp" alt="حسین سعادت‌مهر در جریان یک مصاحبه تلویزیونی" width="1200" height="1200" loading="lazy">
+    </figure>
+    <div>
+      <h2 class="metrics__h2 rise">یک پرونده، شصت روز، سه عدد</h2>
+      <p class="metrics__note rise" style="--i:1">سامان، ۳۸ ساله، تریدر بازارهای مالی. بیش از ده ساعت نشستن روزانه و استرس مزمن بازار.</p>
+
+      <div class="mlist">
+        <div class="m rise" style="--i:2">
+          <span class="m__n">۵+</span>
+          <span class="m__t">کیلوگرم توده عضلانی خالص</span>
+          <span class="m__s">هم‌زمان با کاهش چربی احشایی شکم</span>
+        </div>
+        <div class="m rise" style="--i:3">
+          <span class="m__n">۳+</span>
+          <span class="m__t">سانتی‌متر قد ایستاده</span>
+          <span class="m__s">بازیابی فاصله بین‌مهره‌ای و حذف درد مزمن</span>
+        </div>
+        <div class="m rise" style="--i:4">
+          <span class="m__n">۶۰</span>
+          <span class="m__t">روز تا بازگشت به فاز آنابولیک</span>
+          <span class="m__s">خروج از غلبه کورتیزول و فرسودگی کاتابولیک</span>
+        </div>
+      </div>
+
+      <p class="metrics__src rise" style="--i:5">این گزارش تجربه یک فرد مشخص است، نه وعده نتیجه. پاسخ هر بدن متفاوت است و این مسیر جایگزین تشخیص یا درمان پزشکی نیست.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ========================= ۶ مطبوعات ========================= -->
+<section class="press">
+  <div class="wrap">
+    <h2 class="press__h2 rise">آنچه رسانه‌ها نوشته‌اند</h2>
+    <p class="press__lead rise" style="--i:1">نوشته‌ها و گفت‌وگوهای منتشرشده درباره مدیریت متابولیک و پیشگیری از بیماری‌های غیرواگیر.</p>
+
+    <div class="clip">
+      <figure class="rise"><img src="../themes/kadence-child/assets/images/press/thumb/aftab-yazd-1.webp" alt="بریده روزنامه آفتاب یزد" loading="lazy"><figcaption>روزنامه آفتاب یزد</figcaption></figure>
+      <figure class="rise" style="--i:1"><img src="../themes/kadence-child/assets/images/press/thumb/sepid-2.webp" alt="بریده روزنامه سپید" loading="lazy"><figcaption>روزنامه سپید</figcaption></figure>
+      <figure class="rise" style="--i:2"><img src="../themes/kadence-child/assets/images/press/thumb/shahrara.webp" alt="بریده روزنامه شهرآرا" loading="lazy"><figcaption>روزنامه شهرآرا</figcaption></figure>
+      <figure class="rise" style="--i:3"><img src="../themes/kadence-child/assets/images/press/thumb/arman.webp" alt="بریده روزنامه آرمان" loading="lazy"><figcaption>روزنامه آرمان</figcaption></figure>
+    </div>
+
+    <div class="press__foot rise">
+      <p class="press__count">۱۸ بریده مطبوعات چاپی، ۱۴ خبرگزاری و ۱۱ گفت‌وگو با مفدا.</p>
+      <a class="btn btn--onDark" href="/media/">همه رسانه‌ها</a>
+    </div>
+  </div>
+</section>
+
+<!-- ========================== ۷ کتاب ========================== -->
+<section class="book">
+  <div class="book__in wrap">
+    <div class="rise" style="display:flex;justify-content:center">
+      <img class="book__cover" src="../themes/kadence-child/assets/images/book-previous-front.webp" alt="جلد کتاب معماری متابولیک" width="763" height="1120" loading="lazy">
+    </div>
+    <div>
+      <h2 class="book__h2 rise">معماری متابولیک</h2>
+      <p class="book__b rise" style="--i:1">پیشگفتار رسمی کتاب را دکتر رودیگر کرچ، مدیر ارشد سابق بخش ارتقای سلامت سازمان جهانی بهداشت، نوشته است. بدنه علمی اثر بر پژوهش‌های منتشرشده متخصصانی از هاروارد، کلمبیا، نیوکاسل و امپریال کالج تکیه دارد.</p>
+      <div class="book__cta rise" style="--i:2">
+        <a class="btn btn--gold" href="/book/">معرفی کتاب</a>
+        <a class="btn btn--line" href="/book/council/">شورای علمی</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================== ۸ فراخوان ======================== -->
+<section class="end">
+  <div class="wrap">
+    <h2 class="end__h2 rise">ببینیم پروتکل با شرایط شما می‌خواند یا نه</h2>
+    <p class="end__b rise" style="--i:1">ارزیابی اولیه رایگان است و نتیجه‌اش ممکن است «نه» باشد. ظرفیت هر دوره محدود است.</p>
+    <div class="end__cta rise" style="--i:2">
+      <a class="btn btn--gold" href="/smp/start/">درخواست ارزیابی</a>
+      <a class="btn btn--onDark" href="/smp/check/">ممیزی متابولیک دو دقیقه‌ای</a>
+    </div>
+    <p class="end__meta rise" style="--i:3">مشهد، بلوار خیام، خیام ۵، پلاک ۱۲ · ۰۵۱۳۷۲۶۰۳۵۶</p>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="foot__in wrap">
+    <p>تمامی حقوق برای آکادمی تندرستی سعادت‌مهر محفوظ است.</p>
+    <p>این محتوا جایگزین تشخیص یا درمان پزشکی نیست.</p>
+  </div>
+</footer>
+
+<button class="themebtn" type="button" id="theme" aria-label="تغییر روشن و تیره">
+  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2 12h2M20 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/>
+  </svg>
+</button>
+
+<script>
+/* ---------------------------------------------------------------------------
+   ظاهر شدنِ سکشن‌ها.
+   IntersectionObserver، نه شنونده‌ی اسکرول: شنونده‌ی اسکرول روی هر
+   فریم اجرا می‌شود و روی موبایل می‌لنگد.
+   --------------------------------------------------------------------------- */
+(function () {
+  var still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.rise');
+
+  if (still || !('IntersectionObserver' in window)) {
+    els.forEach(function (el) { el.classList.add('on'); });
+    return;
+  }
+
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (!e.isIntersecting) { return; }
+      e.target.classList.add('on');
+      io.unobserve(e.target);
+    });
+  }, { threshold: 0.18, rootMargin: '0px 0px -8% 0px' });
+
+  els.forEach(function (el) { io.observe(el); });
+
+  /* تورِ ایمنی: اگر ناظر به هر دلیلی کار نکرد، بعد از سه ثانیه
+     همه‌چیز دیده می‌شود. محتوا هیچ‌وقت نباید پنهان بماند. */
+  setTimeout(function () { els.forEach(function (el) { el.classList.add('on'); }); }, 3000);
+}());
+
+/* تمِ روشن و تیره */
+(function () {
+  var KEY = 'sm-redesign-theme', root = document.documentElement;
+  try { var s = localStorage.getItem(KEY); if (s) { root.setAttribute('data-theme', s); } } catch (e) {}
+
+  document.getElementById('theme').addEventListener('click', function () {
+    var dark = root.getAttribute('data-theme') === 'dark'
+      || (!root.hasAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    var next = dark ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem(KEY, next); } catch (e) {}
+  });
+}());
+</script>
+</body>
+</html>

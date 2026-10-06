@@ -29,7 +29,16 @@ import os
 import re
 import sys
 
-B = os.path.join(os.path.dirname(__file__), '..', 'build', 'kadence-child')
+# قالب در دو جا ممکن است باشد: مخزن (wordpress/themes/…) یا پوشه‌ی کارِ
+# موقت (build/…). هرکدام که بود، همان را بردار.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _cand in (os.path.join(_HERE, '..', 'wordpress', 'themes', 'kadence-child'),
+              os.path.join(_HERE, '..', 'build', 'kadence-child')):
+    if os.path.isdir(_cand):
+        B = _cand
+        break
+else:
+    sys.exit('❌ قالب kadence-child پیدا نشد.')
 
 TOKEN = r'sm-[a-z0-9]+(?:[_-][a-z0-9]+)*'
 
@@ -97,6 +106,30 @@ def classes_in_css():
     return out
 
 
+
+def bad_css_math(paths):
+    """اعلان‌هایی که به‌خاطرِ نبودِ فاصله دورِ + یا - بی‌صدا دور ریخته می‌شوند.
+
+    در CSS، عملگرهای + و - داخلِ calc()/clamp()/min()/max() حتماً باید
+    از دو طرف فاصله داشته باشند. `clamp(2rem,1rem+4vw,4rem)` نامعتبر است
+    و مرورگر کلِ آن اعلان را دور می‌اندازد — بدون هیچ خطایی.
+
+    چرا اینجاست: در پیشنهادِ طراحی ۲۵ اعلان همین‌طور از بین رفته بودند.
+    صفحه باز می‌شد، تصویری خراب نبود، JS خطا نمی‌داد؛ فقط همه‌ی اندازه‌های
+    تیتر روی پیش‌فرضِ مرورگر مانده بود. هیچ بررسیِ دیگری این را نمی‌گیرد.
+    (× و ÷ به فاصله نیاز ندارند.)
+    """
+    hits = []
+    for f in paths:
+        try:
+            src = open(f, encoding='utf-8').read()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for i, line in enumerate(src.splitlines(), 1):
+            for m in re.finditer(r'(?:clamp|calc|min|max)\([^()]*[0-9a-z%)][+-][.0-9]', line):
+                hits.append((os.path.basename(f), i, m.group(0)))
+    return hits
+
 def main():
     used, prefixes = classes_in_templates()
     defined = classes_in_css()
@@ -116,6 +149,11 @@ def main():
 
     clash = {k: v for k, v in defined.items() if len(v) > 1}
 
+    css_files = sorted(glob.glob(os.path.join(B, 'assets/css/*.css')))
+    css_files.append(os.path.join(B, 'style.css'))
+    css_files += glob.glob(os.path.join(B, '**/*.php'), recursive=True)
+    math = bad_css_math(css_files)
+
     print('کلاس‌های به‌کاررفته در قالب:', len(used) + len(prefixes))
     print('کلاس‌های تعریف‌شده در CSS :', len(defined))
 
@@ -126,6 +164,13 @@ def main():
         print('\n❌ در قالب هست ولی CSS ندارد:')
         for k in sorted(missing):
             print(f'   {k:34} ← {", ".join(sorted(missing[k]))}')
+
+    if math:
+        bad = True
+        print('\n❌ عملگرِ بی‌فاصله در تابعِ ریاضیِ CSS — مرورگر این اعلان‌ها را دور می‌اندازد:')
+        for f, line, snip in math:
+            print(f'   {f}:{line}  {snip}…')
+        print('   چاره: دورِ + و - فاصله بگذارید → clamp(2rem, 1rem + 4vw, 4rem)')
 
     if clash:
         # ⚠️ عمداً خطا نیست.
