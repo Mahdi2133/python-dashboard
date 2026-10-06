@@ -339,15 +339,8 @@
       + '<span class="sum-fold-hint">نمایش / پنهان</span>'
       + '</summary>'
       + (b.note ? '<div class="sum-note">' + A.esc(b.note) + '</div>' : '')
-      + '<dl class="sum-values">' + b.values.map(function (v) {
-          /* a document is shown as the file itself, to open */
-          var val = v.files && v.files.length
-            ? v.files.map(function (a) {
-                return '<a href="' + A.esc(a.url) + '" target="_blank">📄 ' + A.esc(a.filename) + '</a>';
-              }).join(' ')
-            : A.esc(v.value);
-          return '<dt>' + A.esc(v.label) + '</dt><dd>' + val + '</dd>';
-        }).join('') + '</dl>'
+      + (b.groups && b.groups.length ? sumGroupsHtml(b.groups)
+         : '<dl class="sum-values">' + b.values.map(sumValueHtml).join('') + '</dl>')
       + (b.charts || []).map(function (c) {
           var id = 'sc' + (++sumChartSeq);
           sumCharts[id] = c;
@@ -357,6 +350,68 @@
         }).join('')
       + '</details>';
   }
+  /* One recorded answer; a document is shown as the file itself, to open. */
+  function sumCell(v) {
+    return v.files && v.files.length
+      ? v.files.map(function (a) {
+          return '<a href="' + A.esc(a.url) + '" target="_blank">📄 ' + A.esc(a.filename) + '</a>';
+        }).join(' ')
+      : A.esc(v.value);
+  }
+  function sumValueHtml(v) {
+    return '<dt>' + A.esc(v.label) + '</dt><dd>' + sumCell(v) + '</dd>';
+  }
+  /* «سکشن‌بندی»: a stage's answers form by form. Forms of the same shape side
+     by side — the five «کارکرد» of a pumping test — become one table, one
+     column per form, so کارکرد ۱ is never mistaken for کارکرد ۲. */
+  function sumAlike(g1, g2) {
+    var a = g1.values.map(function (v) { return v.label; });
+    var b = g2.values.map(function (v) { return v.label; });
+    if (a.length < 3 || b.length < 3) return false;
+    if (g1.values.concat(g2.values).some(function (v) { return v.files && v.files.length; })) return false;
+    var both = a.filter(function (x) { return b.indexOf(x) !== -1; }).length;
+    var all = a.length + b.length - both;
+    return both / all >= 0.6;
+  }
+  function sumCommonPrefix(titles) {
+    var p = titles[0] || '';
+    titles.forEach(function (t) { while (p && t.indexOf(p) !== 0) p = p.slice(0, -1); });
+    var cut = Math.max(p.lastIndexOf('—'), p.lastIndexOf('-'), p.lastIndexOf(':'));
+    return cut > 0 ? p.slice(0, cut + 1) : '';
+  }
+  function sumTableHtml(run) {
+    var prefix = sumCommonPrefix(run.map(function (g) { return g.title; }));
+    var labels = [];
+    run.forEach(function (g) {
+      g.values.forEach(function (v) { if (labels.indexOf(v.label) === -1) labels.push(v.label); });
+    });
+    var head = prefix.replace(/[—\-:]\s*$/, '').trim();
+    return '<div class="sum-group"><div class="sum-group-title">' + A.esc(head || run[0].title) + '</div>'
+      + '<div class="sum-table-wrap"><table class="sum-table"><thead><tr><th></th>'
+      + run.map(function (g) {
+          return '<th>' + A.esc(g.title.slice(prefix.length).trim() || g.title) + '</th>';
+        }).join('') + '</tr></thead><tbody>'
+      + labels.map(function (lbl) {
+          return '<tr><th>' + A.esc(lbl) + '</th>' + run.map(function (g) {
+            var v = g.values.filter(function (x) { return x.label === lbl; })[0];
+            return '<td>' + (v ? sumCell(v) : '—') + '</td>';
+          }).join('') + '</tr>';
+        }).join('') + '</tbody></table></div></div>';
+  }
+  function sumGroupsHtml(groups) {
+    var out = [], i = 0;
+    while (i < groups.length) {
+      var j = i + 1;
+      while (j < groups.length && sumAlike(groups[i], groups[j])) j++;
+      if (j - i >= 2) out.push(sumTableHtml(groups.slice(i, j)));
+      else out.push('<div class="sum-group"><div class="sum-group-title">' + A.esc(groups[i].title)
+                    + '</div><dl class="sum-values">' + groups[i].values.map(sumValueHtml).join('')
+                    + '</dl></div>');
+      i = j;
+    }
+    return out.join('');
+  }
+
   /* «نمودار» in a summary: drawn once its box is open and has a size. */
   var sumCharts = {}, sumChartSeq = 0;
   function drawSumCharts(scope) {
@@ -1175,7 +1230,12 @@
         + '<dt>تأییدکننده</dt><dd>' + A.esc(r.approver_name || '') + '</dd>'
         + '<dt>وضعیت</dt><dd>' + A.esc(r.status_label) + (r.decision_note ? ' — ' + A.esc(r.decision_note) : '') + '</dd></dl>';
       if (r.note) html += '<div class="alert info"><b>توضیحات فرستنده:</b> ' + A.esc(r.note) + '</div>';
-      (r.snapshot || []).forEach(function (sec) {
+      var snapGroups = (r.snapshot || []).map(function (sec) {
+        return { code: sec.code, title: sec.title, values: sec.values || [] };
+      });
+      if (snapGroups.length > 1 && snapGroups.some(function (g, k) { return k && sumAlike(snapGroups[k - 1], g); })) {
+        html += sumGroupsHtml(snapGroups.filter(function (g) { return g.values.length; }));
+      } else (r.snapshot || []).forEach(function (sec) {
         html += '<div class="areq-sec"><div class="section-title">📋 ' + A.esc(sec.title)
           + ' <span class="hint">— مرحله ' + J.toFaDigits(sec.stage_number) + ' «' + A.esc(sec.stage_title) + '»</span></div>'
           + (sec.values.length ? '<dl class="sum-values">' + sec.values.map(function (v) {

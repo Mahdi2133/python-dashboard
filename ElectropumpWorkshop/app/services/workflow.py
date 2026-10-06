@@ -732,6 +732,7 @@ def submitted_summary(instance: WorkflowInstance, except_stage: int = None,
     all_fields = FormField.query.all()
     labels = {f.field_name: f.label for f in all_fields}
     kinds = {f.field_name: f.field_type for f in all_fields}
+    home = {f.field_name: f.section for f in all_fields if f.field_type != "mirror"}
     from .formfields import files_by_field
     files = files_by_field(instance)
     merged = {**_settled_values(instance, None), **{k: v for k, v in (instance.payload or {}).items()
@@ -745,6 +746,7 @@ def submitted_summary(instance: WorkflowInstance, except_stage: int = None,
         if entry.status not in ENTRY_DONE:
             continue
         values = []
+        where = _stage_layout(entry.stage) if entry.stage else {}
         for name, value in (entry.payload or {}).items():
             if value in (None, "", [], False):
                 continue
@@ -755,7 +757,7 @@ def submitted_summary(instance: WorkflowInstance, except_stage: int = None,
                 # the documents themselves, to open — not their ids
                 got = files.get(name, [])
                 if got:
-                    values.append({"label": labels.get(name, name),
+                    values.append({**_placed(name, where, home, labels),
                                    "value": "، ".join(a["filename"] for a in got),
                                    "files": got})
                 continue
@@ -768,7 +770,16 @@ def submitted_summary(instance: WorkflowInstance, except_stage: int = None,
                 value = "، ".join(str(v) for v in value if v not in (None, ""))
                 if not value:
                     continue
-            values.append({"label": labels.get(name, name), "value": str(value)})
+            values.append({**_placed(name, where, home, labels), "value": str(value)})
+        values.sort(key=lambda v: (v["_order"], v["_pos"]))
+        groups = []
+        for v in values:
+            if not groups or groups[-1]["code"] != v["section_code"]:
+                groups.append({"code": v["section_code"], "title": v["section"], "values": []})
+            groups[-1]["values"].append(v)
+        for v in values:
+            v.pop("_order", None)
+            v.pop("_pos", None)
         charts = stage_charts(entry.stage, merged) if entry.stage else []
         if not values and not entry.note and not charts:
             continue
@@ -782,9 +793,52 @@ def submitted_summary(instance: WorkflowInstance, except_stage: int = None,
                                if entry.submitted_at else None),
             "note": entry.note,
             "values": values,
+            "groups": groups,
             "charts": charts,
         })
     return out
+
+
+def _stage_layout(stage: WorkflowStage) -> dict:
+    """field name → (form order, place in form, form code, form title, label)
+    for the forms a stage carries, in the stage's own order — so a summary
+    reads form by form, not as one long list of look-alike labels."""
+    where = {}
+    items = sorted(stage.items, key=lambda i: i.sort_order or 0)
+    for n, item in enumerate(items):
+        if item.section is None:
+            if item.field is not None:
+                d = item.field.render_dict()
+                if d:
+                    where.setdefault(d["field_name"], (n, 0, f"field_{d['field_name']}",
+                                                       d.get("label") or "", d.get("label")))
+            continue
+        fields = sorted(item.section.fields, key=lambda f: f.sort_order or 0)
+        for k, f in enumerate(fields):
+            if not f.is_active:
+                continue
+            d = f.render_dict()
+            if d is None:
+                continue
+            where.setdefault(d["field_name"], (n, k, item.section.code, item.section.title,
+                                               d.get("label")))
+    return where
+
+
+def _placed(name, where, home, labels) -> dict:
+    """Label, form and order of one recorded answer for the summary."""
+    if name in where:
+        n, k, code, title, label = where[name]
+        return {"label": label or labels.get(name, name), "section_code": code,
+                "section": title, "_order": n, "_pos": k}
+    sec = home.get(name)
+    if sec is not None:                 # a form opened by an answer (a cause form, say)
+        pos = next((k for k, f in enumerate(sorted(sec.fields, key=lambda f: f.sort_order or 0))
+                    if f.field_name == name), 0)
+        return {"label": labels.get(name, name), "section_code": sec.code,
+                "section": sec.title, "_order": 1000 + (sec.sort_order or 0), "_pos": pos}
+    return {"label": labels.get(name, name), "section_code": "_other",
+            "section": "سایر موارد", "_order": 10 ** 6, "_pos": 0}
 
 
 def chart_inputs(cfg: dict) -> list:

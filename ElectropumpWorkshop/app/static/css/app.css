@@ -1490,3 +1490,12 @@ details.mon-body[open] > summary.mon-body-head::before { content:'▾ '; }
 @media (max-width: 900px) {
   .field-group.cols-4, .field-group.cols-5 { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+/* «سکشن‌بندی» of recorded answers */
+.sum-group { margin:6px 0 10px; }
+.sum-group-title { font-weight:700; font-size:12.5px; color:var(--primary); padding:4px 6px;
+  background:#eef4f9; border-right:3px solid var(--primary); border-radius:4px; margin-bottom:4px; }
+.sum-table-wrap { overflow-x:auto; }
+table.sum-table { width:100%; border-collapse:collapse; font-size:12px; }
+table.sum-table th, table.sum-table td { border:1px solid #e3eaf0; padding:4px 6px; text-align:center; }
+table.sum-table thead th { background:#f4f8fb; color:var(--primary); white-space:nowrap; }
+table.sum-table tbody th { text-align:right; font-weight:600; background:#fafcfd; white-space:nowrap; }
