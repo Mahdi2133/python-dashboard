@@ -55,14 +55,34 @@ def _fmt(field, value, files_by_field):
     return str(value)
 
 
+def _same_number(a, b):
+    try:
+        return b is not None and abs(float(a) - float(b)) < 1e-6
+    except (TypeError, ValueError):
+        return str(a) == str(b)
+
+
 def _values_hash(fields, values, instance=None):
     """What «unchanged since approval» compares: the typed answers, the files in
     each «مستند» slot (from the attachments table), never the computed ones."""
     picked = {}
+    auto = None
     for f in fields:
         name = f.get("field_name")
         if f.get("field_type") in ("formula", "chart") or f.get("read_only"):
             continue
+        if str(f.get("default_value") or "").startswith("="):
+            # a value its own formula fills is a calculation, not an answer:
+            # it counts as changed only when someone typed over it
+            if auto is None:
+                from .formfields import compute_autofill
+                blanks = {n.get("field_name"): None for n in fields
+                          if str(n.get("default_value") or "").startswith("=")}
+                auto = compute_autofill({**values, **blanks})
+            v, a = values.get(name), auto.get(name)
+            if v in (None, "", [], {}) or _same_number(v, a):
+                picked[name] = "=auto"
+                continue
         if f.get("field_type") == "file":
             picked[name] = sorted(a.id for a in (getattr(instance, "attachments", None) or [])
                                   if a.field_name == name)
