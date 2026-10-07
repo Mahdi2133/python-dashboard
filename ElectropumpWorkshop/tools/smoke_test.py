@@ -2958,6 +2958,22 @@ def main():
           f"{before} → {after}")
     c.put(f"/api/records/{rec['id']}", json={"total_head": old or None})
 
+    print("\n— نام برگه‌ی اکسل و نمودارهای فرایند داشبورد —")
+    from app.services.exporter import to_xlsx as _to_xlsx
+    import io as _io11
+    from openpyxl import load_workbook as _lw11
+    wb11 = _lw11(_io11.BytesIO(_to_xlsx([{"key": "a", "label": "الف"}], [{"a": 1}],
+                                        "سازنده/تعمیرکار: [پمپ]?")))
+    check("عنوان گزارش با «/» و «:» خروجی اکسل می‌دهد", wb11.active.title == "سازنده تعمیرکار پمپ",
+          wb11.active.title)
+    for k11 in ("maker", "executor"):
+        r11 = c.get(f"/api/reports/{k11}/export.xlsx")
+        check(f"خروجی اکسل گزارش {k11}", r11.status_code == 200, str(r11.status_code))
+    d11 = c.get("/api/dashboard").get_json()["data"]
+    check("داشبورد نمودارهای فرایند را می‌دهد", isinstance(d11.get("process_charts"), list)
+          and all("key" in x and "data" in x for x in d11["process_charts"]),
+          str(d11.get("process_charts"))[:200])
+
     print("\n— ترتیب تب‌ها —")
     check("صفحه اصلی، ثبت اطلاعات است",
           b"page-mode" in c.get("/", follow_redirects=True).data)

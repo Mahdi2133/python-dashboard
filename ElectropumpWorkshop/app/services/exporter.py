@@ -30,7 +30,9 @@ def to_xlsx(columns, rows, sheet_title="گزارش", meta=None) -> bytes:
 
     wb = Workbook()
     ws = wb.active
-    ws.title = (sheet_title or "گزارش")[:31]
+    # Excel refuses these in a sheet name; titles like «سازنده/تعمیرکار» carry them.
+    title = "".join(" " if ch in '[]:*?/\\' else ch for ch in (sheet_title or ""))
+    ws.title = " ".join(title.split())[:31] or "گزارش"
     ws.sheet_view.rightToLeft = True
 
     header_fill = PatternFill("solid", fgColor="0A3D62")

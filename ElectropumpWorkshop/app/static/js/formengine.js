@@ -231,7 +231,7 @@
                       lineStyle: { color: color, width: 2 }, itemStyle: { color: color } });
         return;
       }
-      var pts = [];
+      var pts = [], scale = Number(sr.scale) || 1;
       (sr.x || []).forEach(function (xn, k) {
         var x = toNumber(getValue(xn)), y = toNumber(getValue((sr.y || [])[k]));
         if (x === null || y === null || (x === 0 && y === 0)) return;
@@ -239,10 +239,19 @@
         if (x > xmax) xmax = x;
       });
       pts.sort(function (p1, p2) { return p1[0] - p2[0]; });
+      /* «start»: a fixed first point — efficiency is 100% at zero flow, as the
+         workbook draws it; «connect» joins the points instead of a trend */
+      var shown = pts.slice();
+      if (pts.length && Array.isArray(sr.start)) shown.unshift([Number(sr.start[0]), Number(sr.start[1])]);
+      shown = shown.map(function (q) { return [q[0], Math.round(q[1] * scale * 10000) / 10000]; });
       if (right) useRight = true;
-      series.push({ name: sr.label || ('سری ' + (si + 1)), type: 'scatter', data: pts,
-                    yAxisIndex: right ? 1 : 0, symbolSize: 9, itemStyle: { color: color } });
-      if (sr.trend && pts.length >= 2) {
+      series.push(sr.connect
+        ? { name: sr.label || ('سری ' + (si + 1)), type: 'line', data: shown, smooth: true,
+            yAxisIndex: right ? 1 : 0, symbolSize: 8, lineStyle: { color: color, width: 2 },
+            itemStyle: { color: color } }
+        : { name: sr.label || ('سری ' + (si + 1)), type: 'scatter', data: shown,
+            yAxisIndex: right ? 1 : 0, symbolSize: 9, itemStyle: { color: color } });
+      if (sr.trend && !sr.connect && pts.length >= 2) {
         var fit = fitTrend(sr.trend, pts);
         if (fit) {
           var lo = fit.from0 ? 0 : pts[0][0], hi = pts[pts.length - 1][0];

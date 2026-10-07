@@ -27,6 +27,17 @@
       Object.entries(data.charts).forEach(function (entry) {
         A.renderBarChart('chart-' + entry[0], entry[1]);
       });
+      /* charts of the process forms (اقدام کارشناس، علت ایراد برقی، …) */
+      var extra = A.qs('#process-charts');
+      if (extra) {
+        extra.innerHTML = (data.process_charts || []).map(function (c) {
+          return '<div class="chart-card"><h3>📌 ' + A.esc(c.title) + '</h3>'
+            + '<div class="bar-chart" id="chart-p-' + A.esc(c.key) + '"></div></div>';
+        }).join('');
+        (data.process_charts || []).forEach(function (c) {
+          A.renderBarChart('chart-p-' + c.key, c.data);
+        });
+      }
     } catch (err) {
       grid.innerHTML = '<div class="alert error">' + A.esc(err.message) + '</div>';
       A.toast(err.message, 'error');

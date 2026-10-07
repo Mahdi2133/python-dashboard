@@ -29,6 +29,39 @@ def _top_tag(ids, category, limit=12):
     return [{"label": v, "value": c} for v, c in rows]
 
 
+# Answers of process forms charted beside the fixed charts. The labels come
+# from the form builder; a field that no longer exists is simply not drawn.
+# AppMeta «dashboard_fields» (comma separated field names) overrides the list.
+PROCESS_FIELDS = ["review_action", "cf_el_cause", "cf_burn_amp_dir", "sholat", "pl_result", "wc_q_verdict",
+                  "wc_pe_verdict", "wc_eff_verdict"]
+
+
+def _process_charts(ids, limit=12):
+    from ..models import FormField, RecordDynamicValue
+    from ..models.meta import AppMeta
+    names = [n.strip() for n in (AppMeta.get("dashboard_fields") or "").split(",") if n.strip()] \
+        or PROCESS_FIELDS
+    out = []
+    for name in names:
+        field = FormField.query.filter_by(field_name=name, is_active=True).first()
+        if field is None:
+            continue
+        counts = {}
+        for (text,) in (db.session.query(RecordDynamicValue.value_text)
+                        .filter(RecordDynamicValue.field_id == field.id,
+                                RecordDynamicValue.record_id.in_(ids),
+                                RecordDynamicValue.value_text.isnot(None))):
+            parts = [text] if field.field_type in ("radio", "select", "formula", "text") \
+                else [p.strip() for p in str(text).split(",")]
+            for part in parts:
+                if part:
+                    counts[part] = counts.get(part, 0) + 1
+        rows = sorted(counts.items(), key=lambda kv: -kv[1])[:limit]
+        out.append({"key": name, "title": field.label,
+                    "data": [{"label": k, "value": v} for k, v in rows]})
+    return out
+
+
 @bp.get("")
 @permission_required("dashboard.view")
 def dashboard():
@@ -92,4 +125,5 @@ def dashboard():
             "opinion": _top_tag(ids, "workshop_opinion"),
             "yearly": yearly,
         },
+        "process_charts": _process_charts(ids),
     })
