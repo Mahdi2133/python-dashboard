@@ -1,0 +1,19 @@
+metal,study,label,n,mean_ug_kg,sd_ug_kg,GM,CI_lo,CI_hi,weight_pct,note
+Pb,S01,Wang et al. 2024 (China; carp),8,165.4,27.3,163.192,145.666,182.826,20.0,
+Pb,S02,Zhang et al. 2023 (China; crayfish muscle),38,23.2,10.435,21.158,18.459,24.252,20.0,
+Pb,S10,Kosker et al. 2023 (Türkiye; canned fish),33,247.0,72.3,237.053,214.961,261.415,20.0,across-product SD
+Pb,S11,Kim et al. 2023 (Korea; fish & shellfish),1081,31.975,78.734,12.031,11.069,13.077,20.0,6 categories combined
+Pb,S15,Zhang et al. 2017 (China; lake fish),72,103.567,134.881,63.074,50.112,79.388,19.9,6 species combined
+Pb,POOLED,"Random effects (REML, HKSJ)",,,,57.359,11.682,281.629,100,PI 0.66-4969.80; I2 99.9%; tau2 1.637
+Cd,S01,Wang et al. 2024 (China; carp),8,35.7,11.1,34.09,27.619,42.078,20.0,
+Cd,S02,Zhang et al. 2023 (China; crayfish muscle),38,0.8,1.391,0.399,0.274,0.58,19.9,
+Cd,S10,Kosker et al. 2023 (Türkiye; canned fish),32,23.5,34.9,13.126,9.03,19.078,19.9,across-product SD
+Cd,S11,Kim et al. 2023 (Korea; fish & shellfish),1081,78.407,237.664,24.565,22.432,26.9,20.1,6 categories combined
+Cd,S15,Zhang et al. 2017 (China; lake fish),72,6.622,4.474,5.487,4.763,6.322,20.1,6 species combined
+Cd,POOLED,"Random effects (REML, HKSJ)",,,,7.553,0.828,68.911,100,PI 0.02-3664.62; I2 99.4%; tau2 3.142
+As,S01,Wang et al. 2024 (China; carp),8,880.4,413.0,797.057,585.155,1085.695,20.0,
+As,S02,Zhang et al. 2023 (China; crayfish muscle),38,121.1,34.783,116.394,106.427,127.294,20.0,
+As,S10,Kosker et al. 2023 (Türkiye; canned fish),31,53.2,29.5,46.526,38.773,55.828,20.0,across-product SD
+As,S11,Kim et al. 2023 (Korea; fish & shellfish),1081,2100.755,4875.054,831.353,766.538,901.649,20.0,6 categories combined
+As,S15,Zhang et al. 2017 (China; lake fish),72,1.333,3.053,0.534,0.39,0.729,20.0,BDL recorded as 0 in 5 of 6 species
+As,POOLED,"Random effects (REML, HKSJ)",,,,71.952,1.716,3016.118,100,PI 0.00-2557417.44; I2 99.9%; tau2 9.031
