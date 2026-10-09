@@ -3144,6 +3144,120 @@ def main():
         nope = kahani.post("/api/workflow/stage-report", json={"stage_id": other[0]["id"]})
         check("متولی به گزارش مرحله‌ی دیگران دسترسی ندارد", nope.status_code == 403, str(nope.status_code))
 
+    print("\n— R13: نقاط تکرارشونده، طبقات از کاتالوگ، منحنی راندمان، ردیف‌های ثابت انبار —")
+    check("EPPART: پمپ و موتور از تیپ الکتروپمپ",
+          _e12.row(_parse('EPPART("233/13+24", "pump")'), {}) == "233/13"
+          and _e12.row(_parse('EPPART("233/13+24", "motor")'), {}) == 24
+          and _e12.row(_parse('EPPART("", "pump")'), {}) is None)
+    with app.app_context():
+        from app.models import WorkflowStage as _WS13
+        _t13 = [st.title for st in _WS13.query.filter_by(stage_number=1).all()]
+    check("عنوان مرحله‌ی ۱: «اعلام خرابی مشاهده شده از سمت بهره بردار»",
+          "اعلام خرابی مشاهده شده از سمت بهره بردار" in _t13, str(_t13))
+    r13 = c.post("/api/form-builder/sections", json={"code": "t_r13_p1", "title": "نقطه ۱ آزمون", "columns": 5,
+                                                     "repeat_group": "t_points", "show_on_entry": False})
+    sec13 = (r13.get_json() or {}).get("data", {})
+    check("بخش با «گروه تکرارشونده» ساخته می‌شود", r13.status_code == 200 and sec13.get("repeat_group") == "t_points"
+          and sec13.get("columns") == 5, str(sec13)[:200])
+    up13 = c.put(f"/api/form-builder/sections/{sec13.get('id')}", json={"repeat_group": ""})
+    check("گروه تکرارشونده برداشته می‌شود", up13.get_json()["data"].get("repeat_group") is None)
+    f13 = c.post("/api/form-builder/fields", json={"field_name": "t_r13_type", "label": "تیپ آزمون",
+                                                    "field_type": "text", "section_id": sec13.get("id")}).get_json()["data"]
+    g13 = c.post("/api/form-builder/fields", json={"field_name": "t_r13_stages", "label": "طبقات آزمون",
+                                                    "field_type": "number", "section_id": sec13.get("id"),
+                                                    "stages_of": "t_r13_type"})
+    check("«طبقات از کاتالوگ» برای تیپِ فیلد دیگر ذخیره می‌شود",
+          g13.status_code == 200 and g13.get_json()["data"].get("stages_of") == "t_r13_type", str(g13.get_json())[:200])
+    bad13 = c.put(f"/api/form-builder/fields/{g13.get_json()['data']['id']}", json={"stages_of": "no_such_field"})
+    check("فیلد تیپ ناموجود پذیرفته نمی‌شود", bad13.status_code == 422, str(bad13.status_code))
+    ch13 = c.post("/api/form-builder/fields", json={
+        "field_name": "t_r13_chart", "label": "نمودار آزمون", "field_type": "chart", "section_id": sec13.get("id"),
+        "chart_config": {"series": [{"label": "راندمان", "x": ["t_r13_stages"], "y": ["t_r13_stages"], "axis": "right",
+                                     "scale": 100, "start": [0, 1],
+                                     "curve": {"y": "100 * [t_r13_stages] / ([t_r13_stages] + [x])",
+                                               "require": "[t_r13_stages] > 0", "note": "داده کم است"}}],
+                         "y2_max": 100}})
+    with app.app_context():
+        from app.models import FormField as _FF13
+        _cc13 = json.loads(_FF13.query.filter_by(field_name="t_r13_chart").first().chart_config or "{}")
+    _s13 = (_cc13.get("series") or [{}])[0]
+    check("منحنی از فرمول، ضریب و نقطه‌ی شروع با نمودار ذخیره می‌شوند", ch13.status_code == 200
+          and _s13.get("curve", {}).get("y", "").startswith("100 *") and _s13.get("scale") == 100
+          and _s13.get("start") == [0, 1], str(_s13)[:300])
+    chb13 = c.put(f"/api/form-builder/fields/{ch13.get_json()['data']['id']}", json={
+        "field_type": "chart", "chart_config": {"series": [{"label": "x", "x": ["t_r13_stages"], "y": ["t_r13_stages"],
+                                                            "curve": {"y": "[nope] * [x]"}}]}})
+    check("فرمول منحنی با فیلد ناموجود رد می‌شود", chb13.status_code == 422, str(chb13.status_code))
+    pr13 = c.post("/api/form-builder/fields", json={
+        "field_name": "t_r13_rows", "label": "تحویل تجهیز آزمون", "field_type": "wh_lines", "section_id": sec13.get("id"),
+        "wh_config": {"mode": "rows", "warehouse": "equipment", "direction": "in", "reason": "pull",
+                      "preset": [{"item_code": "EQ-01", "spec": 'EPPART([t_r13_type], "motor")', "qty": 1},
+                                 {"item_code": ""}],
+                      "preset_lock": True}})
+    pid13 = (pr13.get_json() or {}).get("data", {}).get("id")
+    c.put(f"/api/form-builder/fields/{pid13}", json={"label": "تحویل تجهیز آزمون", "field_type": "wh_lines",
+                                                     "wh_config": {"mode": "rows", "warehouse": "equipment",
+                                                                   "direction": "in", "reason": "pull"}})
+    with app.app_context():
+        _wc13 = json.loads(_FF13.query.filter_by(field_name="t_r13_rows").first().wh_config or "{}")
+    check("ردیف‌های ثابت انبار ذخیره و با ذخیره‌ی دوباره حفظ می‌شوند",
+          pr13.status_code == 200 and len(_wc13.get("preset") or []) == 1 and _wc13.get("preset_lock") is True,
+          str(_wc13)[:300])
+    _fb13 = c.get("/api/form-builder?all=1").get_json()["data"]
+    check("فهرست کالاهای تجهیز برای ردیف ثابت در فرم‌ساز",
+          any(i.get("code") == "EQ-01" for i in _fb13.get("warehouse", {}).get("items", [])))
+    _parts13 = [i for i in c.get("/api/warehouse/items").get_json()["data"]["items"] if i["kind"] == "part"][:2]
+    bulk13 = c.post("/api/warehouse/items/bulk", json={"items": [
+        {"id": _parts13[0]["id"], "name": _parts13[0]["name"] + " آزمون", "is_active": True},
+        {"id": None, "name": "قطعه‌ی تازه‌ی آزمون", "code": "T-R13", "kind": "part",
+         "category": _parts13[0]["category"], "is_active": True}]})
+    _items13 = {i["id"]: i for i in c.get("/api/warehouse/items").get_json()["data"]["items"]}
+    check("فهرست قطعات یکجا ذخیره می‌شود (نام تازه و قطعه‌ی تازه)", bulk13.status_code == 200
+          and _items13[_parts13[0]["id"]]["name"].endswith("آزمون")
+          and _items13[_parts13[0]["id"]]["note"] == _parts13[0]["note"]
+          and any(i["code"] == "T-R13" for i in _items13.values()), str(bulk13.get_json())[:200])
+    dup13 = c.post("/api/warehouse/items/bulk", json={"items": [{"id": None, "name": "تکراری", "code": "T-R13"}]})
+    check("کد تکراری قطعه پذیرفته نمی‌شود", dup13.status_code == 422)
+
+    import zipfile as _zf13
+    from app.routes.api_refdata import _unpacked
+    _inner13 = io.BytesIO()
+    with _zf13.ZipFile(_inner13, "w") as z:
+        z.writestr("well_data.json", "[]")
+    _outer13 = io.BytesIO()
+    with _zf13.ZipFile(_outer13, "w") as z:
+        z.writestr("ویدئومتری.xlsx", b"x")
+        z.writestr("notes.txt", b"x")
+        z.writestr("inner.zip", _inner13.getvalue())
+    _m13, _sk13 = _unpacked("videometry", "videometry.zip", _outer13.getvalue())
+    check("zip ویدئومتری/روند تولید باز می‌شود (zip در zip، JSON پیش از اکسل)",
+          [n for n, _b in _m13] == ["well_data.json", "ویدئومتری.xlsx"] and _sk13 == ["notes.txt"], f"{_m13} {_sk13}")
+    check("فایل غیر zip همان‌طور وارد می‌شود", _unpacked("production", "a.xlsx", b"x")[0] == [("a.xlsx", b"x")])
+
+    with app.app_context():
+        from app.extensions import db as _db13
+        from app.models import Well as _W13
+        from app.refdata.models import FlowTest as _FT13, VideoInspection as _VI13
+        from app.refdata.profile import well_profile as _wp13
+        _w13a, _w13b = _W13.query.order_by(_W13.id).limit(2).all()
+        _db13.session.add_all([
+            _FT13(well_name=_w13a.name, well_key="k1", main_well_id=_w13a.id, test_date="1404/07/30",
+                  test_date_num=14040730, static_level=65.0),
+            _VI13(facility_code="T-1", main_well_id=_w13a.id, insp_date="1403/05/12", insp_date_num=14030512,
+                  static_level=60.1),
+            _FT13(well_name=_w13b.name, well_key="k2", main_well_id=_w13b.id, test_date="1404/01/10",
+                  test_date_num=14040110, static_level=88.0)])
+        _db13.session.commit()
+        _va13, _vb13 = _wp13(_w13a.id)["values"], _wp13(_w13b.id)["values"]
+    check("سطح استاتیک: اول ویدئومتری (حتی قدیمی‌تر از دبی‌سنجی)", _va13.get("best.static_level") == 60.1,
+          str(_va13.get("best.static_level")))
+    check("سطح استاتیک: بدون ویدئومتری، از دبی‌سنجی", _vb13.get("best.static_level") == 88.0,
+          str(_vb13.get("best.static_level")))
+    from app.services.upgrade_r13 import KEY as _K13
+    with app.app_context():
+        from app.models import AppMeta as _AM13
+        check("تغییرات فرم‌های R13 یک‌بار اجرا و ثبت شد", _AM13.get(_K13) == "done")
+
     print("\n— ترتیب تب‌ها —")
     check("صفحه اصلی، ثبت اطلاعات است",
           b"page-mode" in c.get("/", follow_redirects=True).data)

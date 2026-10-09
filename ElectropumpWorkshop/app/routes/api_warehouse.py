@@ -109,6 +109,54 @@ def save_item():
     return ok(item.to_dict(), message="ذخیره شد.")
 
 
+@bp.post("/items/bulk")
+@permission_required("warehouse.manage")
+def save_items_bulk():
+    """Several items at once — the parts list of one equipment kind as the
+    form builder edits it (names, codes, active). Fields not sent are kept."""
+    rows = body().get("items") or []
+    saved = []
+    for p in rows:
+        name = (p.get("name") or "").strip()
+        item = db.session.get(WhItem, int(p["id"])) if str(p.get("id") or "").isdigit() else None
+        if not name:
+            if item is None:
+                continue
+            db.session.rollback()
+            return fail(f"نام قطعه‌ی «{item.name}» خالی است.", 422)
+        if "code" in p:
+            code = (p.get("code") or "").strip() or None
+            with db.session.no_autoflush:
+                taken = code and WhItem.query.filter(
+                    WhItem.code == code, WhItem.id != (item.id if item is not None else 0)).first()
+            if taken:
+                db.session.rollback()
+                return fail(f"کد «{code}» برای کالای دیگری ثبت شده است.", 422)
+        if item is None:
+            with db.session.no_autoflush:
+                last = db.session.query(db.func.max(WhItem.sort_order)).scalar() or 0
+            item = WhItem(name=name, sort_order=last + 1, source="فرم‌ساز",
+                          kind=p.get("kind") or "part", unit="عدد")
+            db.session.add(item)
+        if "code" in p:
+            item.code = (p.get("code") or "").strip() or None
+        item.name = name
+        for key in ("category", "unit"):
+            if key in p:
+                setattr(item, key, (p.get(key) or "").strip() or None)
+        if "kind" in p:
+            item.kind = "equipment" if p.get("kind") == "equipment" else "part"
+        if "is_active" in p:
+            item.is_active = bool(p.get("is_active"))
+        item.unit = item.unit or "عدد"
+        db.session.flush()
+        saved.append(item)
+    db.session.commit()
+    from ..analytics.catalogue import bump_data_version
+    bump_data_version()
+    return ok({"items": [i.to_dict() for i in saved]}, message=f"{len(saved)} قطعه ذخیره شد.")
+
+
 @bp.get("/items/export.xlsx")
 @permission_required("warehouse.view")
 def items_export():

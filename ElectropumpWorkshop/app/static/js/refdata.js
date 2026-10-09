@@ -116,7 +116,7 @@
     box.innerHTML = '<div class="card mt-2"><div class="section-title">📈 ' + A.esc(w.name) + ' — <span dir="ltr">'
       + A.esc(w.facility_code) + '</span></div><div class="rp-chart"></div>'
       + '<div class="table-scroll" style="max-height:300px"><table class="rp-table"><thead><tr><th>سال/ماه</th><th>تولید (m³)</th>'
-      + '<th>کارکرد (ساعت)</th><th>دبی متوسط (l/s)</th><th>فشار</th><th>نوع فشار</th></tr></thead><tbody>'
+      + '<th>کارکرد (ساعت)</th><th>دبی متوسط (l/s)</th><th>فشار (atm)</th><th>نوع فشار</th></tr></thead><tbody>'
       + w.months.slice().reverse().map(function (m) {
         return '<tr><td>' + fa(m.year + '/' + (m.month < 10 ? '0' : '') + m.month) + '</td><td>' + num(m.production, 0) + '</td>'
           + '<td>' + num(m.hours, 0) + '</td><td>' + num(m.avg_flow) + '</td><td>' + num(m.pressure) + '</td>'
@@ -166,14 +166,21 @@
     box.innerHTML = '<div class="loading">در حال خواندن فایل‌ها… (فایل‌های بزرگ ممکن است چند دقیقه طول بکشد)</div>';
     try {
       var res = await A.api.upload('/api/refdata/' + input.dataset.source + '/import', form);
+      var LABELS = [['files', 'فایل'], ['sheets', 'شیت'], ['tests_added', 'آزمایش تازه'], ['tests_updated', 'آزمایش به‌روزشده'],
+                    ['duplicates', 'فایل تکراری'], ['unmatched', 'بدون اتصال به چاه'], ['year', 'سال'], ['wells', 'چاه'],
+                    ['wells_added', 'چاه تازه'], ['months', 'ماه'], ['rows', 'ردیف'], ['added', 'تازه'], ['updated', 'به‌روزشده']];
       box.innerHTML = '<div class="alert info">' + res.data.results.map(function (r) {
         if (r.error) return '⛔ ' + A.esc(r.file) + ': ' + A.esc(r.error);
         if (r.duplicate) return 'ℹ ' + A.esc(r.file) + ': قبلاً وارد شده است.';
+        var skipped = (r.skipped_files || []).length
+          ? '<br>⏭ خوانده نشد (فایل اکسل نیست): ' + r.skipped_files.map(A.esc).join('، ') : '';
         var parts = [];
-        ['files', 'sheets', 'tests_added', 'tests_updated', 'unmatched', 'wells', 'months', 'rows', 'added', 'updated', 'year']
-          .forEach(function (k) { if (r[k] !== undefined) parts.push(k + ': ' + fa(Array.isArray(r[k]) ? r[k].length : r[k])); });
+        LABELS.forEach(function (l) {
+          if (r[l[0]] !== undefined && r[l[0]] !== null) parts.push(l[1] + ': ' + fa(r[l[0]]));
+        });
         var errs = (r.errors || []).length ? '<br>⚠ ' + r.errors.map(A.esc).join('<br>⚠ ') : '';
-        return '✓ ' + A.esc(r.file) + ' — ' + parts.join('، ') + errs;
+        if (!parts.length) return 'ℹ ' + A.esc(r.file) + skipped;
+        return '✓ ' + A.esc(r.file) + ' — ' + parts.join('، ') + errs + skipped;
       }).join('<br>') + '</div>';
       loadCards();
     } catch (err) { box.innerHTML = '<div class="alert error">' + A.esc(err.message) + '</div>'; }

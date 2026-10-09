@@ -107,7 +107,8 @@
 <!-- ورود -->
 <div class="tab-panel hidden" data-panel="import">
   <div class="alert info">
-    هر بانک جداگانه به‌روز می‌شود. فایل‌های تکراری (همان محتوا) دوباره وارد نمی‌شوند؛ آزمایش تکراری یک چاه
+    هر بانک جداگانه به‌روز می‌شود. محدودیت حجم ندارد و روی هر رایانه‌ای که برنامه (EXE) روی آن اجرا می‌شود کار می‌کند —
+    پایتون لازم نیست. فایل‌های تکراری (همان محتوا) دوباره وارد نمی‌شوند؛ آزمایش تکراری یک چاه
     در یک تاریخ جایگزین نسخه‌ی قبلی می‌شود. بعد از افزودن یا تغییر نام چاه‌ها در «چاه‌ها»، «اتصال دوباره» را بزنید.
   </div>
   <div class="charts-grid">
@@ -118,13 +119,13 @@
     </div>
     <div class="chart-card">
       <h3>📈 روند تولید</h3>
-      <p class="hint">کاربرگ سالانه‌ی «گزارش روند تولید» (.xlsx)؛ چند سال را با هم انتخاب کنید.</p>
-      <input type="file" class="rd-file" data-source="production" multiple accept=".xlsx,.xlsm">
+      <p class="hint">کاربرگ سالانه‌ی «گزارش روند تولید» (.xlsx)؛ چند سال را با هم انتخاب کنید، یا همه را در یک فایل zip.</p>
+      <input type="file" class="rd-file" data-source="production" multiple accept=".zip,.xlsx,.xlsm">
     </div>
     <div class="chart-card">
       <h3>🎥 ویدئومتری</h3>
-      <p class="hint">کاربرگ ویدئومتری (.xlsx با ستون‌های «کد تاسیس»، «تاریخ اقدام»، …) یا خروجی JSON.</p>
-      <input type="file" class="rd-file" data-source="videometry" multiple accept=".xlsx,.xlsm,.json">
+      <p class="hint">کاربرگ ویدئومتری (.xlsx با ستون‌های «کد تاسیس»، «تاریخ اقدام»، …)، خروجی JSON، یا هر دو در یک فایل zip.</p>
+      <input type="file" class="rd-file" data-source="videometry" multiple accept=".zip,.xlsx,.xlsm,.json">
     </div>
   </div>
   <div class="card mt-2">

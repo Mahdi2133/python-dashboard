@@ -1,5 +1,6 @@
 """/api/form-builder — the real form designer (requirements 13 & 14)."""
 import json
+import re
 
 from flask import Blueprint, request
 
@@ -155,7 +156,10 @@ def _warehouse_options():
         from ..warehouse.service import PART_COLUMNS
         kinds = sorted({i.category for i in WhItem.query.filter_by(kind="part", is_active=True)
                         if i.category})
-        return {"conditions": [{"code": c.code, "label": c.label} for c in
+        return {"items": [{"code": i.code, "name": i.name, "kind": i.kind} for i in
+                          WhItem.query.filter_by(is_active=True, kind="equipment")
+                          .order_by(WhItem.sort_order, WhItem.id) if i.code],
+                "conditions": [{"code": c.code, "label": c.label} for c in
                                WhCondition.query.filter_by(is_active=True)
                                .order_by(WhCondition.sort_order)],
                 "equipment_types": kinds, "reasons": REASONS,
@@ -194,6 +198,7 @@ def create_section():
         visible_when=normalize_text(payload.get("visible_when")) or None,
         show_on_entry=payload.get("show_on_entry", True) in (True, "true", "1", 1),
         collapse_formulas=payload.get("collapse_formulas") in (True, "true", "1", 1),
+        repeat_group=(normalize_text(payload.get("repeat_group")) or None),
     )
     db.session.add(section)
     db.session.flush()
@@ -209,7 +214,7 @@ def update_section(section_id):
     if section is None:
         return fail("بخش یافت نشد.", 404)
     payload = body()
-    for attr in ("title", "icon", "description", "visible_when"):
+    for attr in ("title", "icon", "description", "visible_when", "repeat_group"):
         if attr in payload:
             setattr(section, attr, normalize_text(payload[attr]) or None)
     for attr in ("columns", "sort_order"):
@@ -341,6 +346,24 @@ def _warehouse_settings(field, payload):
         "default_condition": raw.get("default_condition") or None,
         "spec": bool(raw.get("spec", True)), "serial": bool(raw.get("serial", True)),
     }
+    if cfg["mode"] == "rows":
+        # «ردیف‌های ثابت»: rows the form starts with (item code, a spec that
+        # may be a formula, quantity); «قفل» leaves only condition and plate open
+        preset = []
+        for row in raw.get("preset", before.get("preset")) or []:
+            if not isinstance(row, dict) or not str(row.get("item_code") or "").strip():
+                continue
+            try:
+                qty = float(str(row.get("qty") or 1).replace("٫", "."))
+            except ValueError:
+                qty = 1
+            preset.append({"item_code": str(row["item_code"]).strip(),
+                           "spec": str(row.get("spec") or "").strip(),
+                           "qty": qty if qty > 0 else 1,
+                           "condition": str(row.get("condition") or "").strip() or None})
+        if preset:
+            cfg["preset"] = preset
+            cfg["preset_lock"] = bool(raw.get("preset_lock", before.get("preset_lock")))
     if cfg["mode"] == "parts":
         # «فرم قطعات»: the equipment whose parts are listed, the counted
         # columns, and the fields of the same form that name the equipment
@@ -361,6 +384,28 @@ def _warehouse_settings(field, payload):
             return "برای «فرم قطعات» دست‌کم یک ستون شمارش را انتخاب کنید."
     field.wh_config = json.dumps(cfg, ensure_ascii=False)
     return None
+
+
+def _chart_curve(raw, known):
+    """«منحنی از فرمول»: y as a formula of [x] and the form's fields, an
+    optional condition for drawing it and the note shown when it fails."""
+    if not isinstance(raw, dict) or not str(raw.get("y") or "").strip():
+        return None
+    out = {}
+    for key in ("y", "require"):
+        text = str(raw.get(key) or "").strip()
+        if not text:
+            continue
+        refs = {r.strip() for r in re.findall(r"\[([^\]]+)\]", text)} - {"x"}
+        missing = sorted(r for r in refs if r not in known)
+        if missing:
+            return f"فیلد «{missing[0]}» در فرمول منحنی پیدا نشد."
+        out[key] = text
+    if normalize_text(raw.get("note")):
+        out["note"] = normalize_text(raw.get("note"))
+    if normalize_text(raw.get("eq_label")):
+        out["eq_label"] = normalize_text(raw.get("eq_label"))
+    return out
 
 
 def _chart_settings(field, payload):
@@ -393,7 +438,13 @@ def _chart_settings(field, payload):
             return f"فیلد «{missing[0]}» برای نمودار پیدا نشد."
         if len(xs) != len(ys):
             return f"در سری «{sr.get('label') or ''}» تعداد فیلدهای محور افقی و عمودی باید برابر باشد."
-        series.append({"label": normalize_text(sr.get("label")) or "سری",
+        curve = _chart_curve(sr.get("curve"), known)
+        if isinstance(curve, str):
+            return curve
+        extra = {"curve": curve} if curve else {}
+        if "scale" in sr and sr["scale"] in (None, ""):
+            sr = {k: v for k, v in sr.items() if k != "scale"}
+        series.append({"label": normalize_text(sr.get("label")) or "سری", **extra,
                        "x": xs, "y": ys,
                        "axis": "right" if sr.get("axis") == "right" else "left",
                        "trend": sr.get("trend") if sr.get("trend") in
@@ -428,6 +479,16 @@ def _behaviour_settings(field, payload):
     """What a field does in a process — whose approval its answers need, which
     answers stop the stage, where it is filled. None of it touches how the
     answer is stored, so built-in fields («خرابی مشاهده شده») take it too."""
+    # «طبقات از کاتالوگ برای تیپِ فیلد …»
+    if "stages_of" in payload:
+        target_name = normalize_text(payload.get("stages_of")) or None
+        if target_name:
+            if field.field_type not in ("number", "text", "radio", "select", "autocomplete"):
+                return "«طبقات از کاتالوگ» برای فیلد عددی، متنی یا انتخابی است."
+            target = FormField.query.filter_by(field_name=target_name).first()
+            if target is None or target.id == field.id:
+                return f"فیلد تیپ پمپ «{target_name}» پیدا نشد."
+        field.stages_of = target_name
     # «تأیید گزینه»: several rules, each its own answers → its own approvers
     if "approval_rules" in payload:
         rules = []

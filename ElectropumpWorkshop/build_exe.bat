@@ -72,6 +72,10 @@ if exist "dist\config.json" (
     copy /y "config.json" "dist\config.json" >nul
 )
 
+REM The whole instance folder travels: wells.db, the separate databases in
+REM instance\refdata (flow tests, production, videometry, warehouse) and the
+REM uploaded documents in instance\attachments. Nothing already in dist is
+REM overwritten.
 if exist "instance\wells.db" (
     if exist "dist\instance\wells.db" (
         echo     dist\instance\wells.db موجود است - جایگزین نشد.
@@ -82,6 +86,20 @@ if exist "instance\wells.db" (
 ) else (
     echo     پایگاه داده در اولین اجرای EXE ساخته می‌شود.
 )
+if exist "instance\refdata" (
+    if exist "dist\instance\refdata" (
+        echo     dist\instance\refdata موجود است - جایگزین نشد.
+    ) else (
+        echo     کپی بانک‌های اطلاعاتی و انبار به dist\instance\refdata\
+        xcopy /e /i /q /y "instance\refdata" "dist\instance\refdata" >nul
+    )
+)
+if exist "instance\attachments" (
+    if not exist "dist\instance\attachments" (
+        echo     کپی مستندات به dist\instance\attachments\
+        xcopy /e /i /q /y "instance\attachments" "dist\instance\attachments" >nul
+    )
+)
 
 echo.
 echo ============================================================
@@ -91,6 +109,7 @@ echo  dist\
 echo    ├── ElectropumpWorkshop.exe
 echo    ├── config.json
 echo    ├── instance\wells.db      ^<-- با Navicat for SQLite باز می‌شود
+echo    ├── instance\refdata\      ^<-- دبی‌سنجی، روند تولید، ویدئومتری، انبار
 echo    ├── logs\
 echo    ├── backups\
 echo    └── exports\

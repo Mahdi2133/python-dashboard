@@ -74,6 +74,9 @@ class FormSection(db.Model):
     # behind a «نمایش محاسبات» toggle — the readings are typed, the dozen
     # numbers worked out of them stay out of the way until somebody asks.
     collapse_formulas = db.Column(db.Boolean, nullable=False, default=False)
+    # «گروه تکرارشونده»: sections sharing this key are the points of one test
+    # (نقطه ۱ … ۵) — the first is shown, the others open with «➕» as needed.
+    repeat_group = db.Column(db.String(40))
 
     fields = db.relationship("FormField", back_populates="section",
                              cascade="all, delete-orphan", order_by="FormField.sort_order")
@@ -87,6 +90,7 @@ class FormSection(db.Model):
             "visible_when": self.visible_when,
             "show_on_entry": self.show_on_entry is not False,
             "collapse_formulas": bool(self.collapse_formulas),
+            "repeat_group": self.repeat_group or None,
         }
         if include_fields:
             fields = [f for f in self.fields if f.is_active or not active_only]
@@ -174,6 +178,10 @@ class FormField(db.Model):
     # «اقلام انبار»: JSON {"warehouse": "equipment"|"parts", "direction":
     # "in"|"out", "reason": …, "kinds": […], "conditions": […], "spec": bool}
     wh_config = db.Column(db.Text)
+    # «طبقات از کاتالوگ»: the field naming the pump type this stage count
+    # belongs to — the choices are that type's models in the pump catalogue
+    # («384/10»), and picking one fills the type in too.
+    stages_of = db.Column(db.String(80))
     show_in_table = db.Column(db.Boolean, nullable=False, default=False)
     table_order = db.Column(db.Integer, nullable=False, default=0)
     export_header = db.Column(db.String(200))
@@ -243,6 +251,7 @@ class FormField(db.Model):
             "chart_config": self.chart_spec,
             "wh_config": (self._json(self.wh_config, {})
                           if self.field_type == "wh_lines" else None),
+            "stages_of": self.stages_of or None,
             "part_labels": self.part_labels if self.field_type == "numbers" else None,
             "fill_stage_ids": self.fill_stage_list,
         }

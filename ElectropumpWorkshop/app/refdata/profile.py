@@ -5,10 +5,14 @@ and the latest camera inspection of a register well; ``CATALOGUE`` lists every
 value a form field can be told to start from («@ref:<key>» in فرم‌ساز), with
 its source and unit; ``ref_value`` fits one of them to the field it fills.
 
-The «best.*» values weigh the sources against each other by date: the well
-depth and the static level are the most recent measurement, wherever it was
-taken; the electropump in the well is the most recent install known to the
-system, the production register or a flow test — written «384/10+73.5».
+The «best.*» values weigh the sources against each other: the static level
+comes from videometry and only from the flow test when the well was never
+filmed; the dynamic level from the flow test alone; the well depth is the
+most recent measurement, wherever it was taken; the electropump in the well
+is the most recent install known to the system, the production register or
+a flow test — written «384/10+73.5». Production pressures are kept in
+atmospheres, the unit of the register, with a «_m» copy in metres (×10)
+for the form fields that are in metres.
 """
 from __future__ import annotations
 
@@ -34,9 +38,9 @@ _add("best", "بهترین مقدار (ترکیب بانک‌ها)", [
     ("pump_stages", "طبقات پمپ فعلی چاه", ""),
     ("motor_kw", "توان موتور فعلی چاه", "kW"),
     ("well_depth", "عمق چاه (آخرین اندازه‌گیری)", "m"),
-    ("static_level", "سطح ایستابی (آخرین اندازه‌گیری)", "m"),
+    ("static_level", "سطح ایستابی (ویدئومتری؛ اگر نبود، دبی‌سنجی)", "m"),
     ("install_depth", "عمق نصب (آخرین دبی‌سنجی)", "m"),
-    ("dynamic_level", "سطح دینامیک در فشار شبکه (آخرین دبی‌سنجی)", "m"),
+    ("dynamic_level", "سطح دینامیک در فشار شبکه (دبی‌سنجی)", "m"),
     ("operating_flow", "دبی بهره‌برداری (روند تولید، یا دبی‌سنجی)", "l/s"),
     ("last_install_date", "تاریخ آخرین نصب الکتروپمپ", ""),
 ])
@@ -79,6 +83,7 @@ for _n in range(1, 6):
         (f"q{_n}", f"کارکرد {_n} — آبدهی", "l/s"),
         (f"dyn{_n}", f"کارکرد {_n} — سطح پویایی", "m"),
         (f"press{_n}", f"کارکرد {_n} — فشار", "atm"),
+        (f"press{_n}_m", f"کارکرد {_n} — فشار (atm×10)", "m"),
         (f"head{_n}", f"کارکرد {_n} — هد", "m"),
         (f"amps{_n}", f"کارکرد {_n} — آمپر", "A"),
     ])
@@ -86,8 +91,10 @@ _add("pr", "روند تولید", [
     ("last_flow", "آخرین دبی متوسط بهره‌برداری", "l/s"),
     ("last_flow_month", "ماه آخرین دبی بهره‌برداری", ""),
     ("avg_flow_12", "میانگین دبی ۱۲ ماه اخیر", "l/s"),
-    ("last_pressure", "آخرین فشار ماهانه", ""),
-    ("avg_pressure_12", "میانگین فشار ۱۲ ماه اخیر", ""),
+    ("last_pressure", "آخرین فشار ماهانه", "atm"),
+    ("last_pressure_m", "آخرین فشار ماهانه (atm×10)", "m"),
+    ("avg_pressure_12", "میانگین فشار ۱۲ ماه اخیر", "atm"),
+    ("avg_pressure_12_m", "میانگین فشار ۱۲ ماه اخیر (atm×10)", "m"),
     ("last_production", "تولید آخرین ماه", "m³"),
     ("last_hours", "کارکرد آخرین ماه", "ساعت"),
     ("electropump", "تیپ الکتروپمپ در روند تولید", ""),
@@ -197,6 +204,7 @@ def well_profile(well_id) -> dict:
             if 1 <= n <= 5:
                 v[f"ft.q{n}"], v[f"ft.dyn{n}"] = p.flow, p.dynamic_level
                 v[f"ft.press{n}"], v[f"ft.head{n}"], v[f"ft.amps{n}"] = p.pressure, p.head, p.amps
+                v[f"ft.press{n}_m"] = _metres(p.pressure)
 
     if pw is not None:
         months = _months(pw)
@@ -245,9 +253,16 @@ def well_profile(well_id) -> dict:
         sources.append({"key": "videometry", "title": "ویدئومتری", "date": vm.insp_date,
                         "count": VideoInspection.query.filter_by(main_well_id=well_id).count()})
 
+    values["pr.last_pressure_m"] = _metres(values.get("pr.last_pressure"))
+    values["pr.avg_pressure_12_m"] = _metres(values.get("pr.avg_pressure_12"))
     _best(values, well_id)
     return {"values": {k: v for k, v in values.items() if v not in (None, "")},
             "sources": sources}
+
+
+def _metres(atm):
+    """A pressure in atmospheres, in metres of water (×10)."""
+    return round(atm * 10, 2) if isinstance(atm, (int, float)) else None
 
 
 def _newest(*pairs):
@@ -271,11 +286,21 @@ def _measured(well_id, attr):
     return (getattr(row, attr), row.test_date) if row is not None else (None, None)
 
 
+def _video_measured(well_id, attr):
+    """(value, date) of the newest camera inspection that recorded ``attr``."""
+    from .models import VideoInspection
+    col = getattr(VideoInspection, attr)
+    row = (VideoInspection.query.filter(VideoInspection.main_well_id == well_id, col.isnot(None))
+           .order_by(VideoInspection.insp_date_num.desc().nullslast(), VideoInspection.id.desc()).first())
+    return (getattr(row, attr), row.insp_date) if row is not None else (None, None)
+
+
 def _best(v, well_id):
     v["best.well_depth"] = _newest((v.get("vm.depth"), v.get("vm.date")),
                                    _measured(well_id, "well_depth"))
-    v["best.static_level"] = _newest((v.get("vm.static_level"), v.get("vm.date")),
-                                     _measured(well_id, "static_level"))
+    # videometry first; the flow test only for a well that was never filmed
+    v["best.static_level"] = (_video_measured(well_id, "static_level")[0]
+                              or _measured(well_id, "static_level")[0])
     v["best.install_depth"] = v.get("ft.install_depth") or _measured(well_id, "install_depth")[0]
     v["best.dynamic_level"] = v.get("ft.dynamic_level")
     v["best.operating_flow"] = v.get("pr.last_flow") or v.get("ft.net_flow")

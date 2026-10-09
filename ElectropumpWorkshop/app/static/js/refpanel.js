@@ -44,7 +44,7 @@
   function testsList(tests) {
     if (!tests || !tests.length) return '';
     return '<div class="table-scroll" style="max-height:220px"><table class="rp-table"><thead><tr><th>تاریخ</th>'
-      + '<th>تیپ الکتروپمپ</th><th>عمق نصب</th><th>سطح ایستایی</th><th>آبدهی شبکه</th><th>فشار</th></tr></thead><tbody>'
+      + '<th>تیپ الکتروپمپ</th><th>عمق نصب</th><th>سطح ایستایی</th><th>آبدهی شبکه</th><th>فشار (atm)</th></tr></thead><tbody>'
       + tests.map(function (t) {
         return '<tr><td>' + A.esc(t.test_date || '—') + '</td><td dir="ltr">' + A.esc(t.electropump || '—') + '</td>'
           + '<td>' + num(t.install_depth) + '</td><td>' + num(t.static_level) + '</td>'
@@ -73,9 +73,25 @@
     }).join('');
   }
 
+  /* The production trend: every month on record, opened on the last three
+     years. Zoom with the wheel or the ＋/－ buttons, drag the slider, or pick
+     a stretch of months by dragging across the chart («انتخاب بازه»).
+     Pressure stays in atmospheres here, as the register keeps it. */
   function drawProduction(box, months) {
     if (!box || !months || !months.length || !window.FormEngine) return;
-    var last = months.slice(-36);
+    var cats = months.map(function (m) { return m.year + '/' + (m.month < 10 ? '0' : '') + m.month; });
+    var startPct = months.length > 36 ? Math.round((1 - 36 / months.length) * 100) : 0;
+    var bar = document.createElement('div');
+    bar.className = 'rp-zoom';
+    bar.innerHTML = '<button type="button" class="btn-sm btn-ghost" data-z="in" title="بزرگ‌نمایی">＋</button>'
+      + '<button type="button" class="btn-sm btn-ghost" data-z="out" title="کوچک‌نمایی">－</button>'
+      + '<button type="button" class="btn-sm btn-ghost" data-z="all" title="همه‌ی ماه‌ها">همه</button>'
+      + '<span class="hint">چرخ موس: بزرگ/کوچک‌نمایی · نوار پایین را بکشید · با «انتخاب بازه» (بالای نمودار) روی نمودار بکشید</span>';
+    if (!box.previousElementSibling || !box.previousElementSibling.classList.contains('rp-zoom')) {
+      box.parentNode.insertBefore(bar, box);
+    } else {
+      bar = box.previousElementSibling;
+    }
     window.FormEngine.loadEcharts().then(function (ec) {
       var chart = ec.getInstanceByDom(box);
       if (!chart) {
@@ -85,18 +101,36 @@
       chart.setOption({
         textStyle: { fontFamily: 'Vazirmatn, Tahoma' },
         tooltip: { trigger: 'axis' },
-        legend: { top: 0, textStyle: { fontFamily: 'Vazirmatn' } },
-        grid: { left: 50, right: 50, top: 40, bottom: 50 },
-        xAxis: { type: 'category', data: last.map(function (m) { return m.year + '/' + (m.month < 10 ? '0' : '') + m.month; }),
-                 axisLabel: { rotate: 45, fontSize: 10 } },
-        yAxis: [{ type: 'value', name: 'دبی (l/s)' }, { type: 'value', name: 'فشار', position: 'right' }],
+        legend: { top: 4, textStyle: { fontFamily: 'Vazirmatn' } },
+        grid: { left: 50, right: 56, top: 58, bottom: 78 },
+        toolbox: { left: 8, top: 0, itemSize: 15, feature: {
+          dataZoom: { title: { zoom: 'انتخاب بازه (بکشید)', back: 'برگشت' }, xAxisIndex: 0, yAxisIndex: false },
+          restore: { title: 'حالت اولیه' },
+          saveAsImage: { title: 'ذخیره‌ی تصویر' } } },
+        dataZoom: [{ type: 'inside', xAxisIndex: 0, start: startPct, end: 100 },
+                   { type: 'slider', xAxisIndex: 0, height: 16, bottom: 6, start: startPct, end: 100 }],
+        xAxis: { type: 'category', data: cats, axisLabel: { rotate: 45, fontSize: 10 } },
+        yAxis: [{ type: 'value', name: 'دبی (l/s)' },
+                { type: 'value', name: 'فشار (atm)', position: 'right', splitLine: { show: false } }],
         series: [
-          { name: 'دبی متوسط (l/s)', type: 'line', smooth: true, data: last.map(function (m) { return m.avg_flow; }),
+          { name: 'دبی متوسط (l/s)', type: 'line', smooth: true, data: months.map(function (m) { return m.avg_flow; }),
             itemStyle: { color: '#2563eb' } },
-          { name: 'فشار', type: 'line', yAxisIndex: 1, data: last.map(function (m) { return m.pressure; }),
+          { name: 'فشار (atm)', type: 'line', yAxisIndex: 1, data: months.map(function (m) { return m.pressure; }),
             itemStyle: { color: '#d97706' }, lineStyle: { type: 'dashed' } }
         ]
-      });
+      }, true);
+      bar.onclick = function (e) {
+        var b = e.target.closest('[data-z]');
+        if (!b) return;
+        var dz = (chart.getOption().dataZoom || [])[0] || {};
+        var s = dz.start || 0, en = dz.end === undefined ? 100 : dz.end, mid = (s + en) / 2, w = en - s;
+        if (b.dataset.z === 'all') { s = 0; en = 100; }
+        else {
+          w = b.dataset.z === 'in' ? Math.max(w / 1.6, 100 / Math.max(months.length, 1) * 3) : Math.min(w * 1.6, 100);
+          s = Math.max(0, mid - w / 2); en = Math.min(100, s + w); s = Math.max(0, en - w);
+        }
+        chart.dispatchAction({ type: 'dataZoom', start: s, end: en });
+      };
     }).catch(function () { box.innerHTML = ''; });
   }
 
@@ -120,7 +154,7 @@
       + (latest ? '<div><div class="rp-h">آخرین دبی‌سنجی — ' + A.esc(latest.test_date || '') + '</div>' + pointsTable(latest)
         + (latest.expert_opinion ? '<div class="hint mt-1">نظر کارشناس: ' + A.esc(latest.expert_opinion) + '</div>' : '') + '</div>' : '')
       + '</div>';
-    if ((data.months || []).length) html += '<div class="rp-h mt-2">روند تولید (۳۶ ماه اخیر)</div><div class="rp-chart"></div>';
+    if ((data.months || []).length) html += '<div class="rp-h mt-2">روند تولید (همه‌ی ماه‌ها؛ نمایش از ۳۶ ماه اخیر)</div><div class="rp-chart"></div>';
     if (!opts.compact) {
       if ((data.tests || []).length > 1) html += '<div class="rp-h mt-2">همه‌ی دبی‌سنجی‌ها</div>' + testsList(data.tests);
       if ((data.inspections || []).length) html += '<div class="rp-h mt-2">ویدئومتری</div>' + videoList(data.inspections);

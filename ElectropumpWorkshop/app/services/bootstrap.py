@@ -414,6 +414,15 @@ def ensure_database(app) -> dict:
         db.session.rollback()
         log.exception("Seeding report templates failed")
 
+    # This release's changes to the forms the database was configured with
+    # (once per database; a step the admin has overtaken is left alone).
+    try:
+        from .upgrade_r13 import apply_r13
+        status["forms_r13"] = apply_r13()
+    except Exception:  # noqa: BLE001 — a form change must never stop the app starting
+        db.session.rollback()
+        log.exception("Applying the R13 form changes failed")
+
     with db.engine.connect() as conn:
         status["journal_mode"] = conn.execute(text("PRAGMA journal_mode")).scalar()
         status["foreign_keys"] = bool(conn.execute(text("PRAGMA foreign_keys")).scalar())

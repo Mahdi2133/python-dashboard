@@ -286,7 +286,29 @@
      operation this field starts from. The list is when it happened, then
      every field the form has — so a reading added today can be carried
      forward tomorrow without anyone touching the code. */
+  /* «طبقات از کاتالوگ»: which field names the pump type */
+  function fillStagesOf(field) {
+    var box = A.qs('#fb-stages-of');
+    if (!box) return;
+    var current = field && field.stages_of ? field.stages_of : '';
+    var all = [];
+    (schema.sections || []).forEach(function (sec) {
+      (sec.fields || []).forEach(function (f) {
+        if (!field || f.field_name !== field.field_name) all.push(f);
+      });
+    });
+    /* the pump-type fields first: those drawing on the «تیپ پمپ» list */
+    all.sort(function (a, b) {
+      var pa = a.lookup_category === 'pump_type' ? 0 : 1, pb = b.lookup_category === 'pump_type' ? 0 : 1;
+      return pa - pb;
+    });
+    box.innerHTML = '<option value="">— خیر —</option>' + all.map(function (f) {
+      return '<option value="' + A.esc(f.field_name) + '"' + (f.field_name === current ? ' selected' : '') + '>'
+        + A.esc(f.label) + ' (' + A.esc(f.field_name) + ')</option>';
+    }).join('');
+  }
   function fillPrefill(field) {
+    fillStagesOf(field);
     var box = A.qs('#fb-prefill');
     if (!box) return;
     var chain = (field && field.prefill_from ? field.prefill_from : '').split('|');
@@ -392,6 +414,7 @@
       prefill_from: [(A.qs('#fb-prefill') || {}).value || '', (A.qs('#fb-prefill2') || {}).value || '']
         .filter(Boolean).join('|'),
       placeholder: A.qs('#fb-placeholder').value.trim(),
+      stages_of: (A.qs('#fb-stages-of') || {}).value || '',
       lookup_category: A.qs('#fb-lookup').value,
       min_value: A.qs('#fb-min').value, max_value: A.qs('#fb-max').value,
       step: A.qs('#fb-step').value.trim(),
@@ -548,6 +571,128 @@
     var parts = A.qs('#fb-wh-mode').value === 'parts';
     A.qsa('.fb-wh-parts').forEach(function (el) { el.classList.toggle('hidden', !parts); });
     A.qsa('.fb-wh-rows').forEach(function (el) { el.classList.toggle('hidden', parts); });
+    if (parts) loadPartsList();
+  }
+
+  /* «ردیف‌های ثابت»: the rows a warehouse form starts with */
+  var whPreset = [];
+  function drawWhPreset() {
+    var box = A.qs('#fb-wh-preset');
+    if (!box) return;
+    var items = ((schema && schema.warehouse) || {}).items || [];
+    box.innerHTML = whPreset.length ? '<table class="fb-mini-table"><thead><tr><th>کالا</th><th>مشخصات (فرمول یا متن)</th>'
+      + '<th>تعداد</th><th></th></tr></thead><tbody>' + whPreset.map(function (r, i) {
+        var known = items.some(function (it) { return it.code === r.item_code; });
+        return '<tr data-preset="' + i + '"><td><select class="fb-wp-item"><option value="">—</option>'
+          + items.map(function (it) {
+              return '<option value="' + A.esc(it.code) + '"' + (it.code === r.item_code ? ' selected' : '') + '>'
+                + A.esc(it.name) + ' (' + A.esc(it.code) + ')</option>';
+            }).join('')
+          + (r.item_code && !known ? '<option value="' + A.esc(r.item_code) + '" selected>' + A.esc(r.item_code) + '</option>' : '')
+          + '</select></td><td><input type="text" dir="ltr" class="fb-wp-spec" value="' + A.esc(r.spec || '') + '"></td>'
+          + '<td><input type="number" step="any" class="fb-wp-qty" value="' + A.esc(r.qty || 1) + '" style="width:70px"></td>'
+          + '<td><button type="button" class="btn-sm btn-del fb-wp-del">✕</button></td></tr>';
+      }).join('') + '</tbody></table>' : '<span class="hint">ردیف ثابتی تعریف نشده است.</span>';
+  }
+  function bindWhPreset() {
+    var box = A.qs('#fb-wh-preset');
+    if (!box) return;
+    var sync = function (ev) {
+      var tr = ev.target.closest('tr[data-preset]');
+      if (!tr) return;
+      var r = whPreset[+tr.dataset.preset];
+      if (ev.target.classList.contains('fb-wp-item')) r.item_code = ev.target.value;
+      if (ev.target.classList.contains('fb-wp-spec')) r.spec = ev.target.value;
+      if (ev.target.classList.contains('fb-wp-qty')) r.qty = Number(ev.target.value) || 1;
+    };
+    box.addEventListener('change', sync);
+    box.addEventListener('input', sync);
+    box.addEventListener('click', function (ev) {
+      var del = ev.target.closest('.fb-wp-del');
+      if (!del) return;
+      whPreset.splice(+del.closest('tr').dataset.preset, 1);
+      drawWhPreset();
+    });
+    A.qs('#fb-wh-preset-add').addEventListener('click', function () {
+      whPreset.push({ item_code: '', spec: '', qty: 1 });
+      drawWhPreset();
+    });
+  }
+
+  /* «فهرست قطعات»: the parts of one equipment kind, named and coded here —
+     the same list the parts forms search and the warehouse counts */
+  var partsList = [];
+  async function loadPartsList() {
+    var box = A.qs('#fb-wh-parts-list');
+    if (!box) return;
+    var kind = A.qs('#fb-wh-eq').value;
+    box.innerHTML = '<div class="loading">بارگذاری</div>';
+    try {
+      var res = await A.api.get('/api/warehouse/items');
+      partsList = (res.data.items || []).filter(function (it) { return it.kind === 'part' && it.category === kind; })
+        .map(function (it) { return Object.assign({}, it, { _dirty: false }); });
+    } catch (err) {
+      box.innerHTML = '<div class="hint">' + A.esc(err.message) + '</div>';
+      return;
+    }
+    drawPartsList();
+  }
+  function drawPartsList() {
+    var box = A.qs('#fb-wh-parts-list');
+    var active = partsList.filter(function (p) { return p.is_active; }).length;
+    A.qs('#fb-wh-parts-state').textContent = active + ' قطعه‌ی فعال';
+    box.innerHTML = '<input type="search" class="fb-parts-q" placeholder="جستجوی قطعه…">'
+      + '<div class="table-scroll" style="max-height:280px"><table class="fb-mini-table"><thead><tr><th>کد انباری</th><th>شرح قطعه</th>'
+      + '<th>فعال</th></tr></thead><tbody>' + partsList.map(function (p, i) {
+        return '<tr data-part="' + i + '"' + (p.is_active ? '' : ' class="inactive"') + '>'
+          + '<td><input type="text" dir="ltr" class="fb-pl-code" value="' + A.esc(p.code || '') + '" style="width:120px"></td>'
+          + '<td><input type="text" class="fb-pl-name" value="' + A.esc(p.name || '') + '"></td>'
+          + '<td><input type="checkbox" class="fb-pl-active" style="width:auto"' + (p.is_active ? ' checked' : '') + '></td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  function bindPartsList() {
+    var box = A.qs('#fb-wh-parts-list');
+    if (!box) return;
+    var sync = function (ev) {
+      if (ev.target.classList.contains('fb-parts-q')) {
+        var q = ev.target.value.trim();
+        box.querySelectorAll('tr[data-part]').forEach(function (tr) {
+          var p = partsList[+tr.dataset.part];
+          tr.classList.toggle('hidden', !!q && (String(p.name) + ' ' + String(p.code || '')).indexOf(q) === -1);
+        });
+        return;
+      }
+      var tr = ev.target.closest('tr[data-part]');
+      if (!tr) return;
+      var p = partsList[+tr.dataset.part];
+      if (ev.target.classList.contains('fb-pl-code')) p.code = ev.target.value;
+      if (ev.target.classList.contains('fb-pl-name')) p.name = ev.target.value;
+      if (ev.target.classList.contains('fb-pl-active')) { p.is_active = ev.target.checked; tr.classList.toggle('inactive', !p.is_active); }
+      p._dirty = true;
+    };
+    box.addEventListener('input', sync);
+    box.addEventListener('change', sync);
+    A.qs('#fb-wh-eq').addEventListener('change', loadPartsList);
+    A.qs('#fb-wh-part-new').addEventListener('click', function () {
+      partsList.push({ id: null, code: '', name: '', kind: 'part', category: A.qs('#fb-wh-eq').value,
+                       unit: 'عدد', is_active: true, _dirty: true });
+      drawPartsList();
+      var last = box.querySelector('tr[data-part]:last-child .fb-pl-name');
+      if (last) last.focus();
+    });
+    A.qs('#fb-wh-parts-save').addEventListener('click', async function () {
+      var rows = partsList.filter(function (p) { return p._dirty && (p.id || String(p.name || '').trim()); })
+        .map(function (p) {
+          return { id: p.id, code: p.code, name: p.name, kind: 'part', category: p.category || A.qs('#fb-wh-eq').value,
+                   is_active: p.is_active };
+        });
+      if (!rows.length) { A.toast('تغییری در فهرست قطعات نیست.', 'info'); return; }
+      try {
+        var res = await A.api.post('/api/warehouse/items/bulk', { items: rows });
+        A.toast(res.message, 'success');
+        loadPartsList();
+      } catch (err) { A.toast(err.message, 'error'); }
+    });
   }
   /* The lists come from the warehouse's own tables when the schema has them
      (conditions are edited on the warehouse page, equipment kinds follow the
@@ -590,6 +735,9 @@
     A.qs('#fb-wh-act').value = cfg.action_field || '';
     checks('#fb-wh-conds', L.conds, cfg.conditions || []);
     checks('#fb-wh-cols', L.cols, cfg.columns || []);
+    whPreset = (cfg.preset || []).map(function (r) { return Object.assign({}, r); });
+    A.qs('#fb-wh-preset-lock').checked = !!cfg.preset_lock;
+    drawWhPreset();
     whModeSync();
   }
   function collectWh() {
@@ -603,14 +751,25 @@
              conditions: picked('#fb-wh-conds'), columns: picked('#fb-wh-cols'),
              equipment_type: A.qs('#fb-wh-eq').value, equipment_field: A.qs('#fb-wh-eqf').value.trim(),
              failure_field: A.qs('#fb-wh-fail').value.trim(), cause_field: A.qs('#fb-wh-cause').value.trim(),
-             action_field: A.qs('#fb-wh-act').value.trim() };
+             action_field: A.qs('#fb-wh-act').value.trim(),
+             preset: whPreset.filter(function (r) { return r.item_code; }),
+             preset_lock: A.qs('#fb-wh-preset-lock').checked };
   }
 
   function fillChart(field) {
     var cfg = (field && field.chart_config) || {};
+    /* every setting of a series is kept — the curve, the scale, the colour,
+       a catalogue curve's fields — not only what the rows below show */
     chartState = (cfg.series || []).map(function (sr) {
-      return { label: sr.label || '', x: (sr.x || []).slice(), y: (sr.y || []).slice(),
-               axis: sr.axis || 'left', trend: sr.trend || '' };
+      var copy = JSON.parse(JSON.stringify(sr));
+      copy.label = sr.label || '';
+      if (!sr.catalogue) {
+        copy.x = Array.isArray(sr.x) ? sr.x.slice() : [];
+        copy.y = Array.isArray(sr.y) ? sr.y.slice() : [];
+        copy.axis = sr.axis || 'left';
+        copy.trend = sr.trend || '';
+      }
+      return copy;
     });
     if (!chartState.length) chartState.push({ label: '', x: [], y: [], axis: 'left', trend: '' });
     A.qs('#fb-chart-xl').value = cfg.x_label || '';
@@ -631,6 +790,24 @@
   function drawChartSeries() {
     var opts = numericFieldOptions();
     A.qs('#fb-chart-series').innerHTML = chartState.map(function (sr, i) {
+      if (sr.catalogue) {
+        /* a catalogue curve: the model named by two fields of the form */
+        var all = [];
+        (schema.sections || []).forEach(function (sec) { (sec.fields || []).forEach(function (f) { all.push(f); }); });
+        var pick = function (cls, current) {
+          return '<select class="' + cls + '">' + all.map(function (f) {
+            return '<option value="' + A.esc(f.field_name) + '"' + (f.field_name === current ? ' selected' : '') + '>'
+              + A.esc(f.label) + ' (' + A.esc(f.field_name) + ')</option>';
+          }).join('') + '</select>';
+        };
+        return '<div class="fb-rule" data-series="' + i + '">'
+          + '<div class="fb-rule-head"><input type="text" class="fb-cs-label" placeholder="نام سری" value="' + A.esc(sr.label) + '">'
+          + '<span class="badge">📘 منحنی کاتالوگ</span>'
+          + '<button type="button" class="btn-sm btn-del fb-cs-del" title="حذف سری">✕</button></div>'
+          + '<div class="field-group cols-2"><div class="field"><label>تیپ پمپ از فیلد</label>' + pick('fb-cs-cat-type', sr.catalogue.type) + '</div>'
+          + '<div class="field"><label>تعداد طبقات از فیلد</label>' + pick('fb-cs-cat-stages', sr.catalogue.stages) + '</div></div>'
+          + '</div>';
+      }
       return '<div class="fb-rule" data-series="' + i + '">'
         + '<div class="fb-rule-head"><input type="text" class="fb-cs-label" placeholder="نام سری (مثلاً افت)" value="'
         + A.esc(sr.label) + '">'
@@ -644,6 +821,18 @@
         + multiSelect('fb-cs-x', sr.x, opts) + '<span class="hint fb-cs-xl">' + A.esc(sr.x.join('، ')) + '</span></div>'
         + '<div class="field"><label>Y (محور عمودی) — به همان ترتیب</label>'
         + multiSelect('fb-cs-y', sr.y, opts) + '<span class="hint fb-cs-yl">' + A.esc(sr.y.join('، ')) + '</span></div></div>'
+        /* a curve from a formula of x, drawn across the whole axis with its equation */
+        + '<details class="fb-cs-curve"' + (sr.curve && sr.curve.y ? ' open' : '') + '><summary>📈 منحنی از فرمول (اختیاری)</summary>'
+        + '<div class="field-group cols-3">'
+        + '<div class="field span-2"><label>فرمول منحنی — [x] مقدار محور افقی</label><input type="text" dir="ltr" class="fb-cs-cy"'
+        + ' placeholder="مثلاً: 100 * [fc_b] / ([fc_b] + [fc_a] * [x])" value="' + A.esc((sr.curve || {}).y || '') + '"></div>'
+        + '<div class="field"><label>ضریب نمایش</label><input type="number" step="any" class="fb-cs-scale" placeholder="1"'
+        + ' value="' + A.esc(sr.scale == null ? '' : sr.scale) + '"></div>'
+        + '<div class="field"><label>شرط رسم (اختیاری)</label><input type="text" dir="ltr" class="fb-cs-creq"'
+        + ' placeholder="AND([fc_b] > 0, [fc_a] >= 0)" value="' + A.esc((sr.curve || {}).require || '') + '"></div>'
+        + '<div class="field span-2"><label>پیام وقتی شرط برقرار نیست</label><input type="text" class="fb-cs-cnote"'
+        + ' value="' + A.esc((sr.curve || {}).note || '') + '"></div>'
+        + '</div><span class="hint">نقطه‌ها همان X و Y بالا هستند و «ضریب نمایش» آن‌ها را مثلاً درصد می‌کند (۱۰۰)؛ منحنی و معادله‌ی آن از همین فرمول رسم می‌شود (واحدش در خود فرمول).</span></details>'
         + '</div>';
     }).join('');
   }
@@ -660,6 +849,8 @@
       var row = ev.target.closest('[data-series]');
       if (!row) return;
       var sr = chartState[+row.dataset.series];
+      if (ev.target.classList.contains('fb-cs-cat-type')) sr.catalogue.type = ev.target.value;
+      if (ev.target.classList.contains('fb-cs-cat-stages')) sr.catalogue.stages = ev.target.value;
       if (ev.target.classList.contains('fb-cs-axis')) sr.axis = ev.target.value;
       if (ev.target.classList.contains('fb-cs-trend')) sr.trend = ev.target.value;
       ['x', 'y'].forEach(function (k) {
@@ -672,8 +863,19 @@
       });
     });
     box.addEventListener('input', function (ev) {
-      if (!ev.target.classList.contains('fb-cs-label')) return;
-      chartState[+ev.target.closest('[data-series]').dataset.series].label = ev.target.value;
+      var row = ev.target.closest('[data-series]');
+      if (!row) return;
+      var sr = chartState[+row.dataset.series];
+      if (ev.target.classList.contains('fb-cs-label')) sr.label = ev.target.value;
+      if (ev.target.classList.contains('fb-cs-scale')) {
+        if (ev.target.value === '') delete sr.scale; else sr.scale = Number(ev.target.value);
+      }
+      var keys = { 'fb-cs-cy': 'y', 'fb-cs-creq': 'require', 'fb-cs-cnote': 'note' };
+      Object.keys(keys).forEach(function (cls) {
+        if (!ev.target.classList.contains(cls)) return;
+        sr.curve = sr.curve || {};
+        sr.curve[keys[cls]] = ev.target.value;
+      });
     });
     box.addEventListener('click', function (ev) {
       var del = ev.target.closest('.fb-cs-del');
@@ -841,6 +1043,7 @@
     A.qs('#sb-active').value = section && !section.is_active ? '0' : '1';
     A.qs('#sb-entry').value = section && section.show_on_entry === false ? '0' : '1';
     A.qs('#sb-collapse').value = section && section.collapse_formulas ? '1' : '0';
+    A.qs('#sb-repeat').value = section && section.repeat_group ? section.repeat_group : '';
     fillWhen(section && section.visible_when, 'sb');
     fillBring(section);
     A.qs('#sb-delete').classList.toggle('hidden', !section);
@@ -855,6 +1058,7 @@
       is_active: A.qs('#sb-active').value === '1',
       show_on_entry: A.qs('#sb-entry').value === '1',
       collapse_formulas: A.qs('#sb-collapse').value === '1',
+      repeat_group: A.qs('#sb-repeat').value.trim(),
       visible_when: readWhen('sb')
     };
     if (!payload.code || !payload.title) {
@@ -971,6 +1175,8 @@
     bindApproval();
     bindChart();
     if (A.qs('#fb-wh-mode')) A.qs('#fb-wh-mode').addEventListener('change', whModeSync);
+    bindWhPreset();
+    bindPartsList();
     /* an option typed or renamed in the list shows up among the approvable ones */
     A.qs('#fb-options-list').addEventListener('change', renderApprovalOptions);
     A.qs('#fb-formula-field').addEventListener('change', function () {

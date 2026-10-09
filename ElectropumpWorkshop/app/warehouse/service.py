@@ -274,7 +274,12 @@ def _post_parts(instance, stage, field, cfg, data, user, jdate, jy, jm, jd) -> i
     for r in clean_parts(data.get(field.field_name)):
         item = db.session.get(WhItem, r["item_id"]) if r["item_id"] else None
         name = item.name if item else r["item_name"]
-        code = (item.note or "").replace("کد انباری", "").strip() if item and item.note else r.get("code")
+        if item is not None and item.note and "کد انباری" in item.note:
+            code = item.note.replace("کد انباری", "").strip()
+        elif item is not None and item.code:
+            code = item.code[:-2] if item.code.endswith("-P") else item.code
+        else:
+            code = r.get("code")
         acts = [("installed", "نو", None, r.get("installed_new")),
                 ("installed", "کهنه", None, r.get("installed_repair")),
                 ("collected", "نو", None, r.get("collected_new")),

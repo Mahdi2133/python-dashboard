@@ -174,7 +174,7 @@ body.nav-collapsed .nav-btn { justify-content:center; padding:9px 4px; gap:0; }
   100%   { box-shadow:none; }
 }
 
-input[type=text], input[type=number], input[type=date], input[type=password],
+input[type=text], input[type=search], input[type=number], input[type=date], input[type=password],
 select, textarea {
   font-family:inherit; font-size:13px; padding:8px 10px; border:1px solid var(--border);
   border-radius:8px; background:var(--input-bg); color:var(--text); width:100%;
@@ -1557,3 +1557,29 @@ tr.clickable { cursor:pointer; }
   .wh-filters, #wh-tabs, .toolbar-actions, .sidebar, .topbar { display:none !important; }
 }
 .rd-cards { grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); }
+/* R13 — production chart zoom bar */
+.rp-zoom { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:4px 0; }
+.rp-zoom .btn-sm { min-width:34px; font-weight:700; }
+.rp-chart { height:340px; }
+/* R13 — repeatable sections (points 1..5): one shown, ➕ opens the next */
+.form-section.repeat-hidden { display:none; }
+.repeat-bar { margin:-6px 0 16px; display:flex; justify-content:flex-start; }
+.repeat-bar .repeat-add { border-style:dashed; }
+.section-title .repeat-del { margin-inline-start:auto; }
+/* R13 — form builder: preset rows and the parts list */
+.fb-mini-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+.fb-mini-table th, .fb-mini-table td { padding:4px 6px; border-bottom:1px solid var(--border); text-align:right; }
+.fb-mini-table input[type=text], .fb-mini-table select { width:100%; margin:0; }
+.fb-mini-table tr.inactive td { opacity:.55; }
+.fb-parts-list .fb-parts-q { margin-bottom:6px; }
+.wh-row.wh-fixed .wh-item, .wh-row.wh-fixed .wh-spec, .wh-row.wh-fixed .wh-qty { background:#f1f5f9; color:#334155; }
+/* R13 — parts form: search a part, add it, count it */
+.whp-pick { position:relative; margin:6px 0 8px; max-width:560px; }
+.whp-pick .whp-search { width:100%; }
+.whp-suggest { position:absolute; z-index:30; inset-inline:0; top:100%; max-height:280px; overflow-y:auto;
+  background:#fff; border:1px solid var(--border); border-radius:8px; box-shadow:var(--shadow-hover); }
+.whp-opt { display:flex; justify-content:space-between; gap:10px; padding:7px 10px; cursor:pointer; font-size:13px; }
+.whp-opt:hover, .whp-opt.active { background:#eaf3fa; }
+.whp-none { padding:8px 10px; }
+.whp-table tr.whp-empty td { text-align:center; padding:12px; }
+.whp-table input.whp-n { min-width:64px; text-align:center; }

@@ -200,7 +200,7 @@ def prod_fields():
         _fdef("_urban", "شهری/روستایی", "single", h), _fdef("_electropump", "تیپ الکتروپمپ", "single", h),
         _fdef("_pressure_type", "نوع فشار", "single", h),
         _fdef("_production", "تولید (m³)", "decimal", q), _fdef("_hours", "کارکرد (ساعت)", "decimal", q),
-        _fdef("_avg_flow", "دبی متوسط (l/s)", "decimal", q), _fdef("_pressure", "فشار", "decimal", q),
+        _fdef("_avg_flow", "دبی متوسط (l/s)", "decimal", q), _fdef("_pressure", "فشار (atm)", "decimal", q),
     ]
 
 

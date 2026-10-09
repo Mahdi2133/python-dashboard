@@ -80,6 +80,9 @@
         <span class="hint">وقتی چاه انتخاب شد، این فیلد با مقداری که در
           <b>آخرین عملیات همان چاه</b> ثبت شده، یا از <b>بانک‌های اطلاعاتی</b> (دبی‌سنجی، روند تولید، ویدئومتری)
           پر می‌شود و قابل ویرایش می‌ماند. مثلاً «عمق نصب قبلی» ← «عمق نصب فعلی» و اگر خالی بود ← «دبی‌سنجی: عمق نصب».</span></div>
+      <div class="field"><label>طبقات از کاتالوگ پمپ <span class="hint">(برای فیلد «تعداد طبقات»)</span></label>
+        <select id="fb-stages-of"><option value="">— خیر —</option></select>
+        <span class="hint">گزینه‌ها مدل‌های همان تیپ در کاتالوگ می‌شوند (مثل 384/10)؛ با انتخاب طبقه، تیپ پمپ هم پر می‌شود.</span></div>
       <div class="field"><label>متن راهنمای داخل کادر</label><input type="text" id="fb-placeholder"></div>
       <div class="field"><label>دسته گزینه (برای فیلدهای انتخابی)</label>
         <select id="fb-lookup"><option value="">— گزینه‌های اختصاصی —</option></select></div>
@@ -195,6 +198,23 @@
           <div class="field fb-wh-parts"><label>فیلد «خرابی مشاهده شده»</label><input type="text" id="fb-wh-fail" dir="ltr"></div>
           <div class="field fb-wh-parts"><label>فیلد «علت خرابی»</label><input type="text" id="fb-wh-cause" dir="ltr"></div>
           <div class="field fb-wh-parts"><label>فیلد «اقدام انجام شده»</label><input type="text" id="fb-wh-act" dir="ltr"></div>
+          <div class="field fb-wh-rows span-full"><label>ردیف‌های ثابت <span class="hint">(اختیاری — مثلاً الکتروموتور و پمپ کشیده‌شده)</span></label>
+            <div id="fb-wh-preset"></div>
+            <div class="toolbar-actions">
+              <button type="button" class="btn-ghost btn-sm" id="fb-wh-preset-add">➕ ردیف ثابت</button>
+              <label class="small"><input type="checkbox" id="fb-wh-preset-lock" style="width:auto">
+                قفل: کالا، مشخصات و تعداد تغییر نکند (کاربر فقط وضعیت و پلاک را می‌زند)</label>
+            </div>
+            <span class="hint">«مشخصات» فرمول است و از اطلاعات فرایند پر می‌شود؛ مثلاً
+              <span dir="ltr">EPPART([Electro_tip], "pump")</span> → 233/13 و
+              <span dir="ltr">EPPART([Electro_tip], "motor")</span> → 24.</span></div>
+          <div class="field fb-wh-parts span-full"><label>فهرست قطعات این تجهیز <span class="hint">(نام‌ها اینجا ویرایش می‌شوند؛ در همه‌ی فرم‌ها و انبار یکی است)</span></label>
+            <div id="fb-wh-parts-list" class="fb-parts-list"></div>
+            <div class="toolbar-actions">
+              <button type="button" class="btn-ghost btn-sm" id="fb-wh-part-new">➕ قطعه‌ی تازه</button>
+              <button type="button" class="btn-primary btn-sm" id="fb-wh-parts-save">💾 ذخیره‌ی فهرست قطعات</button>
+              <span class="hint" id="fb-wh-parts-state"></span>
+            </div></div>
         </div>
         <div class="hint">با ارسال مرحله، ردیف‌ها در دفتر انبار (پایگاه داده‌ی جداگانه‌ی انبار) ثبت می‌شوند؛ ارسال دوباره‌ی
           همان مرحله جایگزین ثبت قبلی می‌شود. فرم قطعات: «نصب» از انبار قطعات خارج می‌شود و قطعه‌ی جمع‌آوری‌شده با ارزیابی
@@ -237,7 +257,7 @@
       <div class="field"><label>عنوان <span class="req">*</span></label><input type="text" id="sb-title"></div>
       <div class="field"><label>آیکون</label><input type="text" id="sb-icon" maxlength="4"></div>
       <div class="field"><label>تعداد ستون</label>
-        <select id="sb-columns"><option>1</option><option>2</option><option selected>3</option></select></div>
+        <select id="sb-columns"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select></div>
       <div class="field"><label>تمام‌عرض</label>
         <select id="sb-full"><option value="0">خیر</option><option value="1">بله</option></select></div>
       <div class="field"><label>وضعیت</label>
@@ -247,6 +267,10 @@
       <div class="field"><label>فیلدهای محاسباتی</label>
         <select id="sb-collapse"><option value="0">نمایش داده شوند</option>
           <option value="1">پنهان باشند (با دکمه‌ی «نمایش محاسبات»)</option></select></div>
+      <div class="field"><label>گروه تکرارشونده <span class="hint">(اختیاری)</span></label>
+        <input type="text" id="sb-repeat" placeholder="مثلاً: نقاط آزمایش">
+        <span class="hint">بخش‌هایی با یک نام گروه (مثل نقطه ۱ تا ۵) یکی‌یکی باز می‌شوند: اولی نمایش داده
+          می‌شود و بقیه با «➕ افزودن» اضافه و با «✕ حذف» برداشته می‌شوند.</span></div>
       <div class="field span-2 hidden" id="sb-bring-box"><label>افزودن فیلد از بخش‌های دیگر</label>
         <div class="bring-row">
           <select id="sb-bring-field"><option value="">— فیلدی را انتخاب کنید —</option></select>

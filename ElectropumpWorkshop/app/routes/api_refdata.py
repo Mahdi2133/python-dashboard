@@ -285,8 +285,42 @@ def videometry():
 # ── import, link, export ─────────────────────────────────────────────────────
 IMPORTERS = {"flowtest": ft_mod, "production": pr_mod, "videometry": vm_mod}
 ACCEPT = {"flowtest": (".zip", ".xls", ".xlsx", ".xlsm"),
-          "production": (".xlsx", ".xlsm"),
-          "videometry": (".xlsx", ".xlsm", ".json")}
+          "production": (".zip", ".xlsx", ".xlsm"),
+          "videometry": (".zip", ".xlsx", ".xlsm", ".json")}
+# what a zip may carry for the banks that read one file at a time
+_INNER = {"production": (".xlsx", ".xlsm"), "videometry": (".json", ".xlsx", ".xlsm")}
+
+
+def _unpacked(source, name, data):
+    """(name, bytes) of every file to import from one upload, and the names
+    left out. The flow-test importer walks its own zips; production and
+    videometry take their files out of a zip (zips inside zips too) — the
+    JSON before the workbook and the years in order, so the newer file is
+    the one that stays."""
+    if source not in _INNER or not name.lower().endswith(".zip"):
+        return [(name, data)], []
+    wanted, skipped = [], []
+    for inner, blob in _zip_members(data):
+        if inner.lower().endswith(_INNER[source]) and not inner.startswith("~$"):
+            wanted.append((inner, blob))
+        elif not inner.lower().endswith((".db", ".tmp")):
+            skipped.append(inner)
+    wanted.sort(key=lambda x: (not x[0].lower().endswith(".json"), x[0]))
+    return wanted, skipped
+
+
+def _zip_members(data, depth=0):
+    """(file name, bytes) of every file in a zip, unpacking zips inside it."""
+    import zipfile
+    z = zipfile.ZipFile(io.BytesIO(data))
+    for info in z.infolist():
+        if info.is_dir():
+            continue
+        inner = ft_mod._zip_name(info).replace("\\", "/").split("/")[-1]
+        if inner.lower().endswith(".zip") and depth < 6:
+            yield from _zip_members(z.read(info), depth + 1)
+        else:
+            yield inner, z.read(info)
 
 
 @bp.post("/<source>/import")
@@ -308,11 +342,23 @@ def import_files(source):
                             f"(مجاز: {'، '.join(ACCEPT[source])})."})
             continue
         try:
-            results.append({"file": name, **IMPORTERS[source].import_bytes(
-                f.read(), name, force=force, index=index)})
-        except Exception as exc:  # noqa: BLE001 — report per file, keep going
-            db.session.rollback()
-            results.append({"file": name, "error": str(exc)[:300]})
+            members, skipped = _unpacked(source, name, f.read())
+        except Exception as exc:  # noqa: BLE001 — a broken zip is reported, not raised
+            results.append({"file": name, "error": f"فایل zip خوانده نشد: {str(exc)[:200]}"})
+            continue
+        if not members:
+            results.append({"file": name, "error": "در این zip فایلی برای این بانک پیدا نشد "
+                            f"(مجاز: {'، '.join(_INNER.get(source, ACCEPT[source]))})."})
+        for inner, blob in members:
+            label = inner if inner == name else f"{name} ← {inner}"
+            try:
+                results.append({"file": label, **IMPORTERS[source].import_bytes(
+                    blob, inner, force=force, index=index)})
+            except Exception as exc:  # noqa: BLE001 — report per file, keep going
+                db.session.rollback()
+                results.append({"file": label, "error": str(exc)[:300]})
+        if skipped:
+            results.append({"file": name, "skipped_files": skipped})
     record_audit("import", "refdata", None,
                  summary=f"ورود {len(files)} فایل به بانک «{SOURCES[source][0]}»", commit=True)
     from ..analytics.catalogue import bump_data_version
@@ -395,7 +441,7 @@ def export(source):
     elif source == "production":
         ws.title = "روند تولید"
         ws.append(["کد تاسیس", "نام چاه", "چاه در سامانه", "تیپ الکتروپمپ", "سال", "ماه",
-                   "تولید (m³)", "کارکرد (ساعت)", "دبی متوسط (l/s)", "فشار", "نوع فشار"])
+                   "تولید (m³)", "کارکرد (ساعت)", "دبی متوسط (l/s)", "فشار (atm)", "نوع فشار"])
         wells = ProdWell.query.order_by(ProdWell.facility_code).all()
         names = _well_names(w.main_well_id for w in wells)
         for w in wells:

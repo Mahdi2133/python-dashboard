@@ -197,6 +197,8 @@ FUNCTIONS = {
     "NUMBER": (1, 1, "NUMBER(مقدار) — تبدیل به عدد"),
     "LEADNUM": (1, 1, "LEADNUM(متن) — عدد ابتدای متن، مثل 12 در «12 متری»"),
     "EPUMP": (1, 3, "EPUMP(تیپ پمپ، طبقات، توان موتور) — تیپ الکتروپمپ به شکل 384/10+73.5"),
+    "EPPART": (2, 2, 'EPPART(تیپ الکتروپمپ، "pump"|"motor"|"type"|"stages") — یک جزء از 384/10+73.5: '
+                     'pump → 384/10، motor → 73.5، type → 384، stages → 10'),
     "TEXT": (1, 1, "TEXT(مقدار) — تبدیل به متن"),
     "CONTAINS": (2, 2, "CONTAINS(فهرست یا متن، مقدار)"),
     "SUM": (1, 1, "SUM([فیلد]) — جمع در گروه"),
@@ -587,6 +589,18 @@ class Evaluator:
             parts = [p[0] if isinstance(p, list) and p else (None if isinstance(p, list) else p)
                      for p in parts[:3]]
             return electropump_label(*parts)
+        if name == "EPPART":
+            from ..services.epump import electropump_label, parse_electropump_label
+            label, part = ev(args[0]), ev(args[1])
+            if isinstance(label, list):
+                label = label[0] if label else None
+            t, st, kw = parse_electropump_label(label)
+            part = str(part or "").strip().lower()
+            if part == "pump":
+                return electropump_label(t, st)
+            if part == "motor":
+                return kw
+            return {"type": t, "stages": st}.get(part)
         if name == "TEXT":
             v = ev(args[0])
             return None if v is None else str(v)

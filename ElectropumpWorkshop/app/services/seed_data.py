@@ -553,7 +553,7 @@ WORKFLOW_STAGES = [
         "items": [("section", "intake", "both", False)],
     },
     {
-        "stage_number": 1, "title": "اعلام علت خرابی", "applies_to": "pull",
+        "stage_number": 1, "title": "اعلام خرابی مشاهده شده از سمت بهره بردار", "applies_to": "pull",
         "hint": "مرکز آبرسانی",
         "description": "مرکز آبرسانی علت خرابی را اعلام می‌کند. این مرحله فقط "
                        "در عملیات «کشیدن» طی می‌شود.",
