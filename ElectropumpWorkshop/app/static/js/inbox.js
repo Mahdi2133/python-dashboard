@@ -531,6 +531,7 @@
                 detail.operation_label,
                 Object.assign({}, detail.payload || {}, detail.draft || {}));
       if (detail.well) fillPrevious(detail.well);
+      resetRefPanel(detail.well);
       renderApprovalPanel(detail);
       /* A blocking approval in front of this stage stops it being filled —
          the server refuses it either way, so the button says so first. */
@@ -973,6 +974,18 @@
     refreshDecisions();
   }, 250);
 
+  /* What the reference databases know about this well — flow tests,
+     production trend, videometry — loaded when the box is opened. */
+  function resetRefPanel(well) {
+    var refWrap = A.qs('#wf-ref-wrap');
+    if (!refWrap) return;
+    refWrap.open = false;
+    A.qs('#wf-ref').innerHTML = '';
+    refWrap.classList.toggle('hidden', !well);
+    refWrap.dataset.well = well || '';
+    refWrap.dataset.loaded = '';
+  }
+
   /* The «…قبلی» fields are read off the well's last operation. Whether that
      worked has to be visible: a well with no history looks exactly like a
      broken prefill, and the operator is left wondering which it was. */
@@ -1006,15 +1019,78 @@
       /* Filled in, never locked: the operator can overwrite any of it. */
       form.setValues(values, { onlyEmpty: true, flash: true });
       var src = data.source || {};
-      fill('#wf-prev-note', '<div class="alert info">✓ مقادیر «قبلی» از سوابق '
-        + 'این چاه'
-        + (src.date ? ' (<b>' + A.esc(src.date) + '</b>'
+      var refs = (data.refs || []).map(function (r) {
+        return A.esc(r.title) + (r.date ? ' ' + A.esc(r.date) : '');
+      });
+      fill('#wf-prev-note', '<div class="alert info">✓ <b>' + filled.length + ' فیلد</b> خودکار پر شد'
+        + (src.date ? ' — از سوابق این چاه (<b>' + A.esc(src.date) + '</b>'
             + (src.operation ? ' — ' + A.esc(src.operation) : '') + ')' : '')
-        + ' پر شد: <b>' + filled.length + ' فیلد</b>. '
-        + 'اگر درست نیست، همان‌جا ویرایش کنید.</div>');
+        + (refs.length ? ' — از بانک‌های اطلاعاتی: ' + refs.join('، ') : '')
+        + '. اگر درست نیست، همان‌جا ویرایش کنید.</div>');
     } catch (err) {
       fill('#wf-prev-note', '');
     }
+  }
+
+  /* ── «گزارش مرحله‌ی من»: each متولی's report of their own stage ───────── */
+  function myReportBody() {
+    var get = function (id) { return window.Jalali.toEnDigits((A.qs(id).value || '').trim()); };
+    return { stage_id: Number(A.qs('#mr-stage').value), all_columns: true,
+             date_from: get('#mr-from'), date_to: get('#mr-to'), mine_only: A.qs('#mr-mine').checked };
+  }
+  async function runMyReport() {
+    if (!A.qs('#mr-stage').value) return;
+    var box = A.qs('#mr-table');
+    box.innerHTML = '<div class="loading">بارگذاری</div>';
+    try {
+      var res = await A.api.post('/api/workflow/stage-report', myReportBody());
+      var d = res.data;
+      A.qs('#mr-count').textContent = (window.Jalali ? window.Jalali.toFaDigits(d.rows.length) : d.rows.length) + ' ردیف';
+      var cols = d.columns.filter(function (c) {
+        return d.rows.some(function (r) { return r[c.key] !== '' && r[c.key] !== null && r[c.key] !== undefined; });
+      });
+      box.innerHTML = d.rows.length ? '<table><thead><tr>' + cols.map(function (c) {
+        return '<th>' + A.esc(c.label) + '</th>';
+      }).join('') + '</tr></thead><tbody>' + d.rows.map(function (r) {
+        return '<tr>' + cols.map(function (c) {
+          var v = r[c.key]; v = v === null || v === undefined ? '' : String(v);
+          return '<td title="' + A.esc(v) + '">' + A.esc(v.length > 60 ? v.slice(0, 60) + '…' : v) + '</td>';
+        }).join('') + '</tr>';
+      }).join('') + '</tbody></table>' : '<div class="table-empty">در این بازه موردی ثبت نشده است.</div>';
+    } catch (err) { box.innerHTML = '<div class="alert error">' + A.esc(err.message) + '</div>'; }
+  }
+  function setupMyReport() {
+    var btn = A.qs('#btn-my-report');
+    if (!btn) return;
+    btn.addEventListener('click', async function () {
+      var panel = A.qs('#my-report');
+      panel.classList.toggle('hidden');
+      if (panel.classList.contains('hidden') || A.qs('#mr-stage').options.length) return;
+      A.qsa('#my-report .jdate').forEach(function (inp) { window.Jalali.attach(inp); });
+      try {
+        var res = await A.api.get('/api/workflow/my-stages');
+        var stages = res.data.stages;
+        if (!stages.length) {
+          A.qs('#mr-table').innerHTML = '<div class="hint">شما متولی هیچ مرحله‌ای نیستید.</div>';
+          return;
+        }
+        A.qs('#mr-stage').innerHTML = stages.map(function (st) {
+          return '<option value="' + st.id + '">' + A.esc(st.workflow) + ' — مرحله ' + st.stage_number + ': '
+            + A.esc(st.title) + ' (' + st.done + ')' + (st.mine ? ' ★' : '') + '</option>';
+        }).join('');
+        var mine = stages.find(function (st) { return st.mine; });
+        if (mine) A.qs('#mr-stage').value = mine.id;
+        runMyReport();
+      } catch (err) { A.toast(err.message, 'error'); }
+    });
+    A.qs('#mr-close').addEventListener('click', function () { A.qs('#my-report').classList.add('hidden'); });
+    A.qs('#mr-run').addEventListener('click', runMyReport);
+    A.qs('#mr-stage').addEventListener('change', runMyReport);
+    A.qsa('[data-mr-export]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        A.downloadPost('/api/workflow/stage-report/export.' + b.dataset.mrExport, myReportBody());
+      });
+    });
   }
 
   async function submitStage() {
@@ -1460,6 +1536,15 @@
       } catch (err) { A.toast(err.message, 'error'); }
     });
     A.qs('#np-start').addEventListener('click', startProcess);
+    setupMyReport();
+    var refWrap = A.qs('#wf-ref-wrap');
+    if (refWrap && window.RefPanel) {
+      refWrap.addEventListener('toggle', function () {
+        if (!refWrap.open || refWrap.dataset.loaded || !refWrap.dataset.well) return;
+        refWrap.dataset.loaded = '1';
+        window.RefPanel.load(A.qs('#wf-ref'), refWrap.dataset.well, { compact: true });
+      });
+    }
     /* The well picker in the dialog is the same autocomplete the forms use,
        so the process starts against a canonical well from the register. */
     window.FormEngine.attachAutocomplete(A.qs('#np-well'), schema.lookups);

@@ -394,6 +394,13 @@ def ensure_database(app) -> dict:
     # timestamps are already local and must not be shifted.
     status["clock"] = _localise_timestamps(fresh_database=not existed)
 
+    try:
+        from ..refdata import ensure_refdata
+        status["refdata"] = ensure_refdata(app)
+    except Exception:  # noqa: BLE001 — a reference file must never stop the app starting
+        db.session.rollback()
+        log.exception("Preparing the reference databases failed")
+
     from .seed import seed_all
     seeded = seed_all(force=False)
     status["seeded"] = bool(seeded.get("changed"))

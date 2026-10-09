@@ -1501,3 +1501,59 @@ table.sum-table thead th { background:#f4f8fb; color:var(--primary); white-space
 table.sum-table tbody th { text-align:right; font-weight:600; background:#fafcfd; white-space:nowrap; }
 .wf-sw-row { border:1px dashed var(--border); border-radius:6px; padding:6px; margin:4px 0; }
 .wf-sw-row select { max-width:calc(100% - 40px); }
+
+/* ── R12: a typed value beside its label ─────────────────────────────────── */
+.field.inline { display:grid; grid-template-columns:minmax(92px, 44%) minmax(0, 1fr);
+  align-items:center; gap:4px 8px; }
+.field.inline > label { grid-column:1; grid-row:1; margin:0; line-height:1.4; }
+.field.inline > :not(label) { grid-column:2; }
+.field.inline > .hint, .field.inline > .err, .field.inline > .block-note,
+.field.inline > details.calc-formula, .field.inline > .num-parts { grid-column:1 / -1; }
+.field-group > .field.inline > input, .field-group > .field.inline > select { margin-top:0; }
+.field.inline > .autocomplete-wrapper { min-width:0; }
+@media (max-width: 560px) { .field.inline { display:flex; flex-direction:column; align-items:stretch; } }
+
+/* calculated fields folded behind «نمایش محاسبات» */
+.form-section.calc-collapsed:not(.calc-open) .field.calc-field { display:none; }
+.form-section .calc-toggle { margin-inline-start:auto; font-size:11px; }
+.form-section .section-title { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+
+/* «اقلام انبار» and «فرم قطعات» */
+.wh-lines { border:1px solid var(--border); border-radius:10px; padding:8px; background:#fbfcfe; }
+.wh-head { margin-bottom:6px; font-weight:600; }
+.wh-table-wrap { overflow-x:auto; }
+.wh-table { width:100%; border-collapse:collapse; font-size:12px; }
+.wh-table thead th { background:#e8f0f8; color:var(--primary); position:static; padding:5px 6px; }
+.wh-table td { padding:3px 4px; border-bottom:1px solid #edf1f4; white-space:normal; max-width:none; }
+.wh-table input, .wh-table select { padding:4px 6px; font-size:12px; min-width:0; width:100%; }
+.wh-table .wh-qty, .whp-table .whp-n { max-width:70px; text-align:center; }
+.whp-table td.whp-name { text-align:right; min-width:170px; }
+.whp-table tfoot td { background:#eef4f9; font-weight:700; text-align:center; }
+.whp-table tr.whp-over td { background:#fdecea !important; }
+.whp-table tr:hover td { background:#f6f9fc; }
+
+/* reference-data panel */
+.rp-sources { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+.rp-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:14px; }
+.rp-h { font-weight:700; color:var(--primary); margin-bottom:6px; font-size:13px; }
+.rp-kv { grid-template-columns:auto 1fr; font-size:12.5px; }
+.rp-kv dd { word-break:normal; }
+.rp-table { font-size:12px; }
+.rp-table thead th { position:static; }
+.rp-table tr.rp-net td { background:#ecfdf5; font-weight:600; }
+.rp-chart { width:100%; height:300px; direction:ltr; }
+.rp-grid > div { min-width:0; }
+.rp-table th, .rp-table td { padding:5px 6px; }
+.rp-table td { white-space:nowrap; }
+.rp-table th { white-space:normal; line-height:1.35; }
+.rp-video { padding:6px 0; border-bottom:1px dashed var(--border); font-size:12.5px; }
+.wf-ref-wrap > div { padding:10px 4px; }
+.rd-card .stat-info p { margin-top:1px; }
+tr.clickable { cursor:pointer; }
+#my-report { margin-bottom:14px; }
+#my-report table thead th { position:static; }
+.mb-1 { margin-bottom:8px; }
+@media print {
+  .wh-filters, #wh-tabs, .toolbar-actions, .sidebar, .topbar { display:none !important; }
+}
+.rd-cards { grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); }

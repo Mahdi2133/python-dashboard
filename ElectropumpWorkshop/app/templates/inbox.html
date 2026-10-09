@@ -8,11 +8,31 @@
       برای پر کردن مرحله‌ی خود لازم نیست منتظر مرحله‌های قبل بمانید.</div>
   </div>
   <div class="toolbar-actions">
+    <button class="btn-ghost" id="btn-my-report" type="button">📊 گزارش مرحله‌ی من</button>
     <button class="btn-ghost" id="btn-refresh" type="button">↻ به‌روزرسانی</button>
   </div>
 </div>
 
 <div id="inbox-alert"></div>
+
+<!-- «گزارش مرحله‌ی من»: every case of a stage this person is متولی of -->
+<section class="card hidden" id="my-report">
+  <div class="card-head"><span>📊 گزارش مرحله‌ی من</span>
+    <button type="button" class="btn-sm btn-ghost" id="mr-close">✕ بستن</button></div>
+  <div class="field-group cols-5">
+    <div class="field span-2"><label>مرحله</label><select id="mr-stage"></select></div>
+    <div class="field"><label>از تاریخ ثبت</label><input type="text" class="jdate" id="mr-from"></div>
+    <div class="field"><label>تا تاریخ ثبت</label><input type="text" class="jdate" id="mr-to"></div>
+    <div class="field"><label>&nbsp;</label><label class="small"><input type="checkbox" id="mr-mine" style="width:auto"> فقط ثبت‌های خودم</label></div>
+  </div>
+  <div class="toolbar-actions mt-1">
+    <button type="button" class="btn-primary" id="mr-run">نمایش گزارش</button>
+    <button type="button" class="btn-ghost" data-mr-export="xlsx">⬇ اکسل</button>
+    <button type="button" class="btn-ghost" data-mr-export="pdf">⬇ PDF</button>
+    <span class="hint" id="mr-count"></span>
+  </div>
+  <div class="table-scroll mt-1" id="mr-table"></div>
+</section>
 
 <div class="wf-layout">
   <aside class="wf-list card">
@@ -33,6 +53,11 @@
     <details class="wf-summary-wrap" id="wf-summary-wrap" open>
       <summary>📋 اطلاعات ثبت‌شده در مرحله‌های قبل (فقط مشاهده)</summary>
       <div id="wf-summary"></div>
+    </details>
+
+    <details class="wf-summary-wrap wf-ref-wrap" id="wf-ref-wrap">
+      <summary>📚 اطلاعات چاه از بانک‌های اطلاعاتی (دبی‌سنجی، روند تولید، ویدئومتری)</summary>
+      <div id="wf-ref"></div>
     </details>
 
     <div id="wf-prev-note"></div>
@@ -192,5 +217,6 @@
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/formengine.js') }}"></script>
+<script src="{{ url_for('static', filename='js/refpanel.js') }}"></script>
 <script src="{{ url_for('static', filename='js/inbox.js') }}"></script>
 {% endblock %}

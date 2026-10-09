@@ -407,6 +407,12 @@ def stage_form(instance: WorkflowInstance, stage: WorkflowStage,
                 got = files.get(field.get("field_name"), [])
                 field["files"] = got
                 value = [a["filename"] for a in got]
+            if field.get("field_type") == "wh_lines" and value not in (None, "", [], {}):
+                from ..warehouse.service import (clean_lines, clean_parts, is_parts_answer,
+                                                 lines_text)
+                field["read_only_rows"] = (clean_parts(value) if is_parts_answer(value)
+                                           else clean_lines(value))
+                value = lines_text(value)
             if field.get("lookup_category") == "__months__" \
                     and str(value or "").isdigit() and 1 <= int(value) <= 12:
                 from .jalali import MONTHS_FA
@@ -764,6 +770,11 @@ def submitted_summary(instance: WorkflowInstance, except_stage: int = None,
             if kind == "numbers":
                 from .records import numbers_text
                 value = numbers_text(value)
+                if not value:
+                    continue
+            elif kind == "wh_lines":
+                from ..warehouse.service import lines_text
+                value = lines_text(value)
                 if not value:
                     continue
             elif isinstance(value, list):
@@ -1603,8 +1614,10 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
         _refer_onward(instance, stage, user, refer_to, referral_note)
 
     # «پس از ثبت این مرحله، فرایند … شروع شود» — once it is done (an approval
-    # starts it when the approver signs off instead).
+    # starts it when the approver signs off instead). The stage's «اقلام انبار»
+    # answers reach the warehouse ledger at the same moment.
     if entry.status in ENTRY_DONE:
+        _post_warehouse(instance, stage, payload, user)
         spawn_after(instance, stage, user)
 
     # A well named at any stage belongs to the instance, not just the payload.
@@ -1620,6 +1633,16 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
         finalize(instance, user)
     db.session.commit()
     return instance
+
+
+def _post_warehouse(instance, stage, payload, user):
+    """The stage's «اقلام انبار» rows to the warehouse ledger (its own DB)."""
+    try:
+        from ..warehouse.service import post_stage
+        post_stage(instance, stage, payload or {}, user)
+    except Exception:  # noqa: BLE001 — the ledger must never block the process
+        log.exception("Posting stage %s of instance %s to the warehouse failed",
+                      stage.stage_number, instance.id)
 
 
 def _shared_for(stage: WorkflowStage, chosen: list | None) -> str | None:
@@ -2120,6 +2143,9 @@ def decide_stage(instance: WorkflowInstance, stage_number: int, user,
         record_audit("update", "workflow", instance.id,
                      summary=f"تأیید مرحله {stage.stage_number} «{stage.title}»")
         _refer_onward(instance, stage, user)
+        from ..models import AppUser
+        _post_warehouse(instance, stage, entry.payload or {},
+                        (db.session.get(AppUser, entry.user_id) if entry.user_id else None) or user)
         spawn_after(instance, stage, user)
         if not refresh_position(instance):
             finalize(instance, user)
@@ -2436,6 +2462,35 @@ def _fit(value, field):
     return value
 
 
+def _fit_ref(value, field):
+    """A reference-database value shaped for its field; None if it fits nothing."""
+    if value in (None, ""):
+        return None
+    from ..refdata.profile import fit_choice
+    from ..services.epump import fmt_num
+    if field.field_type == "number":
+        try:
+            num = float(str(value).replace("٫", "."))
+        except ValueError:
+            return None
+        return int(num) if num.is_integer() else num
+    choices = [o.value for o in (field.options or []) if getattr(o, "is_active", True)]
+    if field.lookup_category and not choices:
+        from ..models import LookupCategory, LookupItem
+        cat = LookupCategory.query.filter_by(code=field.lookup_category).first()
+        if cat is not None:
+            choices = [i.value for i in LookupItem.query.filter_by(category_id=cat.id,
+                                                                  is_active=True)]
+    if field.field_type in ("radio", "select", "checkbox") and choices:
+        hit = fit_choice(value, choices)
+        return [hit] if (hit and field.field_type == "checkbox") else hit
+    if field.field_type == "autocomplete" and choices:
+        return fit_choice(value, choices) or fmt_num(value)
+    if isinstance(value, float):
+        return fmt_num(value)
+    return value
+
+
 def previous_values_for(well_id, before_record_id=None) -> dict:
     """The «…قبلی» answers, read off this well's history.
 
@@ -2461,32 +2516,60 @@ def previous_values_for(well_id, before_record_id=None) -> dict:
     if before_record_id:
         query = query.filter(Record.id != before_record_id)
     history = query.limit(60).all()
-    if not history and not any(f.prefill_from.startswith("@well:") for f in fields):
+    wants_well = any(("@well:" in f.prefill_from or "@ref:" in f.prefill_from) for f in fields)
+    if not history and not wants_well:
         return {}
 
     by_name = {f.field_name: f for f in
                FormField.query.filter(FormField.is_active.is_(True)).all()}
-    values, used = {}, []
+    values, used, refs_used = {}, [], set()
+    profile = None
     for field in fields:
-        source = field.prefill_from.strip()
-        if source == "@self":
-            source = field.field_name     # this same field, as last recorded
-        if source.startswith("@well:"):
-            attr = source[len("@well:"):]
-            value = (getattr(well, attr, None)
-                     if well is not None and attr in PREFILL_WELL_ATTRS else None)
-            if value not in (None, ""):
-                values[field.field_name] = _fit(value, field)
-            continue
-        for previous in history:            # newest first
-            value = _value_from(previous, source, by_name)
-            if value not in (None, "", [], {}):
-                values[field.field_name] = _fit(value, field)
-                if previous not in used:
-                    used.append(previous)
+        # «a|b|c»: the first source that has a value wins — e.g. the well's
+        # own last record, else the flow-test database
+        for source in [s.strip() for s in field.prefill_from.split("|") if s.strip()]:
+            if source == "@self":
+                source = field.field_name     # this same field, as last recorded
+            if source.startswith("@well:"):
+                attr = source[len("@well:"):]
+                value = (getattr(well, attr, None)
+                         if well is not None and attr in PREFILL_WELL_ATTRS else None)
+                if value not in (None, ""):
+                    values[field.field_name] = _fit(value, field)
+                    break
+                continue
+            if source.startswith("@ref:"):
+                if profile is None:
+                    from ..refdata.profile import well_profile
+                    try:
+                        profile = well_profile(int(well_id))
+                    except Exception:  # noqa: BLE001 — a reference file must never stop a form
+                        log.exception("Reference profile failed for well %s", well_id)
+                        profile = {"values": {}, "sources": []}
+                key = source[len("@ref:"):]
+                value = _fit_ref(profile["values"].get(key), field)
+                if value not in (None, ""):
+                    values[field.field_name] = value
+                    refs_used.add(key.split(".")[0])
+                    break
+                continue
+            found = False
+            for previous in history:            # newest first
+                value = _value_from(previous, source, by_name)
+                if value not in (None, "", [], {}):
+                    values[field.field_name] = _fit(value, field)
+                    if previous not in used:
+                        used.append(previous)
+                    found = True
+                    break
+            if found:
                 break
     newest = used[0] if used else (history[0] if history else None)
+    ref_titles = {"ft": "flowtest", "pr": "production", "vm": "videometry"}
+    wanted_refs = {ref_titles.get(k) for k in refs_used} | (
+        {"flowtest", "production", "videometry"} if "best" in refs_used else set())
     return {
+        "refs": [s for s in (profile or {}).get("sources", []) if s["key"] in wanted_refs],
         "values": values,
         "source": ({
             "record_id": newest.id,

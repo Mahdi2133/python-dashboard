@@ -259,6 +259,10 @@ def _apply_dynamic(record, payload, errors):
                 holder.value_num = to_float(raw, name, errors)
         elif field.field_type == "numbers":
             holder.value_text = numbers_text(raw)
+        elif field.field_type == "wh_lines":
+            # the record keeps the readable list; the rows live in the warehouse ledger
+            from ..warehouse.service import lines_text
+            holder.value_text = lines_text(raw) or None
         elif field.field_type == "chart":
             continue                       # a chart stores nothing
         elif field.field_type == "file":

@@ -182,7 +182,7 @@ FUNCTIONS = {
     "CAT_KW": (2, 2, "CAT_KW(تیپ پمپ، تعداد طبقات) — توان الکتروموتور کاتالوگ (kW)"),
     "CAT_MEFF": (2, 2, "CAT_MEFF(تیپ پمپ، تعداد طبقات) — راندمان الکتروموتور در کاتالوگ (%)"),
     "CAT_A": (2, 2, "CAT_A(تیپ پمپ، تعداد طبقات) — جریان نامی کاتالوگ (A)"),
-    "CAT_TITLE": (2, 2, "CAT_TITLE(تیپ پمپ، تعداد طبقات) — نام مدل در کاتالوگ، مثل 384/10 + 73.5"),
+    "CAT_TITLE": (2, 2, "CAT_TITLE(تیپ پمپ، تعداد طبقات) — نام مدل در کاتالوگ، مثل 384/10+73.5"),
     "MEAN": (1, None, "MEAN(a، b، …) — میانگین مقادیر پرشده (خالی‌ها حساب نمی‌شوند)"),
     "MIN": (1, None, "MIN(a، b، …) یا در گزارش گروهی MIN([فیلد])"),
     "MAX": (1, None, "MAX(a، b، …) یا در گزارش گروهی MAX([فیلد])"),
@@ -195,6 +195,8 @@ FUNCTIONS = {
     "LEN": (1, 1, "LEN(متن یا فهرست)"),
     "TODAY": (0, 0, "TODAY() — تاریخ امروز"),
     "NUMBER": (1, 1, "NUMBER(مقدار) — تبدیل به عدد"),
+    "LEADNUM": (1, 1, "LEADNUM(متن) — عدد ابتدای متن، مثل 12 در «12 متری»"),
+    "EPUMP": (1, 3, "EPUMP(تیپ پمپ، طبقات، توان موتور) — تیپ الکتروپمپ به شکل 384/10+73.5"),
     "TEXT": (1, 1, "TEXT(مقدار) — تبدیل به متن"),
     "CONTAINS": (2, 2, "CONTAINS(فهرست یا متن، مقدار)"),
     "SUM": (1, 1, "SUM([فیلد]) — جمع در گروه"),
@@ -572,6 +574,19 @@ class Evaluator:
             return _dt.date.today()
         if name == "NUMBER":
             return _num(ev(args[0]))
+        if name == "LEADNUM":
+            v = ev(args[0])
+            if isinstance(v, list):
+                v = v[0] if v else None
+            m = re.match(r"\s*(-?\d+(?:\.\d+)?)", str(v if v is not None else "")
+                         .translate(_FA_DIGITS).replace("٫", "."))
+            return float(m.group(1)) if m else None
+        if name == "EPUMP":
+            from ..services.epump import electropump_label
+            parts = [ev(a) for a in args] + [None, None]
+            parts = [p[0] if isinstance(p, list) and p else (None if isinstance(p, list) else p)
+                     for p in parts[:3]]
+            return electropump_label(*parts)
         if name == "TEXT":
             v = ev(args[0])
             return None if v is None else str(v)

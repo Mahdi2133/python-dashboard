@@ -15,8 +15,10 @@ def register_blueprints(app):
     from .api_workflow import bp as workflow_bp
     from .api_analytics import bp as analytics_bp
     from .api_catalogue import bp as catalogue_bp
+    from .api_refdata import bp as refdata_bp
+    from .api_warehouse import bp as warehouse_bp
 
     for bp in (auth_bp, pages_bp, records_bp, wells_bp, lookups_bp, formbuilder_bp,
                dashboard_bp, reports_bp, transfer_bp, admin_bp,
-               workflow_bp, analytics_bp, catalogue_bp):
+               workflow_bp, analytics_bp, catalogue_bp, refdata_bp, warehouse_bp):
         app.register_blueprint(bp)

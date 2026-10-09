@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}انبار تجهیزات و قطعات — {{ APP_TITLE }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h2>🏬 انبار تجهیزات و قطعات کارگاه مکانیک</h2>
+    <div class="sub">گردش انبار از فرم‌های فرایند (کشیدن ← انبار تجهیزات ← دمونتاژ ← انبار قطعات ← مونتاژ ← تأیید ← انبار تجهیزات ← نصب)
+      ثبت می‌شود؛ ورود خرید نو و اصلاح موجودی همین‌جا ثبت می‌شود. پایگاه داده‌ی جداگانه: <code dir="ltr">instance/refdata/warehouse.db</code></div>
+  </div>
+</div>
+
+<div class="tabs" id="wh-tabs">
+  <button class="tab active" data-tab="report">📊 گزارش مدیرعامل</button>
+  <button class="tab" data-tab="stock">📦 موجودی</button>
+  <button class="tab" data-tab="moves">🔁 گردش</button>
+  <button class="tab" data-tab="new">➕ ثبت ورود / خروج</button>
+  <button class="tab" data-tab="items">🗂 اقلام و وضعیت‌ها</button>
+</div>
+
+<div class="card wh-filters">
+  <div class="field-group cols-5">
+    <div class="field"><label>از تاریخ</label><input type="text" class="jdate" id="wh-from" placeholder="1405/01/01"></div>
+    <div class="field"><label>تا تاریخ</label><input type="text" class="jdate" id="wh-to"></div>
+    <div class="field"><label>انبار</label><select id="wh-wh"><option value="">هر دو انبار</option>
+      <option value="equipment">انبار تجهیزات</option><option value="parts">انبار قطعات</option></select></div>
+    <div class="field"><label>وضعیت</label><select id="wh-cond"><option value="">همه</option></select></div>
+    <div class="field"><label>چاه</label><input type="text" id="wh-well" placeholder="نام چاه"></div>
+  </div>
+</div>
+
+<div class="tab-panel" data-panel="report">
+  <div class="toolbar-actions mb-1"><a class="btn-ghost" id="wh-x-summary" href="#">⬇ اکسل گزارش مدیرعامل</a>
+    <button type="button" class="btn-ghost" onclick="window.print()">🖨 چاپ</button></div>
+  <div class="dashboard-grid" id="wh-head"></div>
+  <div class="charts-grid">
+    <div class="chart-card"><h3>بر اساس علت</h3><div id="wh-by-reason"></div></div>
+    <div class="chart-card"><h3>بر اساس وضعیت</h3><div id="wh-by-cond"></div></div>
+  </div>
+  <div class="chart-card mt-2"><h3>بر اساس کالا</h3><div id="wh-by-item"></div></div>
+
+  <!-- قطعات: what was installed in and collected from every motor and pump —
+       the parts forms of the process plus the workshop's history since 1398 -->
+  <div class="chart-card mt-2 wh-parts-report">
+    <h3>🧩 قطعات مونتاژ و دمونتاژ (فرم‌های فرایند + سوابق کارگاه)</h3>
+    <div class="dashboard-grid" id="wh-parts-head"></div>
+    <div class="charts-grid">
+      <div><div class="rp-h">به تفکیک تجهیز</div><div id="wh-parts-kind"></div></div>
+      <div><div class="rp-h">به تفکیک سال</div><div id="wh-parts-year"></div></div>
+    </div>
+    <div class="rp-h mt-2">به تفکیک قطعه <span class="hint" id="wh-parts-count"></span></div>
+    <div id="wh-parts-part"></div>
+  </div>
+</div>
+
+<div class="tab-panel hidden" data-panel="stock">
+  <div class="table-wrapper">
+    <div class="table-toolbar"><h2>موجودی (ورود − خروج)</h2>
+      <a class="btn-ghost" id="wh-x-stock" href="#">⬇ اکسل</a></div>
+    <div class="table-scroll"><table><thead><tr><th>انبار</th><th>کالا</th><th>وضعیت</th><th>ورود</th><th>خروج</th>
+      <th>موجودی</th><th>واحد</th></tr></thead><tbody id="wh-stock"></tbody></table></div>
+  </div>
+</div>
+
+<div class="tab-panel hidden" data-panel="moves">
+  <div class="table-wrapper">
+    <div class="table-toolbar"><h2>گردش انبار <span class="record-count-badge" id="wh-mcount">۰</span></h2>
+      <a class="btn-ghost" id="wh-x-moves" href="#">⬇ اکسل</a></div>
+    <div class="table-scroll"><table><thead><tr><th>تاریخ</th><th>انبار</th><th>ورود/خروج</th><th>علت</th><th>کالا</th>
+      <th>مشخصات</th><th>پلاک</th><th>وضعیت</th><th>مقدار</th><th>چاه</th><th>مرحله</th><th>کاربر</th><th></th></tr></thead>
+      <tbody id="wh-moves"></tbody></table></div>
+  </div>
+</div>
+
+<div class="tab-panel hidden" data-panel="new">
+  <div class="card">
+    <div class="section-title">ثبت دستی (خرید نو، اسقاط، اصلاح موجودی)</div>
+    <div class="field-group cols-4">
+      <div class="field"><label>تاریخ</label><input type="text" class="jdate" id="nm-date"></div>
+      <div class="field"><label>انبار</label><select id="nm-wh"><option value="equipment">انبار تجهیزات</option>
+        <option value="parts">انبار قطعات</option></select></div>
+      <div class="field"><label>ورود / خروج</label><select id="nm-dir"><option value="in">ورود</option><option value="out">خروج</option></select></div>
+      <div class="field"><label>علت</label><select id="nm-reason"></select></div>
+      <div class="field span-2"><label>کالا</label><select id="nm-item"></select></div>
+      <div class="field"><label>وضعیت</label><select id="nm-cond"></select></div>
+      <div class="field"><label>مقدار</label><input type="text" inputmode="decimal" dir="ltr" id="nm-qty" value="1"></div>
+      <div class="field"><label>تیپ / مشخصات</label><input type="text" dir="ltr" id="nm-spec" placeholder="384/10+73.5"></div>
+      <div class="field"><label>پلاک / سریال</label><input type="text" dir="ltr" id="nm-serial"></div>
+      <div class="field"><label>چاه (اختیاری)</label><input type="text" id="nm-well"></div>
+      <div class="field"><label>توضیحات</label><input type="text" id="nm-note"></div>
+    </div>
+    <button type="button" class="btn-primary mt-1" id="nm-save">ثبت</button>
+  </div>
+</div>
+
+<div class="tab-panel hidden" data-panel="items">
+  <div class="alert info">اقلام فعلی «پیشنهادی» است. فهرست اصلی اقلام انبار را با «ورود از اکسل» جایگزین کنید
+    (ستون‌ها: کد کالا، نام کالا، نوع (تجهیز/قطعه)، گروه، واحد، فعال، توضیحات) — فرم‌های فرایند همان‌جا به‌روز می‌شوند.</div>
+  <div class="toolbar-actions mb-1">
+    <a class="btn-ghost" href="/api/warehouse/items/export.xlsx">⬇ خروجی اکسل اقلام</a>
+    <label class="btn-ghost wh-manage" style="cursor:pointer">⬆ ورود از اکسل<input type="file" id="it-import" accept=".xlsx,.xlsm" hidden></label>
+    <button type="button" class="btn-primary wh-manage" id="it-add">➕ کالای جدید</button>
+  </div>
+  <div class="table-wrapper"><div class="table-scroll"><table><thead><tr><th>کد</th><th>نام کالا</th><th>نوع</th><th>گروه</th>
+    <th>واحد</th><th>فعال</th><th>منبع</th><th></th></tr></thead><tbody id="it-body"></tbody></table></div></div>
+  <div class="card mt-2"><div class="section-title">وضعیت‌های کالا</div><div id="cond-list"></div></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/warehouse.js') }}"></script>
+{% endblock %}

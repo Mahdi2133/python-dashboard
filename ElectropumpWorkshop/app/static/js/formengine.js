@@ -183,6 +183,20 @@
     return null;
   }
 
+  /* «384/10+73.5» — pump type / stages + motor kW; the one electropump format */
+  function epumpPart(v) {
+    if (Array.isArray(v)) v = v[0];
+    if (v === null || v === undefined || v === '') return '';
+    var t = String(v).replace(/[۰-۹]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d); }).replace('٫', '.').trim();
+    var n = Number(t);
+    return (t !== '' && !isNaN(n)) ? String(n) : t;
+  }
+  function epumpLabel(type, stages, motor) {
+    var t = epumpPart(type), s = epumpPart(stages), m = epumpPart(motor);
+    if (!t) return null;
+    return t + (s ? '/' + s : '') + (m ? '+' + m : '');
+  }
+
   function toNumber(v) {
     if (v === null || v === undefined || v === '') return null;
     if (typeof v === 'number') return v;
@@ -191,6 +205,20 @@
     var n = Number(t);
     return isNaN(n) ? null : n;
   }
+  /* «اقلام انبار»: the warehouse items and condition classes, read once. */
+  var Warehouse = {
+    data: null, _p: null,
+    load: function () {
+      if (Warehouse.data) return Promise.resolve(Warehouse.data);
+      if (!Warehouse._p) {
+        Warehouse._p = window.App.api.get('/api/warehouse/catalogue').then(function (res) {
+          Warehouse.data = res.data; return res.data;
+        }).catch(function () { Warehouse._p = null; return null; });
+      }
+      return Warehouse._p;
+    }
+  };
+
   /* One chart from its config and a reader of the form's values. Used by the
      live form and by the read-only summaries (the approver sees the same
      chart the sender drew). Series kinds:
@@ -613,6 +641,14 @@
               return null;
             case 'CONCAT': return args.map(function (x) { return x === null ? '' : String(x); }).join('');
             case 'NUMBER': return a0;
+            case 'LEADNUM': {
+              /* «12 متری» → 12: the number an option's label starts with */
+              var lt = Array.isArray(args[0]) ? args[0][0] : args[0];
+              var lm = String(lt == null ? '' : lt).replace(/[۰-۹]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d); })
+                .replace('٫', '.').match(/^\s*(-?\d+(?:\.\d+)?)/);
+              return lm ? Number(lm[1]) : null;
+            }
+            case 'EPUMP': return epumpLabel(args[0], args[1], args[2]);
             case 'TEXT': return args[0] === null ? null : String(args[0]);
             case 'LEN': return args[0] === null ? null : String(args[0]).length;
             case 'QFIT_A': return qfit(ns, true);
@@ -645,6 +681,7 @@
       return (options.context || {})[name];
     }
     var byName = null;
+    var suggested = {};   // field_name → value offered by setValues({onlyEmpty})
     function fieldByName(name) {
       if (!byName) {
         byName = {};
@@ -808,6 +845,184 @@
     }
     self.drawCharts = drawCharts;
 
+    /* ── «اقلام انبار»: item / specification / plaque / condition / quantity ── */
+    var whValues = {};
+    function whCfg(field) { return field.wh_config || {}; }
+    /* «فرم قطعات»: every part of one equipment kind, counted — the workshop's paper form */
+    var WHP_COLS = [['installed_new', 'نصب — نو'], ['installed_repair', 'نصب — کهنه (قابل استفاده مجدد)'],
+                    ['collected_new', 'جمع‌آوری — نو'], ['collected_old', 'جمع‌آوری — کهنه'],
+                    ['reusable', 'قابل استفاده مجدد'], ['scrap', 'اسقاط']];
+    function whpCols(cfg) {
+      var pick = (cfg.columns || []).length ? cfg.columns : WHP_COLS.map(function (c) { return c[0]; });
+      return WHP_COLS.filter(function (c) { return pick.indexOf(c[0]) !== -1; });
+    }
+    function renderWhParts(field) {
+      var name = A.esc(field.field_name), cfg = whCfg(field);
+      return '<div class="wh-lines wh-parts" data-whp="' + name + '">'
+        + '<div class="wh-head hint">🧩 فرم قطعات ' + A.esc(cfg.equipment_type || '') + ' — '
+        + (cfg.direction === 'out' ? 'خروج از ' : 'ورود به ') + (cfg.warehouse === 'parts' ? 'انبار قطعات' : 'انبار تجهیزات')
+        + ' (فقط قطعه‌هایی را که تعداد دارند پر کنید)</div>'
+        + '<div class="wh-table-wrap"><table class="wh-table whp-table"><thead><tr><th>#</th><th>کد انباری</th><th>شرح قطعه</th>'
+        + whpCols(cfg).map(function (c) { return '<th>' + c[1] + '</th>'; }).join('')
+        + '<th>توضیحات</th></tr></thead><tbody></tbody><tfoot></tfoot></table></div></div>';
+    }
+    function whpItems(cfg) {
+      var d = Warehouse.data || { items: [] };
+      return d.items.filter(function (it) {
+        return it.kind === 'part' && (!cfg.equipment_type || it.category === cfg.equipment_type);
+      });
+    }
+    function whpDraw(name) {
+      var field = fieldByName(name), body = qs('[data-whp="' + name + '"] tbody');
+      if (!field || !body) return;
+      var cfg = whCfg(field), cols = whpCols(cfg), ro = field.read_only ? ' disabled' : '';
+      var have = {};
+      (whValues[name] || []).forEach(function (r) { have[String(r.item_id || r.item_name)] = r; });
+      var items = whpItems(cfg);
+      if (field.read_only) {
+        items = items.filter(function (it) { return have[String(it.id)] || have[it.name]; });
+      }
+      body.innerHTML = items.map(function (it, k) {
+        var r = have[String(it.id)] || have[it.name] || {};
+        var code = (it.note || '').replace('کد انباری', '').trim() || it.code || '';
+        return '<tr data-item="' + it.id + '" data-name="' + A.esc(it.name) + '" data-code="' + A.esc(code) + '">'
+          + '<td>' + (k + 1) + '</td><td dir="ltr" class="mono">' + A.esc(code) + '</td><td class="whp-name">' + A.esc(it.name) + '</td>'
+          + cols.map(function (c) {
+            var v = r[c[0]]; v = v === undefined || v === null || v === 0 ? '' : v;
+            return '<td><input type="text" inputmode="numeric" dir="ltr" class="whp-n" data-col="' + c[0] + '" value="' + A.esc(v) + '"' + ro + '></td>';
+          }).join('')
+          + '<td><input type="text" class="whp-note" value="' + A.esc(r.note || '') + '"' + ro + '></td></tr>';
+      }).join('') || '<tr><td colspan="' + (cols.length + 4) + '" class="hint">فهرست قطعات «'
+        + A.esc(cfg.equipment_type || '') + '» در انبار تعریف نشده است.</td></tr>';
+      whpTotals(name);
+    }
+    function whpNum(v) {
+      var n = Number(String(v || '').replace(/[۰-۹]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d); }).replace('٫', '.'));
+      return isNaN(n) ? 0 : n;
+    }
+    function whpTotals(name) {
+      var box = qs('[data-whp="' + name + '"]');
+      if (!box) return;
+      var field = fieldByName(name), cols = whpCols(whCfg(field)), sums = {};
+      qsa('[data-whp="' + name + '"] tbody tr[data-item]').forEach(function (tr) {
+        var vals = {};
+        tr.querySelectorAll('.whp-n').forEach(function (inp) {
+          vals[inp.dataset.col] = whpNum(inp.value);
+          sums[inp.dataset.col] = (sums[inp.dataset.col] || 0) + vals[inp.dataset.col];
+        });
+        var collected = (vals.collected_new || 0) + (vals.collected_old || 0);
+        var judged = (vals.reusable || 0) + (vals.scrap || 0);
+        var over = ('collected_new' in vals || 'collected_old' in vals) && judged > collected;
+        tr.classList.toggle('whp-over', over);
+        tr.title = over ? '«قابل استفاده + اسقاط» از تعداد جمع‌آوری‌شده بیشتر است' : '';
+      });
+      box.querySelector('tfoot').innerHTML = '<tr><td colspan="3"><b>جمع</b></td>' + cols.map(function (c) {
+        return '<td><b>' + (sums[c[0]] || 0) + '</b></td>';
+      }).join('') + '<td></td></tr>';
+    }
+    function whpRead(name) {
+      var cols = whpCols(whCfg(fieldByName(name)));
+      return qsa('[data-whp="' + name + '"] tbody tr[data-item]').map(function (tr) {
+        var row = { item_id: Number(tr.dataset.item), item_name: tr.dataset.name, code: tr.dataset.code,
+                    note: tr.querySelector('.whp-note').value.trim() };
+        var any = !!row.note;
+        cols.forEach(function (c) {
+          var inp = tr.querySelector('[data-col="' + c[0] + '"]'), n = whpNum(inp && inp.value);
+          if (n) { row[c[0]] = n; any = true; }
+        });
+        return any ? row : null;
+      }).filter(Boolean);
+    }
+    root.addEventListener('input', function (e) {
+      var t = e.target.closest('[data-whp] .whp-n');
+      if (t) whpTotals(t.closest('[data-whp]').dataset.whp);
+    });
+
+    function renderWhLines(field) {
+      if (whCfg(field).mode === 'parts') return renderWhParts(field);
+      var name = A.esc(field.field_name), cfg = whCfg(field);
+      var dir = cfg.direction === 'out' ? 'خروج از ' : 'ورود به ';
+      var wh = cfg.warehouse === 'parts' ? 'انبار قطعات' : 'انبار تجهیزات';
+      return '<div class="wh-lines" data-wh="' + name + '">'
+        + '<div class="wh-head hint">' + (cfg.direction === 'out' ? '📤 ' : '📥 ') + dir + wh + '</div>'
+        + '<div class="wh-table-wrap"><table class="wh-table"><thead><tr><th>کالا</th>'
+        + (cfg.spec === false ? '' : '<th>تیپ / مشخصات</th>')
+        + (cfg.serial === false ? '' : '<th>پلاک / سریال</th>')
+        + '<th>وضعیت</th><th>تعداد</th><th></th></tr></thead><tbody></tbody></table></div>'
+        + (field.read_only ? '' : '<button type="button" class="btn-ghost btn-sm" data-wh-add="' + name + '">➕ افزودن ردیف</button>')
+        + '</div>';
+    }
+    function whItems(cfg) {
+      var d = Warehouse.data || { items: [] };
+      return d.items.filter(function (it) {
+        return (!(cfg.kinds || []).length || cfg.kinds.indexOf(it.kind) !== -1)
+          && (!(cfg.categories || []).length || cfg.categories.indexOf(it.category) !== -1);
+      });
+    }
+    function whConds(cfg) {
+      var d = Warehouse.data || { conditions: [] };
+      return d.conditions.filter(function (c) {
+        return !(cfg.conditions || []).length || cfg.conditions.indexOf(c.code) !== -1;
+      });
+    }
+    function whRowHtml(field, row) {
+      var cfg = whCfg(field), ro = !!field.read_only ? ' disabled' : '';
+      row = row || {};
+      var items = whItems(cfg), known = false;
+      var opts = '<option value="">— انتخاب کالا —</option>' + items.map(function (it) {
+        var sel = String(row.item_id || '') === String(it.id)
+          || (!row.item_id && row.item_name && row.item_name === it.name);
+        if (sel) known = true;
+        return '<option value="' + it.id + '"' + (sel ? ' selected' : '') + '>' + A.esc(it.name)
+          + (it.unit ? ' (' + A.esc(it.unit) + ')' : '') + '</option>';
+      }).join('');
+      if (!known && row.item_name) {
+        opts += '<option value="" data-name="' + A.esc(row.item_name) + '" selected>' + A.esc(row.item_name) + '</option>';
+      }
+      var conds = '<option value="">—</option>' + whConds(cfg).map(function (c) {
+        return '<option value="' + A.esc(c.code) + '"' + ((row.condition || cfg.default_condition) === c.code ? ' selected' : '')
+          + '>' + A.esc(c.label) + '</option>';
+      }).join('');
+      return '<tr class="wh-row"><td><select class="wh-item"' + ro + '>' + opts + '</select></td>'
+        + (cfg.spec === false ? '' : '<td><input type="text" class="wh-spec" dir="ltr" placeholder="384/10+73.5" value="' + A.esc(row.spec || '') + '"' + ro + '></td>')
+        + (cfg.serial === false ? '' : '<td><input type="text" class="wh-serial" dir="ltr" value="' + A.esc(row.serial || '') + '"' + ro + '></td>')
+        + '<td><select class="wh-cond"' + ro + '>' + conds + '</select></td>'
+        + '<td><input type="text" inputmode="decimal" dir="ltr" class="wh-qty" value="' + A.esc(row.qty == null ? 1 : row.qty) + '"' + ro + '></td>'
+        + '<td>' + (ro ? '' : '<button type="button" class="btn-sm btn-del wh-del" title="حذف ردیف">✕</button>') + '</td></tr>';
+    }
+    function whDraw(name) {
+      var field = fieldByName(name), box = qs('[data-wh="' + name + '"] tbody');
+      if (!field || !box) return;
+      var rows = whValues[name] || [];
+      if (!rows.length && !field.read_only) rows = [{}];
+      box.innerHTML = rows.map(function (r) { return whRowHtml(field, r); }).join('');
+    }
+    function whRead(name) {
+      return qsa('[data-wh="' + name + '"] tr.wh-row').map(function (tr) {
+        var sel = tr.querySelector('.wh-item'), opt = sel.options[sel.selectedIndex];
+        var get = function (c) { var el = tr.querySelector(c); return el ? el.value.trim() : ''; };
+        return { item_id: sel.value ? Number(sel.value) : null,
+                 item_name: sel.value ? opt.text.replace(/\s*\([^)]*\)$/, '') : (opt && opt.dataset.name) || '',
+                 spec: get('.wh-spec'), serial: get('.wh-serial'), condition: get('.wh-cond'),
+                 qty: get('.wh-qty') || '1' };
+      }).filter(function (r) { return r.item_id || r.item_name; });
+    }
+    root.addEventListener('click', function (e) {
+      var add = e.target.closest('[data-wh-add]');
+      if (add) {
+        var n = add.dataset.whAdd;
+        whValues[n] = whRead(n).concat([{}]);
+        whDraw(n);
+        return;
+      }
+      var del = e.target.closest('.wh-del');
+      if (del) {
+        var wrap = del.closest('[data-wh]');
+        del.closest('tr').remove();
+        whValues[wrap.dataset.wh] = whRead(wrap.dataset.wh);
+      }
+    });
+
     function renderField(field) {
       var body;
       if (field.field_type === 'radio') body = renderChoice(field, false);
@@ -824,13 +1039,15 @@
       else if (field.field_type === 'formula') body = renderFormula(field);
       else if (field.field_type === 'numbers') body = renderNumbers(field);
       else if (field.field_type === 'chart') body = renderChart(field);
+      else if (field.field_type === 'wh_lines') body = renderWhLines(field);
       else body = renderInput(field);
 
       /* Settled upstream: shown and filled so the stage can see it, but not
          editable here — the well is chosen once, at step zero, and a checklist
          somebody already ticked is carried forward as a record of what they
          ticked rather than as a form to fill again. */
-      if (field.read_only && field.field_type !== 'file' && field.field_type !== 'chart') {
+      if (field.read_only && field.field_type !== 'file' && field.field_type !== 'chart'
+          && field.field_type !== 'wh_lines') {
         body = field.field_type === 'checklist'
           ? renderChecklist(field, true)
           : '<input type="text" id="fld-' + A.esc(field.field_name) + '"'
@@ -843,13 +1060,18 @@
          buttons into a 180px column is what made the form look ragged. */
       var count = optionsFor(field).length;
       var wide = '';
-      if (['textarea', 'file', 'chart'].includes(field.field_type)) wide = ' span-full';
+      if (['textarea', 'file', 'chart', 'wh_lines'].includes(field.field_type)) wide = ' span-full';
       else if (['checkbox', 'multiselect'].includes(field.field_type) && count > 4) {
         wide = ' span-full';
       } else if (field.field_type === 'radio' && count > 7) {
         wide = ' wide-choice';
       }
-      return '<div class="field' + span + wide
+      /* a typed value sits beside its label, not under it */
+      var inline = ['text', 'number', 'date', 'jalali_date', 'autocomplete', 'formula', 'select']
+        .indexOf(field.field_type) !== -1
+        || (field.read_only && ['file', 'chart', 'checklist', 'wh_lines', 'textarea'].indexOf(field.field_type) === -1);
+      return '<div class="field' + span + wide + (inline ? ' inline' : '')
+        + (field.field_type === 'formula' ? ' calc-field' : '')
         + (field.read_only ? ' read-only' : '') + '" data-wrap="'
         + A.esc(field.field_name) + '">'
         + labelHtml(field) + body
@@ -873,12 +1095,17 @@
     self.render = function () {
       root.innerHTML = (schema.sections || []).map(function (section) {
         if (!section.fields || !section.fields.length) return '';
-        return '<div class="form-section' + (section.full_width ? ' full-width' : '')
+        var calcs = section.collapse_formulas ? section.fields.filter(function (f) {
+          return f.field_type === 'formula';
+        }).length : 0;
+        return '<div class="form-section' + (section.full_width ? ' full-width' : '') + (calcs ? ' calc-collapsed' : '')
           + '" data-section="' + A.esc(section.code || '') + '">'
           + '<div class="section-title">'
           + (section.icon ? '<span>' + A.esc(section.icon) + '</span>' : '')
           + '<span>' + A.esc(section.title) + '</span>'
           + (section.is_optional ? '<span class="badge muted">اختیاری</span>' : '')
+          + (calcs ? '<button type="button" class="btn-sm btn-ghost calc-toggle">ƒ نمایش محاسبات ('
+            + calcs + ')</button>' : '')
           + '</div>'
           + '<div class="field-group cols-' + (section.columns || 3) + '">'
           + section.fields.map(renderField).join('')
@@ -886,6 +1113,14 @@
       }).join('');
 
       qsa('.jdate').forEach(function (input) { J.attach(input); });
+      qsa('.calc-toggle').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var sec = btn.closest('.form-section');
+          var open = sec.classList.toggle('calc-open');
+          btn.textContent = btn.textContent.replace(open ? 'نمایش' : 'پنهان', open ? 'پنهان' : 'نمایش');
+          if (open) drawCharts();
+        });
+      });
       qsa('[data-autocomplete]').forEach(setupAutocomplete);
       enableRadioClearing();
       root.addEventListener('change', onFieldChanged);
@@ -897,6 +1132,17 @@
       root.addEventListener('change', recomputeFormulas);
       recomputeFormulas();
       if (usesCatalogue()) Catalogue.load().then(function () { recomputeFormulas(); });
+      var whNames = [];
+      self.eachField(function (f) { if (f.field_type === 'wh_lines') whNames.push(f.field_name); });
+      if (whNames.length) {
+        Warehouse.load().then(function () {
+          whNames.forEach(function (n) {
+            var f = fieldByName(n);
+            if (f && f.read_only && !whValues[n] && Array.isArray(f.read_only_rows)) whValues[n] = f.read_only_rows;
+            if (f && whCfg(f).mode === 'parts') whpDraw(n); else whDraw(n);
+          });
+        });
+      }
       /* a pane that is drawn first and shown a moment later still gets its chart */
       setTimeout(drawCharts, 250);
       return self;
@@ -1051,12 +1297,21 @@
     }
     function restoreDefault(name) {
       var fd = fieldByName(name);
-      if (!fd || options.skipDefaults || !fd.default_value
-          || String(fd.default_value).charAt(0) === '=') return;
+      if (!fd) return;
       var now = readField(fd);
-      if (now === '' || now === false || (Array.isArray(now) && !now.length)) {
-        self.setFieldValue(fd, fd.default_value);
+      if (!(now === '' || now === false || now === null || now === undefined
+            || (Array.isArray(now) && !now.length))) return;
+      /* A value the well's history or a reference bank suggested while this
+         block was still closed (the flow-test points of «انتخاب پمپ», say)
+         comes back with the block, rather than having been dropped with it. */
+      var hint = suggested[name];
+      if (hint !== undefined && hint !== null && hint !== '') {
+        self.setFieldValue(fd, hint);
+        return;
       }
+      if (options.skipDefaults || !fd.default_value
+          || String(fd.default_value).charAt(0) === '=') return;
+      self.setFieldValue(fd, fd.default_value);
     }
 
     function onFieldChanged(ev) {
@@ -1262,6 +1517,12 @@
         var parts = numbersOf(name);
         return parts.some(function (x) { return x !== ''; }) ? parts : [];
       }
+      if (field.field_type === 'wh_lines') {
+        if (whCfg(field).mode === 'parts') {
+          return qs('[data-whp="' + name + '"] tbody tr[data-item]') ? whpRead(name) : (whValues[name] || []);
+        }
+        return qs('[data-wh="' + name + '"] tbody tr') ? whRead(name) : (whValues[name] || []);
+      }
       if (field.field_type === 'radio') {
         var value = checkedValues(name)[0] || '';
         var other = otherValue(name);
@@ -1332,6 +1593,13 @@
       var name = field.field_name;
       if (field.field_type === 'file') return;          // the upload list is the value
       if (field.field_type === 'formula' || field.field_type === 'chart') { recomputeFormulas(); return; }
+      if (field.field_type === 'wh_lines') {
+        var rows = value;
+        if (typeof rows === 'string') { try { rows = JSON.parse(rows); } catch (e) { rows = []; } }
+        whValues[name] = Array.isArray(rows) ? rows : [];
+        if (Warehouse.data) { if (whCfg(field).mode === 'parts') whpDraw(name); else whDraw(name); }
+        return;
+      }
       if (field.field_type === 'numbers') {
         var vals = splitNumbers(value);
         qsa('[data-part-of="' + name + '"]').forEach(function (inp, k) { inp.value = vals[k] || ''; });
@@ -1377,6 +1645,8 @@
       self.eachField(function (field) {
         var name = field.field_name;
         if (!Object.prototype.hasOwnProperty.call(values, name)) return;
+        /* suggestions are kept for fields whose block opens later */
+        if (opts.onlyEmpty) suggested[name] = values[name];
         if (opts.onlyEmpty && String(readField(field) || '').length) return;
         /* nothing saved yet: the field keeps its «مقدار پیش‌فرض» */
         if ((values[name] === null || values[name] === undefined || values[name] === '')
@@ -1412,6 +1682,7 @@
     };
 
     self.clear = function () {
+      suggested = {};
       qsa('input, textarea, select').forEach(function (el) {
         if (el.type === 'radio' || el.type === 'checkbox') el.checked = false;
         else el.value = '';
@@ -1433,6 +1704,7 @@
 
   window.FormEngine = function (options) { return new FormEngine(options); };
   window.FormEngine.Catalogue = Catalogue;
+  window.FormEngine.Warehouse = Warehouse;
   window.FormEngine.drawStaticChart = drawStaticChart;
   window.FormEngine.loadEcharts = loadEcharts;
 

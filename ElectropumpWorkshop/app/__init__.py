@@ -102,6 +102,12 @@ def create_app(config_overrides: dict | None = None) -> Flask:
             app.config["DB_FILE"] = config_overrides["SQLALCHEMY_DATABASE_URI"].replace(
                 "sqlite:///", "")
 
+    # The reference databases and the warehouse book are separate SQLite files
+    # in refdata/ beside wells.db (Flask-SQLAlchemy binds), never tables of it.
+    if not app.config.get("SQLALCHEMY_BINDS"):
+        from .refdata import bind_uris
+        app.config["SQLALCHEMY_BINDS"] = bind_uris(app.config["DB_FILE"])
+
     configure_logging(app)
     if cfg.get("_config_error"):
         app.logger.warning("config.json unreadable, defaults applied: %s", cfg["_config_error"])
@@ -111,6 +117,8 @@ def create_app(config_overrides: dict | None = None) -> Flask:
     csrf.init_app(app)
 
     from . import models  # noqa: F401  (register mappers)
+    from .refdata import models as _refdata_models  # noqa: F401
+    from .warehouse import models as _warehouse_models  # noqa: F401
     from .routes import register_blueprints
     register_blueprints(app)
 

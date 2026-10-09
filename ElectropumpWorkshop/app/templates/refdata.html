@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}بانک‌های اطلاعاتی — {{ APP_TITLE }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h2>🗄 بانک‌های اطلاعاتی</h2>
+    <div class="sub">دبی‌سنجی چاه‌ها، روند تولید و ویدئومتری — هر کدام یک پایگاه داده‌ی جداگانه در پوشه‌ی
+      <code dir="ltr">instance/refdata</code>. فرم‌ها مقادیر را از همین‌جا پیش‌پر می‌کنند
+      (فرم‌ساز ← «پر شدن خودکار» ← بانک‌های اطلاعاتی).</div>
+  </div>
+</div>
+
+<div class="dashboard-grid rd-cards" id="rd-cards"><div class="loading">بارگذاری</div></div>
+
+<div class="tabs" id="rd-tabs">
+  <button class="tab active" data-tab="well">🔎 پرونده‌ی چاه</button>
+  <button class="tab" data-tab="flowtest">💧 دبی‌سنجی</button>
+  <button class="tab" data-tab="production">📈 روند تولید</button>
+  <button class="tab" data-tab="videometry">🎥 ویدئومتری</button>
+  <button class="tab" data-tab="import">📥 ورود و به‌روزرسانی</button>
+</div>
+
+<!-- پرونده‌ی چاه -->
+<div class="tab-panel" data-panel="well">
+  <div class="card">
+    <div class="field-group cols-3">
+      <div class="field span-2">
+        <label for="rd-well">چاه</label>
+        <div class="autocomplete-wrapper">
+          <input type="text" id="rd-well" autocomplete="off" data-autocomplete="wells"
+                 placeholder="نام چاه، کد PM یا کلاسه را بنویسید…">
+          <div class="autocomplete-list"></div>
+        </div>
+      </div>
+      <div class="field" style="justify-content:flex-end">
+        <button type="button" class="btn-primary" id="rd-well-go">نمایش پرونده</button>
+      </div>
+    </div>
+  </div>
+  <div id="rd-well-box"></div>
+</div>
+
+<!-- دبی‌سنجی -->
+<div class="tab-panel hidden" data-panel="flowtest">
+  <div class="table-wrapper">
+    <div class="table-toolbar">
+      <h2>آزمایش‌های دبی‌سنجی <span class="record-count-badge" id="ft-count">۰</span></h2>
+      <div class="toolbar-actions">
+        <input type="text" id="ft-q" placeholder="جستجو: نام چاه یا کلاسه">
+        <select id="ft-office"><option value="">همه‌ی ادارات</option></select>
+        <label class="small"><input type="checkbox" id="ft-unmatched" style="width:auto"> فقط بدون اتصال به چاه سامانه</label>
+        <a class="btn-ghost" href="/api/refdata/flowtest/export.xlsx">⬇ اکسل</a>
+      </div>
+    </div>
+    <div class="table-scroll"><table>
+      <thead><tr><th>تاریخ</th><th>چاه (فرم)</th><th>اداره</th><th>چاه در سامانه</th><th>تیپ الکتروپمپ</th>
+        <th>عمق چاه</th><th>عمق نصب</th><th>سطح ایستایی</th><th>آبدهی شبکه (l/s)</th><th>فشار (atm)</th>
+        <th>راندمان</th><th>کارکردها</th></tr></thead>
+      <tbody id="ft-body"></tbody>
+    </table></div>
+    <div class="pagination" id="ft-pages"></div>
+  </div>
+  <div id="ft-detail"></div>
+</div>
+
+<!-- روند تولید -->
+<div class="tab-panel hidden" data-panel="production">
+  <div class="table-wrapper">
+    <div class="table-toolbar">
+      <h2>چاه‌های روند تولید <span class="record-count-badge" id="pr-count">۰</span></h2>
+      <div class="toolbar-actions">
+        <input type="text" id="pr-q" placeholder="جستجو: نام چاه یا کد تاسیس">
+        <label class="small"><input type="checkbox" id="pr-unmatched" style="width:auto"> فقط بدون اتصال</label>
+        <a class="btn-ghost" href="/api/refdata/production/export.xlsx">⬇ اکسل</a>
+      </div>
+    </div>
+    <div class="table-scroll"><table>
+      <thead><tr><th>کد تاسیس</th><th>نام چاه</th><th>چاه در سامانه</th><th>تیپ الکتروپمپ</th>
+        <th>تاریخ نصب</th><th>آخرین دبی (l/s)</th><th>ماه</th><th>آخرین بهسازی</th><th>پهنه</th></tr></thead>
+      <tbody id="pr-body"></tbody>
+    </table></div>
+    <div class="pagination" id="pr-pages"></div>
+  </div>
+  <div id="pr-detail"></div>
+</div>
+
+<!-- ویدئومتری -->
+<div class="tab-panel hidden" data-panel="videometry">
+  <div class="table-wrapper">
+    <div class="table-toolbar">
+      <h2>بازدیدهای ویدئومتری <span class="record-count-badge" id="vm-count">۰</span></h2>
+      <div class="toolbar-actions">
+        <input type="text" id="vm-q" placeholder="جستجو: نام چاه یا کد تاسیس">
+        <label class="small"><input type="checkbox" id="vm-unmatched" style="width:auto"> فقط بدون اتصال</label>
+        <a class="btn-ghost" href="/api/refdata/videometry/export.xlsx">⬇ اکسل</a>
+      </div>
+    </div>
+    <div class="table-scroll"><table>
+      <thead><tr><th>تاریخ</th><th>کد تاسیس</th><th>نام</th><th>مرکز</th><th>چاه در سامانه</th>
+        <th>عمق چاه</th><th>سطح ایستابی</th><th>شروع مشبک</th><th>ایرادات</th><th>توضیحات</th></tr></thead>
+      <tbody id="vm-body"></tbody>
+    </table></div>
+    <div class="pagination" id="vm-pages"></div>
+  </div>
+</div>
+
+<!-- ورود -->
+<div class="tab-panel hidden" data-panel="import">
+  <div class="alert info">
+    هر بانک جداگانه به‌روز می‌شود. فایل‌های تکراری (همان محتوا) دوباره وارد نمی‌شوند؛ آزمایش تکراری یک چاه
+    در یک تاریخ جایگزین نسخه‌ی قبلی می‌شود. بعد از افزودن یا تغییر نام چاه‌ها در «چاه‌ها»، «اتصال دوباره» را بزنید.
+  </div>
+  <div class="charts-grid">
+    <div class="chart-card">
+      <h3>💧 دبی‌سنجی</h3>
+      <p class="hint">فرم‌های دبی‌سنجی (.xls / .xlsx) یا فایل zip (حتی zip داخل zip) — همه‌ی شیت‌ها خوانده می‌شوند.</p>
+      <input type="file" class="rd-file" data-source="flowtest" multiple accept=".zip,.xls,.xlsx,.xlsm">
+    </div>
+    <div class="chart-card">
+      <h3>📈 روند تولید</h3>
+      <p class="hint">کاربرگ سالانه‌ی «گزارش روند تولید» (.xlsx)؛ چند سال را با هم انتخاب کنید.</p>
+      <input type="file" class="rd-file" data-source="production" multiple accept=".xlsx,.xlsm">
+    </div>
+    <div class="chart-card">
+      <h3>🎥 ویدئومتری</h3>
+      <p class="hint">کاربرگ ویدئومتری (.xlsx با ستون‌های «کد تاسیس»، «تاریخ اقدام»، …) یا خروجی JSON.</p>
+      <input type="file" class="rd-file" data-source="videometry" multiple accept=".xlsx,.xlsm,.json">
+    </div>
+  </div>
+  <div class="card mt-2">
+    <button type="button" class="btn-secondary" id="rd-relink">🔗 اتصال دوباره‌ی همه‌ی ردیف‌ها به چاه‌های سامانه</button>
+    <div id="rd-import-result" class="mt-1"></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/formengine.js') }}"></script>
+<script src="{{ url_for('static', filename='js/refpanel.js') }}"></script>
+<script src="{{ url_for('static', filename='js/refdata.js') }}"></script>
+{% endblock %}

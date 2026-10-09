@@ -224,6 +224,11 @@ def main():
         check("پشتیبان تک‌فایل است (بدون wal/shm)",
               not os.path.exists(info["path"] + "-wal"))
         check("اعتبارسنجی پشتیبان", validate_backup(info["path"])["valid"])
+        check("پشتیبان، پایگاه‌های جداگانه (انبار و بانک‌ها) را هم می‌گیرد",
+              "warehouse.db" in info.get("side_databases", [])
+              and "flowtest.db" in info.get("side_databases", []), str(info.get("side_databases")))
+        _side_dir = os.path.join(os.path.dirname(info["path"]),
+                                 "refdata_" + info["filename"][len("wells_backup_"):-3])
         bogus = os.path.join(tmp, "bogus.db")
         open(bogus, "wb").write(b"not a database")
         check("فایل نامعتبر رد می‌شود", not validate_backup(bogus)["valid"])
@@ -234,6 +239,7 @@ def main():
               c.get("/api/records?page_size=1").get_json()["total"] == before,
               f"{before} → {c.get('/api/records?page_size=1').get_json()['total']}")
         os.remove(info["path"])
+        shutil.rmtree(_side_dir, ignore_errors=True)
 
     print("\n— گزارش تغییرات و صفحات —")
     check("Audit log ثبت شده", c.get("/api/audit").get_json()["total"] > 0)
@@ -2973,6 +2979,170 @@ def main():
     check("داشبورد نمودارهای فرایند را می‌دهد", isinstance(d11.get("process_charts"), list)
           and all("key" in x and "data" in x for x in d11["process_charts"]),
           str(d11.get("process_charts"))[:200])
+
+    print("\n— R12: تیپ الکتروپمپ، بانک‌های اطلاعاتی، انبار و گزارش متولی —")
+    from types import SimpleNamespace as _NS
+    from app.services.epump import electropump_label, parse_electropump_label, parse_paren
+    check("تیپ الکتروپمپ به شکل 384/10+73.5", electropump_label("384", 10, 73.5) == "384/10+73.5")
+    check("تیپ بدون توان موتور 384/10", electropump_label(384, 10.0) == "384/10")
+    check("خواندن تیپ با فاصله و ارقام فارسی",
+          parse_electropump_label("۳۸۴ / ۱۰ + ۷۳٫۵") == ("384", "10", 73.5))
+    check("خواندن تیپ وارونه 73.5+384/10", parse_electropump_label("73.5+384/10") == ("384", "10", 73.5))
+    check("خانه‌ی «()» یعنی تیپ خالی", parse_paren("()") == (None, None) and electropump_label("()") is None)
+    check("«293 (9)» → تیپ و طبقات", parse_paren("293 (9)") == ("293", "9"))
+    _e12 = _Ev({})
+    check("LEADNUM × تعداد: نحوه‌ی کشیدن 12 متری × 14 شاخه = 168",
+          _e12.row(_parse('LEADNUM("12 متری") * 14'), {}) == 168)
+    check("EPUMP در فرمول", _e12.row(_parse("EPUMP(384, 10, 73.5)"), {}) == "384/10+73.5")
+
+    from app.refdata.flowtest import Grid, parse_grid
+    def _row(cells, width=12):
+        out = [None] * width
+        for col, val in cells.items():
+            out[col] = val
+        return out
+    _g = Grid([
+        _row({11: "نام چاه", 10: "چاه آزمون 1", 9: "تاریخ آزمایش", 8: "1404/07/12"}),
+        _row({11: "تیپ الکتروپمپ", 10: "384/10+73.5", 9: "عمق چاه", 8: 147}),
+        _row({11: "عمق نصب", 10: 135, 9: "سطح ایستایی", 8: 122}),
+        _row({11: "داده های دبی سنجی"}),
+        _row({11: "کارکرد", 5: "آبدهی (l/s)", 4: "سطح پویایی (m)", 3: "فشار (atm)", 0: "آمپرها"}),
+        _row({11: "کارکرد 1", 5: 10.8, 4: 129, 3: 1.5, 2: 87, 1: 86, 0: 83}),
+        _row({11: "کارکرد 2 (فشار شبکه)", 5: 10.5, 4: 128, 3: 4.3, 2: 117, 1: 117, 0: 113}),
+    ], name="sheet1")
+    _t = parse_grid(_g)
+    check("دبی‌سنجی: مشخصات برگه خوانده می‌شود", bool(_t) and _t["well_name"] == "چاه آزمون 1"
+          and _t["test_date"] == "1404/07/12" and _t["well_depth"] == 147
+          and _t["install_depth"] == 135 and _t["static_level"] == 122, str(_t)[:300])
+    check("دبی‌سنجی: تیپ الکتروپمپ به سه جزء", bool(_t) and (_t["pump_type"], _t["pump_stages"],
+                                                          _t["motor_kw"]) == ("384", "10", 73.5))
+    _pts = (_t or {}).get("points") or []
+    check("دبی‌سنجی: کارکردها و نقطه‌ی فشار شبکه", len(_pts) == 2 and _pts[1]["at_network"]
+          and _pts[0]["flow"] == 10.8 and _pts[1]["dynamic_level"] == 128
+          and _pts[0].get("amps") == "83/86/87", str(_pts))
+    check("دبی‌سنجی: آبدهی و فشار شبکه از نقطه‌ی شبکه", bool(_t) and _t.get("net_flow") == 10.5
+          and _t.get("net_pressure") == 4.3)
+    check("برگه‌ای که فرم دبی‌سنجی نیست کنار گذاشته می‌شود",
+          parse_grid(Grid([["نام چاه", "x"], ["تولید", 5]])) is None)
+
+    r12 = c.get("/api/refdata/summary")
+    check("بانک‌های اطلاعاتی: خلاصه", r12.status_code == 200
+          and {s_["key"] for s_ in r12.get_json()["data"]["sources"]} >= {"flowtest", "production", "videometry"},
+          str(r12.get_json())[:200])
+    with app.app_context():
+        from app.refdata import bind_path
+        _ft_db = bind_path(app, "flowtest")
+    check("هر بانک پایگاه داده‌ی جداگانه دارد",
+          os.path.dirname(_ft_db) == os.path.join(tmp, "refdata") and os.path.exists(_ft_db), _ft_db)
+    _fb12 = c.get("/api/form-builder?all=1").get_json()["data"]
+    check("فهرست مقادیر بانک‌ها برای «پر شدن خودکار»",
+          any(o.get("value") == "@ref:best.electropump" for o in _fb12.get("prefill_ref", [])))
+    check("فهرست تجهیزها و وضعیت‌های انبار در فرم‌ساز از جدول‌های انبار",
+          bool(_fb12.get("warehouse", {}).get("equipment_types"))
+          and {x["code"] for x in _fb12["warehouse"].get("conditions", [])} >= {"reusable", "scrap"})
+
+    wcat = c.get("/api/warehouse/catalogue").get_json()["data"]
+    eq_item = next(i for i in wcat["items"] if i["kind"] == "equipment")
+    part_item = next(i for i in wcat["items"] if i["kind"] == "part")
+    check("انبار: وضعیت‌ها (قابل استفاده مجدد، تعمیری، نو، اسقاط، مونتاژشده)",
+          {x["code"] for x in wcat["conditions"]} >= {"reusable", "repair", "new", "scrap", "assembled"})
+    sec12 = c.post("/api/form-builder/sections", json={"code": "t_r12", "title": "انبار آزمون",
+                                                       "show_on_entry": False}).get_json()["data"]["id"]
+    rf = c.post("/api/form-builder/fields", json={
+        "field_name": "t_wh_rows", "label": "تحویل به انبار تجهیزات", "field_type": "wh_lines",
+        "section_id": sec12, "wh_config": {"mode": "rows", "warehouse": "equipment", "direction": "in",
+                                           "reason": "pull", "conditions": ["reusable", "repair"]}})
+    check("فیلد «اقلام انبار» ساخته می‌شود", rf.status_code == 200, str(rf.get_json())[:200])
+    pf = c.post("/api/form-builder/fields", json={
+        "field_name": "t_wh_parts", "label": "قطعات دمونتاژ", "field_type": "wh_lines",
+        "section_id": sec12, "wh_config": {"mode": "parts", "warehouse": "parts", "direction": "in",
+                                           "reason": "disassembly", "equipment_type": part_item["category"],
+                                           "columns": ["reusable", "scrap"], "equipment_field": "t_eq_code",
+                                           "related_action": "جمع آوری تجهیز"}})
+    check("فیلد «فرم قطعات» ساخته می‌شود", pf.status_code == 200, str(pf.get_json())[:200])
+    pf_id = (pf.get_json() or {}).get("data", {}).get("id")
+    up = c.put(f"/api/form-builder/fields/{pf_id}", json={
+        "label": "قطعات دمونتاژ", "field_type": "wh_lines",
+        "wh_config": {"mode": "parts", "warehouse": "parts", "direction": "in", "reason": "disassembly",
+                      "equipment_type": part_item["category"], "columns": ["reusable", "scrap"],
+                      "equipment_field": "t_eq_code"}})
+    with app.app_context():
+        from app.models import FormField as _FF12
+        _cfg12 = json.loads(_FF12.query.filter_by(field_name="t_wh_parts").first().wh_config or "{}")
+    check("ذخیره‌ی فرم‌ساز تنظیمات «فرم قطعات» را نگه می‌دارد", up.status_code == 200
+          and _cfg12.get("mode") == "parts" and _cfg12.get("columns") == ["reusable", "scrap"]
+          and _cfg12.get("related_action") == "جمع آوری تجهیز", str(_cfg12))
+    bad12 = c.put(f"/api/form-builder/fields/{pf_id}", json={
+        "label": "x", "field_type": "wh_lines",
+        "wh_config": {"mode": "parts", "warehouse": "parts", "direction": "in", "columns": []}})
+    check("«فرم قطعات» بدون ستون شمارش پذیرفته نمی‌شود", bad12.status_code == 422, str(bad12.status_code))
+
+    with app.app_context():
+        from app.warehouse.models import WhMovement as _WM, WhPartAction as _WPA
+        from app.warehouse.service import post_stage as _post
+        from app.extensions import db as _db12
+        inst = _NS(id=990001, workflow=None, well=None, well_name_raw="چاه آزمون 1", well_id=None)
+        stg = _NS(stage_number=3, title="کشیدن الکتروپمپ")
+        data12 = {"t_wh_rows": [{"item_id": eq_item["id"], "condition": "repair", "qty": 1,
+                                 "serial": "EM/001"}],
+                  "t_wh_parts": [{"item_id": part_item["id"], "reusable": 2, "scrap": 1}],
+                  "t_eq_code": "EM/001"}
+        n1 = _post(inst, stg, data12)
+        _db12.session.commit()
+        n2 = _post(inst, stg, data12)
+        _db12.session.commit()
+        moves = _WM.query.filter_by(instance_id=990001).all()
+        acts = _WPA.query.filter_by(instance_id=990001).all()
+        check("ثبت مرحله: ورود به انبار تجهیزات و انبار قطعات", n1 == 3 and len(moves) == 3
+              and {(m_.warehouse, m_.direction, m_.condition) for m_ in moves}
+              == {("equipment", "in", "repair"), ("parts", "in", "reusable"), ("parts", "in", "scrap")},
+              f"{n1} {[(m_.warehouse, m_.direction, m_.condition, m_.qty) for m_ in moves]}")
+        check("ارسال دوباره‌ی مرحله جایگزین می‌شود، دوبار شمرده نمی‌شود", n2 == 3 and len(moves) == 3)
+        check("سابقه‌ی قطعه با کد تجهیز ثبت می‌شود", len(acts) == 2
+              and all(a_.equipment_code == "EM/001" and a_.part_action == "collected" for a_ in acts)
+              and sorted(a_.qty for a_ in acts) == [1, 2])
+    st12 = c.get("/api/warehouse/stock").get_json()["data"]
+    check("موجودی انبار از گردش", r12.status_code == 200 and st12, str(st12)[:200])
+    man = c.post("/api/warehouse/movements", json={"warehouse": "equipment", "direction": "in",
+                                                   "item_id": eq_item["id"], "qty": 1, "condition": "new",
+                                                   "reason": "purchase"})
+    check("ثبت دستی ورود خرید نو", man.status_code == 200, str(man.get_json())[:200])
+    sm12 = c.get("/api/warehouse/summary").get_json()["data"]
+    check("گزارش مدیرعامل: خلاصه و قطعات", "parts" in sm12, str(list(sm12))[:200])
+    for k12 in ("movements", "stock", "summary", "parts"):
+        rx = c.get(f"/api/warehouse/export/{k12}.xlsx")
+        check(f"خروجی اکسل انبار: {k12}", rx.status_code == 200 and len(rx.data) > 500, str(rx.status_code))
+    mid = (man.get_json() or {}).get("data", {}).get("id")
+    check("حذف گردش دستی", c.delete(f"/api/warehouse/movements/{mid}").status_code == 200)
+
+    meta12 = c.get("/api/analytics/meta").get_json()["data"]
+    src_keys = {s_["key"] for s_ in meta12.get("sources", [])}
+    check("گزارش‌ساز: منابع انبار و بانک‌ها", {"wh_parts", "wh_moves", "ft_tests", "pr_months",
+                                               "vm_insp"} <= src_keys, str(sorted(src_keys))[:300])
+    for sk in ("wh_parts", "wh_moves", "ft_tests", "pr_months", "vm_insp"):
+        flds = c.get(f"/api/analytics/sources/{sk}/fields").get_json()["data"]
+        dims = [f_ for f_ in (flds.get("fields") if isinstance(flds, dict) else flds) or []]
+        ok12 = bool(dims)
+        if ok12:
+            prev = c.post("/api/analytics/preview", json={"definition": {
+                "source": sk, "kpis": [{"id": "n", "title": "تعداد", "value": {"agg": "count"}}]}})
+            ok12 = prev.status_code == 200
+        check(f"گزارش‌ساز: منبع {sk} پیش‌نمایش می‌دهد", ok12)
+
+    all_st = c.get("/api/workflow/my-stages").get_json()["data"]["stages"]
+    k_st = kahani.get("/api/workflow/my-stages").get_json()["data"]["stages"]
+    check("«گزارش مرحله‌ی من»: مدیر همه‌ی مرحله‌ها را می‌بیند", len(all_st) >= len(k_st) > 0,
+          f"{len(all_st)} / {len(k_st)}")
+    check("«گزارش مرحله‌ی من»: متولی مرحله‌های خودش را می‌بیند", all(x["mine"] for x in k_st))
+    own = kahani.post("/api/workflow/stage-report", json={"stage_id": k_st[0]["id"], "all_columns": True})
+    check("متولی گزارش مرحله‌ی خودش را می‌گیرد", own.status_code == 200, str(own.status_code))
+    ownx = kahani.post("/api/workflow/stage-report/export.xlsx",
+                       json={"stage_id": k_st[0]["id"], "all_columns": True})
+    check("خروجی اکسل گزارش مرحله‌ی متولی", ownx.status_code == 200, str(ownx.status_code))
+    other = [x for x in all_st if x["id"] not in {y["id"] for y in k_st}]
+    if other:
+        nope = kahani.post("/api/workflow/stage-report", json={"stage_id": other[0]["id"]})
+        check("متولی به گزارش مرحله‌ی دیگران دسترسی ندارد", nope.status_code == 403, str(nope.status_code))
 
     print("\n— ترتیب تب‌ها —")
     check("صفحه اصلی، ثبت اطلاعات است",

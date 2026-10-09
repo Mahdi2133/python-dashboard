@@ -96,9 +96,12 @@ def _watched_classes():
         from ..models import (AppUser, LookupItem, Record, RecordDynamicValue,
                               RecordTag, Well, WorkflowInstance, WorkflowStageEntry,
                               FormField, WorkflowStage)
+        from ..refdata.models import FlowTest, ProdMonth, VideoInspection
+        from ..warehouse.models import WhItem, WhMovement, WhPartAction
         _WATCHED = (Record, RecordTag, RecordDynamicValue, WorkflowInstance,
                     WorkflowStageEntry, Well, AppUser, LookupItem, FormField,
-                    WorkflowStage)
+                    WorkflowStage, FlowTest, ProdMonth, VideoInspection,
+                    WhItem, WhMovement, WhPartAction)
     return _WATCHED
 
 
@@ -869,6 +872,11 @@ SOURCES = {
     "wells": Source("wells", "چاه‌ها", "هر ردیف یک چاه؛ مشخصات و سوابق.",
                     "well.view", "چاه", _well_fields, _load_wells),
 }
+
+
+# the separate databases: parts, warehouse, flow tests, production, videometry
+from .sources_extra import register as _register_extra  # noqa: E402
+_register_extra(SOURCES, Source)
 
 
 def get_source(key: str) -> Source | None:

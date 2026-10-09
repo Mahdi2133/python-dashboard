@@ -1868,13 +1868,49 @@ def _stage_field_names(stage):
     return names
 
 
+def _may_report(stage, user) -> bool:
+    """The report builders, and every متولی of the stage for their own stage."""
+    if user is None:
+        return False
+    if user.role == "admin" or any(user.can(c) for c in ("report.build", "report.view",
+                                                          "workflow.manage")):
+        return True
+    return stage is not None and user.id in stage.owner_ids
+
+
+@bp.get("/my-stages")
+@login_required
+def my_stages():
+    """«گزارش مرحله‌ی من»: the stages this person is متولی of (all, for a manager)."""
+    user = current_user()
+    manager = user.role == "admin" or user.can("workflow.manage") or user.can("report.build")
+    out = []
+    from ..models import WorkflowDefinition
+    for wf in WorkflowDefinition.query.filter_by(is_active=True).order_by(WorkflowDefinition.id):
+        for st in sorted(wf.stages, key=lambda x: x.stage_number):
+            if not st.is_active or st.stage_number == 0:
+                continue
+            if not manager and user.id not in st.owner_ids:
+                continue
+            done = (WorkflowStageEntry.query.join(
+                WorkflowInstance, WorkflowStageEntry.instance_id == WorkflowInstance.id)
+                .filter(WorkflowInstance.workflow_id == wf.id,
+                        WorkflowStageEntry.stage_number == st.stage_number,
+                        WorkflowStageEntry.status.in_(ENTRY_DONE)).count())
+            out.append({"id": st.id, "stage_number": st.stage_number, "title": st.title,
+                        "workflow": wf.name, "done": done, "mine": user.id in st.owner_ids})
+    return ok({"stages": out})
+
+
 @bp.get("/stage-report/columns")
-@permission_required_any("report.build", "report.view", "workflow.manage")
+@login_required
 def stage_report_columns():
     """What can be put in a report of one stage."""
     stage = db.session.get(WorkflowStage, int(request.args.get("stage_id") or 0))
     if stage is None:
         return fail("مرحله یافت نشد.", 404)
+    if not _may_report(stage, current_user()):
+        return fail("گزارش این مرحله فقط در اختیار متولی آن و مدیران است.", 403)
     labels = {f.field_name: f.label for f in FormField.query.all()}
     return ok({
         "stage": {"id": stage.id, "stage_number": stage.stage_number,
@@ -1891,9 +1927,20 @@ def _stage_report(payload):
     stage = db.session.get(WorkflowStage, int(payload.get("stage_id") or 0))
     if stage is None:
         raise WorkflowError("مرحله یافت نشد.")
+    user = current_user()
+    if not _may_report(stage, user):
+        raise _NoStageReport("گزارش این مرحله فقط در اختیار متولی آن و مدیران است.")
     wanted = [c for c in (payload.get("columns") or []) if c]
+    if payload.get("all_columns") or not wanted:
+        wanted = [k for k, _l in _STAGE_REPORT_BASE] + _stage_field_names(stage)
     if not wanted:
         raise WorkflowError("حداقل یک ستون را انتخاب کنید.")
+    # a مرکز آبرسانی متولی reports on its own wells only
+    from ..services.workflow import well_center_scope
+    centers = well_center_scope(user) if user and user.role != "admin" else None
+    from ..services.jalali import parse_jalali_to_date
+    d_from = parse_jalali_to_date(payload.get("date_from")) if payload.get("date_from") else None
+    d_to = parse_jalali_to_date(payload.get("date_to")) if payload.get("date_to") else None
 
     kinds = {f.field_name: f.field_type for f in FormField.query.all()}
     labels = {f.field_name: f.label for f in FormField.query.all()}
@@ -1910,10 +1957,17 @@ def _stage_report(payload):
     if payload.get("instance_status"):
         query = query.filter(WorkflowInstance.status == payload["instance_status"])
 
+    if payload.get("mine_only") and user is not None:
+        query = query.filter(WorkflowStageEntry.user_id == user.id)
     rows = []
     for entry in query.order_by(WorkflowStageEntry.instance_id).all():
         instance = entry.instance
         if instance is None:
+            continue
+        if centers is not None and (instance.well is None or instance.well.center_id not in centers):
+            continue
+        when = entry.submitted_at.date() if entry.submitted_at else None
+        if (d_from and (when is None or when < d_from)) or (d_to and (when is None or when > d_to)):
             continue
         # What this stage recorded, over what the process knew before it.
         values = dict(instance.payload or {})
@@ -1941,11 +1995,17 @@ def _stage_report(payload):
             elif kinds.get(key) == "numbers":
                 from ..services.records import numbers_text
                 value = numbers_text(value)
+            elif kinds.get(key) == "wh_lines":
+                from ..warehouse.service import lines_text
+                value = lines_text(value)
+            elif kinds.get(key) == "chart":
+                continue
             if isinstance(value, list):
                 value = "، ".join(str(v) for v in value if v not in (None, ""))
             row[key] = "" if value in (None, False) else value
         rows.append(row)
 
+    wanted = [k for k in wanted if kinds.get(k) != "chart"]
     return {
         "title": f"گزارش مرحله {stage.stage_number} — {stage.title}",
         "columns": [{"key": k, "label": labels.get(k, k)} for k in wanted],
@@ -1955,22 +2015,30 @@ def _stage_report(payload):
     }
 
 
+class _NoStageReport(WorkflowError):
+    """A stage report asked for by someone who is neither its متولی nor a manager."""
+
+
 @bp.post("/stage-report")
-@permission_required_any("report.build", "report.view", "workflow.manage")
+@login_required
 def stage_report():
     try:
         return ok(_stage_report(body()))
+    except _NoStageReport as exc:
+        return fail(str(exc), 403)
     except WorkflowError as exc:
         return fail(str(exc), 422)
 
 
 @bp.post("/stage-report/export.<fmt>")
-@permission_required("record.export")
+@login_required
 def stage_report_export(fmt):
     from ..services.exporter import render
     from ..services.jalali import today_jalali
     try:
         result = _stage_report(body())
+    except _NoStageReport as exc:
+        return fail(str(exc), 403)
     except WorkflowError as exc:
         return fail(str(exc), 422)
     jy, jm, jd = today_jalali()

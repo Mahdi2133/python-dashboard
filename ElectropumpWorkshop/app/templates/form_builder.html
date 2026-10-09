@@ -73,12 +73,13 @@
       <div class="field"><label>مقدار پیش‌فرض</label><input type="text" id="fb-default">
         <span class="hint">با «=» شروع کنید تا فرمول باشد (مثلاً <span dir="ltr">=[fc_total_head]</span>): تا کاربر خودش
           عددی ننوشته، نتیجه‌ی محاسبه در فیلد می‌نشیند.</span></div>
-      <div class="field span-2"><label>پر شدن خودکار از سوابق همان چاه</label>
+      <div class="field span-2"><label>پر شدن خودکار (سوابق چاه یا بانک‌های اطلاعاتی)</label>
         <select id="fb-prefill"><option value="">— خیر —</option></select>
+        <label class="mt-1" for="fb-prefill2" style="font-weight:500">اگر خالی ماند، از:</label>
+        <select id="fb-prefill2"><option value="">— خیر —</option></select>
         <span class="hint">وقتی چاه انتخاب شد، این فیلد با مقداری که در
-          <b>آخرین عملیات همان چاه</b> ثبت شده پر می‌شود (قابل ویرایش می‌ماند).
-          مثلاً «تیپ الکتروموتور قبلی» ← «تیپ الکتروموتور فعلی»، یا
-          «تاریخ نصب قبلی» ← «تاریخ آخرین عملیات روی چاه».</span></div>
+          <b>آخرین عملیات همان چاه</b> ثبت شده، یا از <b>بانک‌های اطلاعاتی</b> (دبی‌سنجی، روند تولید، ویدئومتری)
+          پر می‌شود و قابل ویرایش می‌ماند. مثلاً «عمق نصب قبلی» ← «عمق نصب فعلی» و اگر خالی بود ← «دبی‌سنجی: عمق نصب».</span></div>
       <div class="field"><label>متن راهنمای داخل کادر</label><input type="text" id="fb-placeholder"></div>
       <div class="field"><label>دسته گزینه (برای فیلدهای انتخابی)</label>
         <select id="fb-lookup"><option value="">— گزینه‌های اختصاصی —</option></select></div>
@@ -173,6 +174,32 @@
           اولین Y و…). خط روند «درجه ۲ از مبدأ» همان خط روند اکسل با «Set Intercept = 0» است (s = aQ² + bQ) و معادله‌ی
           آن زیر نمودار نوشته می‌شود. نمودار پس از ورود داده‌ها خودکار در فرم رسم می‌شود و چیزی ذخیره نمی‌کند.</div>
       </div>
+      <!-- «اقلام انبار» -->
+      <div class="field span-full hidden fb-special" data-for="wh_lines">
+        <label>🏬 تنظیمات اقلام انبار</label>
+        <div class="field-group cols-4">
+          <div class="field"><label>شکل فرم</label><select id="fb-wh-mode">
+            <option value="rows">ردیف‌های آزاد (کالا، تیپ، پلاک، وضعیت، تعداد)</option>
+            <option value="parts">فرم قطعات (همه‌ی قطعه‌های یک تجهیز، با شمارش)</option></select></div>
+          <div class="field"><label>انبار</label><select id="fb-wh-wh">
+            <option value="equipment">انبار تجهیزات</option><option value="parts">انبار قطعات</option></select></div>
+          <div class="field"><label>ورود / خروج</label><select id="fb-wh-dir">
+            <option value="in">ورود</option><option value="out">خروج</option></select></div>
+          <div class="field"><label>علت</label><select id="fb-wh-reason"></select></div>
+          <div class="field fb-wh-rows"><label>نوع کالا</label><select id="fb-wh-kind">
+            <option value="">همه</option><option value="equipment">فقط تجهیز</option><option value="part">فقط قطعه</option></select></div>
+          <div class="field fb-wh-rows"><label>وضعیت‌های مجاز</label><div id="fb-wh-conds" class="fb-approval-options"></div></div>
+          <div class="field fb-wh-parts"><label>تجهیز (فهرست قطعات)</label><select id="fb-wh-eq"></select></div>
+          <div class="field fb-wh-parts span-2"><label>ستون‌های شمارش</label><div id="fb-wh-cols" class="fb-approval-options"></div></div>
+          <div class="field fb-wh-parts"><label>فیلد «کد تجهیز» همین فرم</label><input type="text" id="fb-wh-eqf" dir="ltr" placeholder="dm_motor_code"></div>
+          <div class="field fb-wh-parts"><label>فیلد «خرابی مشاهده شده»</label><input type="text" id="fb-wh-fail" dir="ltr"></div>
+          <div class="field fb-wh-parts"><label>فیلد «علت خرابی»</label><input type="text" id="fb-wh-cause" dir="ltr"></div>
+          <div class="field fb-wh-parts"><label>فیلد «اقدام انجام شده»</label><input type="text" id="fb-wh-act" dir="ltr"></div>
+        </div>
+        <div class="hint">با ارسال مرحله، ردیف‌ها در دفتر انبار (پایگاه داده‌ی جداگانه‌ی انبار) ثبت می‌شوند؛ ارسال دوباره‌ی
+          همان مرحله جایگزین ثبت قبلی می‌شود. فرم قطعات: «نصب» از انبار قطعات خارج می‌شود و قطعه‌ی جمع‌آوری‌شده با ارزیابی
+          «قابل استفاده مجدد» یا «اسقاط» وارد انبار قطعات می‌شود و در سوابق قطعات و گزارش مونتاژ/دمونتاژ می‌آید.</div>
+      </div>
       <!-- «نمایش فقط وقتی…» for this one field -->
       <div class="field span-full">
         <label>👁 این فیلد فقط وقتی نشان داده شود که…</label>
@@ -217,6 +244,9 @@
         <select id="sb-active"><option value="1">فعال</option><option value="0">غیرفعال</option></select></div>
       <div class="field"><label>نمایش در صفحه‌ی «ثبت اطلاعات»</label>
         <select id="sb-entry"><option value="1">بله</option><option value="0">خیر — فقط در مرحله‌های فرایند</option></select></div>
+      <div class="field"><label>فیلدهای محاسباتی</label>
+        <select id="sb-collapse"><option value="0">نمایش داده شوند</option>
+          <option value="1">پنهان باشند (با دکمه‌ی «نمایش محاسبات»)</option></select></div>
       <div class="field span-2 hidden" id="sb-bring-box"><label>افزودن فیلد از بخش‌های دیگر</label>
         <div class="bring-row">
           <select id="sb-bring-field"><option value="">— فیلدی را انتخاب کنید —</option></select>

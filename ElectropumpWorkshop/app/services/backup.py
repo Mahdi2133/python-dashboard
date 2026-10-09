@@ -42,12 +42,7 @@ def _stamp() -> str:
     return f"{jy}-{jm:02d}-{jd:02d}_{now:%H%M%S}"
 
 
-def create_backup(note: str | None = None) -> dict:
-    source = live_database_path()
-    if not source.exists():
-        raise FileNotFoundError("فایل پایگاه داده یافت نشد.")
-    target = backups_dir() / f"wells_backup_{_stamp()}.db"
-
+def _snapshot(source: Path, target: Path):
     src = sqlite3.connect(str(source))
     dst = sqlite3.connect(str(target))
     try:
@@ -68,13 +63,49 @@ def create_backup(note: str | None = None) -> dict:
             except OSError:
                 log.warning("Could not remove %s", stray)
 
+
+def _side_databases() -> dict:
+    """The separate databases beside wells.db (flow tests, production trend,
+    videometry, warehouse) — {name: path} of those that exist."""
+    from flask import current_app, has_app_context
+    if not has_app_context():
+        return {}
+    out = {}
+    for key, uri in (current_app.config.get("SQLALCHEMY_BINDS") or {}).items():
+        if isinstance(uri, str) and uri.startswith("sqlite:///"):
+            path = Path(uri[len("sqlite:///"):])
+            if path.exists():
+                out[key] = path
+    return out
+
+
+def create_backup(note: str | None = None) -> dict:
+    source = live_database_path()
+    if not source.exists():
+        raise FileNotFoundError("فایل پایگاه داده یافت نشد.")
+    stamp = _stamp()
+    target = backups_dir() / f"wells_backup_{stamp}.db"
+    _snapshot(source, target)
+    # the warehouse ledger and the reference banks are kept in their own
+    # files; a backup of the system takes them in the same moment
+    side = []
+    folder = backups_dir() / f"refdata_{stamp}"
+    for key, path in _side_databases().items():
+        try:
+            folder.mkdir(exist_ok=True)
+            _snapshot(path, folder / path.name)
+            side.append(path.name)
+        except (OSError, sqlite3.Error) as exc:
+            log.warning("Could not back up %s: %s", path, exc)
+
     _prune()
     record_audit("backup", "database", None,
-                 summary=f"تهیه پشتیبان: {target.name}" + (f" — {note}" if note else ""),
+                 summary=f"تهیه پشتیبان: {target.name}"
+                 + (f" + {'، '.join(side)}" if side else "") + (f" — {note}" if note else ""),
                  commit=True)
-    log.info("Backup written to %s", target)
+    log.info("Backup written to %s (+ %s)", target, ", ".join(side) or "no side databases")
     return {"filename": target.name, "path": str(target),
-            "size": target.stat().st_size,
+            "size": target.stat().st_size, "side_databases": side,
             "created_at": dt.datetime.now().isoformat()}
 
 
@@ -89,6 +120,10 @@ def _prune(keep: int | None = None):
             log.info("Pruned old backup %s", old.name)
         except OSError:
             log.warning("Could not remove old backup %s", old.name)
+    folders = sorted((p for p in backups_dir().glob("refdata_*") if p.is_dir()),
+                     key=lambda p: p.stat().st_mtime, reverse=True)
+    for old in folders[keep:]:
+        shutil.rmtree(old, ignore_errors=True)
 
 
 def list_backups() -> list:

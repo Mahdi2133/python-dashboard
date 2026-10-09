@@ -10,7 +10,8 @@
     checkbox: 'چندانتخابی', multiselect: 'چندانتخابی (لیست)',
     autocomplete: 'جستجوی خودکار', checklist: 'چک‌لیست',
     file: 'مستند (بارگذاری فایل)', formula: 'محاسباتی (فرمول)', mirror: 'فیلد مشترک',
-    numbers: 'چند مقدار عددی (مثلاً فاز ۱/۲/۳)', chart: 'نمودار'
+    numbers: 'چند مقدار عددی (مثلاً فاز ۱/۲/۳)', chart: 'نمودار',
+    wh_lines: 'اقلام انبار (تجهیز / قطعه)'
   };
 
   /* Show the settings panel of the chosen special type only. */
@@ -288,7 +289,24 @@
   function fillPrefill(field) {
     var box = A.qs('#fb-prefill');
     if (!box) return;
-    var current = field && field.prefill_from ? field.prefill_from : '';
+    var chain = (field && field.prefill_from ? field.prefill_from : '').split('|');
+    fillPrefillBox(box, field, chain[0] || '');
+    var box2 = A.qs('#fb-prefill2');
+    if (box2) fillPrefillBox(box2, field, chain[1] || '');
+  }
+  function refOptions(current) {
+    var groups = {};
+    (schema.prefill_ref || []).forEach(function (o) {
+      (groups[o.group] = groups[o.group] || []).push(o);
+    });
+    return Object.keys(groups).map(function (g) {
+      return '<optgroup label="بانک اطلاعاتی — ' + A.esc(g) + '">' + groups[g].map(function (o) {
+        return '<option value="' + A.esc(o.value) + '"' + (o.value === current ? ' selected' : '') + '>'
+          + A.esc(o.label) + '</option>';
+      }).join('') + '</optgroup>';
+    }).join('');
+  }
+  function fillPrefillBox(box, field, current) {
     var html = '<option value="">— خیر —</option>'
       + '<optgroup label="زمان آخرین عملیات">'
       + (schema.prefill_when || []).map(function (w) {
@@ -312,7 +330,7 @@
           + A.esc(f.label) + ' — ' + A.esc(sec.title) + '</option>';
       });
     });
-    box.innerHTML = html + '</optgroup>';
+    box.innerHTML = html + '</optgroup>' + refOptions(current);
   }
 
   function openFieldEditor(field) {
@@ -342,6 +360,7 @@
     A.qs('#fb-mirror').value = field && field.mirror_of ? field.mirror_of : '';
     A.qs('#fb-result-type').value = field && field.result_type === 'text' ? 'text' : 'number';
     fillChart(field);
+    fillWh(field);
     fillWhen(field && field.visible_when, 'fb', field && field.field_name);
     fillApproval(field);
     fillStages(field);
@@ -370,7 +389,8 @@
       is_active: A.qs('#fb-active').value === '1',
       show_in_table: A.qs('#fb-table').value === '1',
       default_value: A.qs('#fb-default').value.trim(),
-      prefill_from: (A.qs('#fb-prefill') || {}).value || '',
+      prefill_from: [(A.qs('#fb-prefill') || {}).value || '', (A.qs('#fb-prefill2') || {}).value || '']
+        .filter(Boolean).join('|'),
       placeholder: A.qs('#fb-placeholder').value.trim(),
       lookup_category: A.qs('#fb-lookup').value,
       min_value: A.qs('#fb-min').value, max_value: A.qs('#fb-max').value,
@@ -387,6 +407,7 @@
       block_options: blockPicked.slice(),
       result_type: A.qs('#fb-result-type').value,
       chart_config: A.qs('#fb-type').value === 'chart' ? collectChart() : undefined,
+      wh_config: A.qs('#fb-type').value === 'wh_lines' ? collectWh() : undefined,
       fill_stage_ids: A.qsa('#fb-fill-stages select').map(function (s) { return s.value; })
         .filter(Boolean).map(Number),
       options: collectOptions()
@@ -509,6 +530,82 @@
     });
     return html;
   }
+  /* «اقلام انبار»: which warehouse, in or out, why; free rows or a parts form */
+  var WH_REASONS = { pull: 'کشیدن الکتروپمپ از چاه', disassembly: 'دمونتاژ و تفکیک', purchase: 'خرید نو',
+                     repair: 'تعمیر', assembly: 'مصرف در مونتاژ (ساخت)', assembled: 'الکتروپمپ مونتاژشده',
+                     install: 'خروج برای نصب', scrap: 'اسقاط', manual: 'اصلاح موجودی' };
+  var WH_CONDS = { reusable: 'قابل استفاده مجدد', repair: 'تعمیری', 'new': 'نو', scrap: 'اسقاط',
+                   assembled: 'مونتاژشده — آماده نصب' };
+  var WH_COLS = { installed_new: 'نصب — نو', installed_repair: 'نصب — کهنه (قابل استفاده مجدد)', collected_new: 'جمع‌آوری — نو',
+                  collected_old: 'جمع‌آوری — کهنه', reusable: 'قابل استفاده مجدد', scrap: 'اسقاط' };
+  function checks(box, map, picked) {
+    A.qs(box).innerHTML = Object.keys(map).map(function (k) {
+      return '<label class="small"><input type="checkbox" value="' + k + '" style="width:auto"'
+        + (picked.indexOf(k) !== -1 ? ' checked' : '') + '> ' + A.esc(map[k]) + '</label>';
+    }).join(' ');
+  }
+  function whModeSync() {
+    var parts = A.qs('#fb-wh-mode').value === 'parts';
+    A.qsa('.fb-wh-parts').forEach(function (el) { el.classList.toggle('hidden', !parts); });
+    A.qsa('.fb-wh-rows').forEach(function (el) { el.classList.toggle('hidden', parts); });
+  }
+  /* The lists come from the warehouse's own tables when the schema has them
+     (conditions are edited on the warehouse page, equipment kinds follow the
+     item catalogue); the constants above are only the fallback. */
+  function whLists() {
+    var w = (schema && schema.warehouse) || {};
+    var map = function (list) {
+      var out = {};
+      (list || []).forEach(function (x) { out[x.code] = x.label; });
+      return out;
+    };
+    return {
+      reasons: w.reasons && Object.keys(w.reasons).length ? w.reasons : WH_REASONS,
+      conds: (w.conditions || []).length ? map(w.conditions) : WH_CONDS,
+      cols: (w.columns || []).length ? map(w.columns) : WH_COLS,
+      kinds: (w.equipment_types || []).length ? w.equipment_types : ['الکتروموتور شناور', 'پمپ شناور']
+    };
+  }
+  function fillWh(field) {
+    if (!A.qs('#fb-wh-mode')) return;
+    var cfg = (field && field.wh_config) || {};
+    var L = whLists();
+    var kinds = L.kinds.slice();
+    if (cfg.equipment_type && kinds.indexOf(cfg.equipment_type) === -1) kinds.push(cfg.equipment_type);
+    A.qs('#fb-wh-eq').innerHTML = kinds.map(function (k) {
+      return '<option value="' + A.esc(k) + '">' + A.esc(k) + '</option>';
+    }).join('');
+    A.qs('#fb-wh-reason').innerHTML = Object.keys(L.reasons).map(function (k) {
+      return '<option value="' + k + '">' + A.esc(L.reasons[k]) + '</option>';
+    }).join('');
+    A.qs('#fb-wh-mode').value = cfg.mode === 'parts' ? 'parts' : 'rows';
+    A.qs('#fb-wh-wh').value = cfg.warehouse || 'equipment';
+    A.qs('#fb-wh-dir').value = cfg.direction || 'in';
+    A.qs('#fb-wh-reason').value = cfg.reason || 'manual';
+    A.qs('#fb-wh-kind').value = (cfg.kinds || [])[0] || '';
+    A.qs('#fb-wh-eq').value = cfg.equipment_type || kinds[0] || '';
+    A.qs('#fb-wh-eqf').value = cfg.equipment_field || '';
+    A.qs('#fb-wh-fail').value = cfg.failure_field || '';
+    A.qs('#fb-wh-cause').value = cfg.cause_field || '';
+    A.qs('#fb-wh-act').value = cfg.action_field || '';
+    checks('#fb-wh-conds', L.conds, cfg.conditions || []);
+    checks('#fb-wh-cols', L.cols, cfg.columns || []);
+    whModeSync();
+  }
+  function collectWh() {
+    var picked = function (box) {
+      return A.qsa(box + ' input:checked').map(function (i) { return i.value; });
+    };
+    var mode = A.qs('#fb-wh-mode').value;
+    return { mode: mode, warehouse: A.qs('#fb-wh-wh').value, direction: A.qs('#fb-wh-dir').value,
+             reason: A.qs('#fb-wh-reason').value,
+             kinds: A.qs('#fb-wh-kind').value ? [A.qs('#fb-wh-kind').value] : [],
+             conditions: picked('#fb-wh-conds'), columns: picked('#fb-wh-cols'),
+             equipment_type: A.qs('#fb-wh-eq').value, equipment_field: A.qs('#fb-wh-eqf').value.trim(),
+             failure_field: A.qs('#fb-wh-fail').value.trim(), cause_field: A.qs('#fb-wh-cause').value.trim(),
+             action_field: A.qs('#fb-wh-act').value.trim() };
+  }
+
   function fillChart(field) {
     var cfg = (field && field.chart_config) || {};
     chartState = (cfg.series || []).map(function (sr) {
@@ -743,6 +840,7 @@
     A.qs('#sb-full').value = section && section.full_width ? '1' : '0';
     A.qs('#sb-active').value = section && !section.is_active ? '0' : '1';
     A.qs('#sb-entry').value = section && section.show_on_entry === false ? '0' : '1';
+    A.qs('#sb-collapse').value = section && section.collapse_formulas ? '1' : '0';
     fillWhen(section && section.visible_when, 'sb');
     fillBring(section);
     A.qs('#sb-delete').classList.toggle('hidden', !section);
@@ -756,6 +854,7 @@
       full_width: A.qs('#sb-full').value === '1',
       is_active: A.qs('#sb-active').value === '1',
       show_on_entry: A.qs('#sb-entry').value === '1',
+      collapse_formulas: A.qs('#sb-collapse').value === '1',
       visible_when: readWhen('sb')
     };
     if (!payload.code || !payload.title) {
@@ -871,6 +970,7 @@
     });
     bindApproval();
     bindChart();
+    if (A.qs('#fb-wh-mode')) A.qs('#fb-wh-mode').addEventListener('change', whModeSync);
     /* an option typed or renamed in the list shows up among the approvable ones */
     A.qs('#fb-options-list').addEventListener('change', renderApprovalOptions);
     A.qs('#fb-formula-field').addEventListener('change', function () {

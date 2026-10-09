@@ -68,9 +68,10 @@ class PumpCatalogModel(db.Model):
 
     @property
     def full_title(self) -> str:
-        kw = f" + {self.motor_kw:g}" if self.motor_kw is not None else ""
+        # «384/10+73.5» — the one electropump format (services.epump)
+        kw = f"+{self.motor_kw:g}" if self.motor_kw is not None else ""
         trim = self.trim if self.trim and self.trim.replace(" ", "") not in self.stages else ""
-        return f"{self.title}{(' ' + trim) if trim else ''}{kw}"
+        return f"{self.title}{trim.replace(' ', '') if trim else ''}{kw}"
 
     def to_dict(self, points=True):
         data = {

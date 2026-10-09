@@ -1617,11 +1617,21 @@
                return: ['#dc2626', '5 3'], spawn: ['#0891b2', '6 3'] };
 
   function clip(t, n) { t = String(t || ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; }
+  /* up to two lines of about n characters, broken between words */
+  function wrap2(t, n) {
+    t = String(t || '').trim();
+    if (t.length <= n) return [t];
+    var words = t.split(/\s+/), a = '', i = 0;
+    while (i < words.length && (a + (a ? ' ' : '') + words[i]).length <= n) { a += (a ? ' ' : '') + words[i]; i++; }
+    if (!a) { a = t.slice(0, n); return [a, clip(t.slice(n), n)]; }
+    return [a, clip(words.slice(i).join(' '), n)];
+  }
   function svgEsc(t) { return A.esc(String(t == null ? '' : t)); }
 
   function flowSvg(r) {
     var nodes = r.nodes || [], edges = r.edges || [];
-    var COL = 210, W_ST = 172, H_ST = 64, PILL_W = 150, PILL_H = 24, BELOW_H = 50;
+    /* sized so a full title, its متولی and its state fit inside the shape */
+    var COL = 280, W_ST = 236, H_ST = 92, PILL_W = 208, PILL_H = 28, BELOW_H = 64;
     var main = nodes.filter(function (n) { return !n.attach; });
     var byKey = {};
     nodes.forEach(function (n) { byKey[n.key] = n; });
@@ -1648,7 +1658,8 @@
     var pos = {};
     levels.forEach(function (lv) {
       cols[lv].forEach(function (n, i) {
-        pos[n.key] = { x: W - 20 - lv * COL - COL / 2, y: top + i * rowH + H_ST / 2, w: n.kind === 'stage' ? W_ST : 60, h: n.kind === 'stage' ? H_ST : 52 };
+        pos[n.key] = { x: W - 20 - lv * COL - COL / 2, y: top + i * rowH + H_ST / 2,
+                       w: n.kind === 'stage' ? W_ST : (n.kind === 'link' ? 150 : 76), h: n.kind === 'stage' ? H_ST : 64 };
       });
     });
     function place(anchorKey) {
@@ -1661,7 +1672,7 @@
       if (extra > 0) pos[anchorKey].more = extra;
       var yb = a.y + a.h / 2 + 18;
       (below[anchorKey] || []).forEach(function (n) {
-        pos[n.key] = { x: a.x, y: yb + BELOW_H / 2, w: n.kind === 'approval' ? 132 : 150, h: BELOW_H };
+        pos[n.key] = { x: a.x, y: yb + BELOW_H / 2, w: n.kind === 'approval' ? 180 : 208, h: BELOW_H };
         yb += BELOW_H + 12;
         place(n.key);
         if (below[n.key]) yb += (below[n.key].length) * (BELOW_H + 12);
@@ -1708,43 +1719,46 @@
           + '<circle cx="' + (p.x + p.w / 2 - 14) + '" cy="' + (p.y - p.h / 2 + 14) + '" r="10" fill="' + col[1] + '"/>'
           + '<text x="' + (p.x + p.w / 2 - 14) + '" y="' + (p.y - p.h / 2 + 18) + '" text-anchor="middle" class="f-no">'
           + svgEsc(J.toFaDigits(n.stage_number)) + '</text>'
-          + '<text x="' + (p.x - 8) + '" y="' + (p.y - 10) + '" text-anchor="middle" class="f-title">' + svgEsc(clip(n.title, 20)) + '</text>'
-          + '<text x="' + p.x + '" y="' + (p.y + 7) + '" text-anchor="middle" class="f-who">' + svgEsc(clip(n.who, 28)) + '</text>'
-          + '<text x="' + p.x + '" y="' + (p.y + 23) + '" text-anchor="middle" class="f-state" fill="' + col[1] + '">'
-          + svgEsc(clip((n.status_label || '') + (n.when ? ' · ' + n.when : ''), 30)) + '</text>';
+          + wrap2(n.title, 24).map(function (line, li, all) {
+            return '<text x="' + (p.x - 10) + '" y="' + (p.y - (all.length > 1 ? 24 : 14) + li * 16) + '" text-anchor="middle" class="f-title">'
+              + svgEsc(line) + '</text>';
+          }).join('')
+          + '<text x="' + p.x + '" y="' + (p.y + 14) + '" text-anchor="middle" class="f-who">' + svgEsc(clip(n.who, 34)) + '</text>'
+          + '<text x="' + p.x + '" y="' + (p.y + 32) + '" text-anchor="middle" class="f-state" fill="' + col[1] + '">'
+          + svgEsc(clip((n.status_label || '') + (n.when ? ' · ' + n.when : ''), 36)) + '</text>';
         if (p.more) g += '<text x="' + p.x + '" y="' + (p.y - p.h / 2 - 14 - 4 * (PILL_H + 6) + 10) + '" text-anchor="middle" class="f-sub">+'
           + svgEsc(J.toFaDigits(p.more)) + ' ارجاع دیگر</text>';
       } else if (n.kind === 'start' || n.kind === 'end') {
-        g += '<circle cx="' + p.x + '" cy="' + p.y + '" r="22" fill="' + col[0] + '" stroke="' + col[1] + '" stroke-width="' + (n.kind === 'end' ? 4 : 2) + '"/>'
-          + '<text x="' + p.x + '" y="' + (p.y + 4) + '" text-anchor="middle" class="f-title">' + svgEsc(n.title) + '</text>'
-          + (n.sub ? '<text x="' + p.x + '" y="' + (p.y + 38) + '" text-anchor="middle" class="f-sub">' + svgEsc(clip(n.sub, 26)) + '</text>' : '');
+        g += '<circle cx="' + p.x + '" cy="' + p.y + '" r="30" fill="' + col[0] + '" stroke="' + col[1] + '" stroke-width="' + (n.kind === 'end' ? 4 : 2) + '"/>'
+          + '<text x="' + p.x + '" y="' + (p.y + 4) + '" text-anchor="middle" class="f-title">' + svgEsc(clip(n.title, 8)) + '</text>'
+          + (n.sub ? '<text x="' + p.x + '" y="' + (p.y + 48) + '" text-anchor="middle" class="f-sub">' + svgEsc(clip(n.sub, 32)) + '</text>' : '');
       } else if (n.kind === 'stop') {
-        var r8 = 24, pts = [];
+        var r8 = 30, pts = [];
         for (var k = 0; k < 8; k++) {
           var ang = Math.PI / 8 + k * Math.PI / 4;
           pts.push((p.x + r8 * Math.cos(ang)).toFixed(1) + ',' + (p.y + r8 * Math.sin(ang)).toFixed(1));
         }
         g += '<polygon points="' + pts.join(' ') + '" fill="#fee2e2" stroke="#dc2626" stroke-width="2"/>'
           + '<text x="' + p.x + '" y="' + (p.y + 4) + '" text-anchor="middle" class="f-title" fill="#b91c1c">' + svgEsc(n.title) + '</text>'
-          + (n.sub ? '<text x="' + p.x + '" y="' + (p.y + 40) + '" text-anchor="middle" class="f-sub">' + svgEsc(clip(n.sub, 30)) + '</text>' : '');
+          + (n.sub ? '<text x="' + p.x + '" y="' + (p.y + 48) + '" text-anchor="middle" class="f-sub">' + svgEsc(clip(n.sub, 36)) + '</text>' : '');
       } else if (n.kind === 'approval') {
         var hw = p.w / 2, hh = p.h / 2;
         g += '<polygon points="' + p.x + ',' + (p.y - hh) + ' ' + (p.x + hw) + ',' + p.y + ' ' + p.x + ',' + (p.y + hh) + ' ' + (p.x - hw) + ',' + p.y
           + '" fill="' + col[0] + '" stroke="' + col[1] + '" stroke-width="1.6"/>'
-          + '<text x="' + p.x + '" y="' + (p.y - 2) + '" text-anchor="middle" class="f-who">' + svgEsc(clip(n.title, 20)) + '</text>'
-          + '<text x="' + p.x + '" y="' + (p.y + 13) + '" text-anchor="middle" class="f-state" fill="' + col[1] + '">' + svgEsc(n.status_label || '') + '</text>';
+          + '<text x="' + p.x + '" y="' + (p.y - 3) + '" text-anchor="middle" class="f-who">' + svgEsc(clip(n.title, 22)) + '</text>'
+          + '<text x="' + p.x + '" y="' + (p.y + 14) + '" text-anchor="middle" class="f-state" fill="' + col[1] + '">' + svgEsc(clip(n.status_label || '', 20)) + '</text>';
       } else if (n.kind === 'referral') {
         g += '<rect x="' + (p.x - p.w / 2) + '" y="' + (p.y - p.h / 2) + '" width="' + p.w + '" height="' + p.h
           + '" rx="12" fill="' + col[0] + '" stroke="#7c3aed" stroke-width="1.2"/>'
-          + '<text x="' + p.x + '" y="' + (p.y + 4) + '" text-anchor="middle" class="f-sub">📝 ' + svgEsc(clip(n.title, 16))
-          + ' · ' + svgEsc(clip(n.status_label || '', 12)) + '</text>';
+          + '<text x="' + p.x + '" y="' + (p.y + 5) + '" text-anchor="middle" class="f-sub">📝 ' + svgEsc(clip(n.title, 20))
+          + ' · ' + svgEsc(clip(n.status_label || '', 14)) + '</text>';
       } else if (n.kind === 'link') {
         var lw = p.w / 2, lh = p.h / 2, cut = 14;
         g += '<polygon points="' + (p.x - lw + cut) + ',' + (p.y - lh) + ' ' + (p.x + lw - cut) + ',' + (p.y - lh) + ' ' + (p.x + lw) + ',' + p.y
           + ' ' + (p.x + lw - cut) + ',' + (p.y + lh) + ' ' + (p.x - lw + cut) + ',' + (p.y + lh) + ' ' + (p.x - lw) + ',' + p.y
           + '" fill="' + col[0] + '" stroke="#0891b2" stroke-width="1.6"/>'
-          + '<text x="' + p.x + '" y="' + (p.y - 3) + '" text-anchor="middle" class="f-title">' + svgEsc(n.title) + '</text>'
-          + '<text x="' + p.x + '" y="' + (p.y + 13) + '" text-anchor="middle" class="f-sub">' + svgEsc(clip(n.sub, 22)) + '</text>';
+          + '<text x="' + p.x + '" y="' + (p.y - 4) + '" text-anchor="middle" class="f-title">' + svgEsc(clip(n.title, 16)) + '</text>'
+          + '<text x="' + p.x + '" y="' + (p.y + 14) + '" text-anchor="middle" class="f-sub">' + svgEsc(clip(n.sub, 24)) + '</text>';
       }
       out.push(g + '</g>');
     });

@@ -262,6 +262,134 @@ TEMPLATES = [
 ]
 
 
+# ── R12: the warehouse, the parts and the reference databases ───────────────
+SEED_KEY_V2 = "report_templates_v2"
+PARTS = "انبار و قطعات کارگاه مکانیک"
+REFS = "بانک‌های اطلاعاتی چاه‌ها"
+PART_MEASURES = [m("new", "_installed_new", "sum", "نصب — نو"),
+                 m("rep", "_installed_repair", "sum", "نصب — کهنه (قابل استفاده مجدد)"),
+                 m("col", "_collected", "sum", "جمع‌آوری (ارزیابی‌نشده)"),
+                 m("reu", "_reusable", "sum", "قابل استفاده مجدد"),
+                 m("scr", "_scrap", "sum", "اسقاط"), m("n", label="تعداد ردیف")]
+PART_FILTERS = [{"id": "f_date", "field": "_date", "kind": "date_range", "label": "تاریخ اقدام"},
+                {"id": "f_kind", "field": "_equipment_kind", "kind": "select", "label": "نوع تجهیز"},
+                {"id": "f_src", "field": "_source", "kind": "select", "label": "منبع"},
+                {"id": "f_code", "field": "_equipment_code", "kind": "text", "label": "کد تجهیز"}]
+PART_KPIS = [kpi("k_new", "قطعه‌ی نو نصب‌شده", value={"agg": "sum", "field": "_installed_new"}),
+             kpi("k_rep", "قطعه‌ی کهنه (قابل استفاده مجدد) نصب‌شده", value={"agg": "sum", "field": "_installed_repair"}),
+             kpi("k_reu", "قابل استفاده مجدد", value={"agg": "sum", "field": "_reusable"}),
+             kpi("k_scr", "اسقاط", value={"agg": "sum", "field": "_scrap"}, direction="lower"),
+             kpi("k_eq", "تعداد تجهیز", value={"agg": "count_distinct", "field": "_equipment_code"})]
+PART_FIELDS = [{"key": k} for k in ("_date", "_source", "_equipment_code", "_equipment_kind",
+                                    "_equipment_name", "_part_action", "_state", "_assessment",
+                                    "_part_code", "_part_name", "_qty", "_failure", "_cause",
+                                    "_facility", "_user")]
+TEMPLATES_V2 = [
+    {"key": "wh_parts_overview", "name": "قطعات مونتاژ و دمونتاژ (به تفکیک قطعه)", "category": PARTS,
+     "description": "برای مدیرعامل: هر قطعه‌ی الکتروموتور و پمپ — نصب‌شده نو/کهنه، جمع‌آوری‌شده، قابل استفاده مجدد و اسقاط؛ "
+                    "سوابق ۹۸ تا ۰۵ و فرم‌های قطعات فرایند.",
+     "definition": {"source": "wh_parts", "groups": [{"field": "_equipment_kind"}, {"field": "_part_name"}],
+                    "measures": PART_MEASURES, "kpis": PART_KPIS,
+                    "charts": [chart("c1", "stacked_bar", "نصب نو و کهنه به تفکیک قطعه", "_part_name",
+                                     measures=["new", "rep"]),
+                               chart("c2", "donut", "سهم الکتروموتور و پمپ", "_equipment_kind", show_labels=True),
+                               chart("c3", "trend_month", "روند ماهانه‌ی اقدام روی قطعات", "_date"),
+                               chart("c4", "pareto", "پرمصرف‌ترین قطعات", "_part_name", measures=["new"])],
+                    "tables": [{"id": "t1", "title": "قطعات", "kind": "grouped"}],
+                    "fields": PART_FIELDS, "interactive_filters": PART_FILTERS,
+                    "sort": [{"key": "new", "dir": "desc"}],
+                    "drill": {"enabled": True, "path": ["_part_name", "_date:year"]}}},
+    {"key": "wh_parts_equipment", "name": "قطعات به تفکیک تجهیز (کد تجهیز)", "category": PARTS,
+     "description": "هر الکتروموتور و پمپ (کد تجهیز): چند قطعه نو و کهنه در آن نصب و چند قطعه از آن جمع‌آوری و اسقاط شده است.",
+     "definition": {"source": "wh_parts", "groups": [{"field": "_equipment_code"}],
+                    "measures": PART_MEASURES, "kpis": PART_KPIS,
+                    "charts": [chart("c1", "ranking", "تجهیزات با بیشترین قطعه‌ی نصب‌شده", "_equipment_code",
+                                     measures=["new"])],
+                    "tables": [{"id": "t1", "title": "تجهیزات", "kind": "grouped"}],
+                    "fields": PART_FIELDS, "interactive_filters": PART_FILTERS,
+                    "sort": [{"key": "new", "dir": "desc"}],
+                    "drill": {"enabled": True, "path": ["_equipment_code", "_part_name"]}}},
+    {"key": "wh_parts_yearly", "name": "روند سالانه و ماهانه‌ی قطعات", "category": PARTS,
+     "description": "مصرف قطعه‌ی نو و کهنه، قابل استفاده مجدد و اسقاط به تفکیک سال و ماه.",
+     "definition": {"source": "wh_parts", "groups": [{"field": "_year"}, {"field": "_month"}],
+                    "measures": PART_MEASURES, "kpis": PART_KPIS,
+                    "charts": [chart("c1", "stacked_column", "نصب نو و کهنه در سال‌ها", "_year",
+                                     measures=["new", "rep"]),
+                               chart("c2", "column", "قابل استفاده مجدد و اسقاط در سال‌ها", "_year",
+                                     measures=["reu", "scr"])],
+                    "tables": [{"id": "t1", "title": "سال و ماه", "kind": "grouped"}],
+                    "fields": PART_FIELDS, "interactive_filters": PART_FILTERS,
+                    "drill": {"enabled": True, "path": ["_year", "_month", "_part_name"]}}},
+    {"key": "wh_moves_overview", "name": "گردش انبار تجهیزات و قطعات", "category": PARTS,
+     "description": "ورود و خروج انبار تجهیزات و قطعات به تفکیک علت (کشیدن، دمونتاژ، مونتاژ، نصب، خرید) و وضعیت.",
+     "definition": {"source": "wh_moves", "groups": [{"field": "_warehouse"}, {"field": "_reason"}],
+                    "measures": [m("in", "_in", "sum", "ورود"), m("out", "_out", "sum", "خروج"),
+                                 m("net", "_net", "sum", "خالص"), m("n", label="تعداد ردیف")],
+                    "kpis": [kpi("k_in", "کل ورود", value={"agg": "sum", "field": "_in"}),
+                             kpi("k_out", "کل خروج", value={"agg": "sum", "field": "_out"})],
+                    "charts": [chart("c1", "stacked_column", "ورود و خروج به تفکیک علت", "_reason",
+                                     measures=["in", "out"]),
+                               chart("c2", "donut", "وضعیت اقلام", "_condition", show_labels=True)],
+                    "tables": [{"id": "t1", "title": "گردش", "kind": "grouped"}],
+                    "fields": [{"key": k} for k in ("_date", "_warehouse", "_direction", "_reason", "_item",
+                                                    "_condition", "_spec", "_serial", "_qty", "_well",
+                                                    "_stage", "_user")],
+                    "interactive_filters": [{"id": "f_date", "field": "_date", "kind": "date_range", "label": "تاریخ"},
+                                            {"id": "f_wh", "field": "_warehouse", "kind": "select", "label": "انبار"},
+                                            {"id": "f_cond", "field": "_condition", "kind": "select", "label": "وضعیت"}],
+                    "drill": {"enabled": True, "path": ["_reason", "_item"]}}},
+    {"key": "ref_flowtests", "name": "دبی‌سنجی چاه‌ها", "category": REFS,
+     "description": "آزمایش‌های دبی‌سنجی به تفکیک اداره و سال: آبدهی و فشار شبکه، راندمان و عمق‌ها.",
+     "definition": {"source": "ft_tests", "groups": [{"field": "_office"}],
+                    "measures": [m("n", label="تعداد آزمایش"),
+                                 m("q", "_net_flow", "avg", "میانگین آبدهی شبکه (l/s)", decimals=2),
+                                 m("eff", "_efficiency", "avg", "میانگین راندمان (%)", decimals=1),
+                                 m("w", "_well", "count_distinct", "تعداد چاه")],
+                    "kpis": [kpi("k_n", "آزمایش‌ها"),
+                             kpi("k_w", "چاه‌ها", value={"agg": "count_distinct", "field": "_well"}),
+                             kpi("k_eff", "میانگین راندمان", unit="٪", decimals=1,
+                                 value={"agg": "avg", "field": "_efficiency"})],
+                    "charts": [chart("c1", "bar", "تعداد آزمایش هر اداره", "_office"),
+                               chart("c2", "trend_month", "روند دبی‌سنجی‌ها", "_date")],
+                    "tables": [{"id": "t1", "title": "ادارات", "kind": "grouped"}],
+                    "fields": [{"key": k} for k in ("_date", "_well", "_office", "_electropump", "_well_depth",
+                                                    "_install_depth", "_static", "_dynamic", "_net_flow",
+                                                    "_net_pressure", "_efficiency")],
+                    "interactive_filters": [{"id": "f_date", "field": "_date", "kind": "date_range", "label": "تاریخ"},
+                                            {"id": "f_office", "field": "_office", "kind": "select", "label": "اداره"}],
+                    "drill": {"enabled": True, "path": ["_office", "_well"]}}},
+    {"key": "ref_production", "name": "روند تولید چاه‌ها", "category": REFS,
+     "description": "تولید، کارکرد و دبی متوسط ماهانه‌ی چاه‌ها از گزارش‌های روند تولید ۹۹ تا ۰۵.",
+     "definition": {"source": "pr_months", "groups": [{"field": "_year"}],
+                    "measures": [m("prod", "_production", "sum", "تولید (m³)"),
+                                 m("hrs", "_hours", "sum", "کارکرد (ساعت)"),
+                                 m("q", "_avg_flow", "avg", "میانگین دبی (l/s)", decimals=2)],
+                    "kpis": [kpi("k_prod", "کل تولید (m³)", value={"agg": "sum", "field": "_production"})],
+                    "charts": [chart("c1", "column", "تولید سالانه", "_year", measures=["prod"]),
+                               chart("c2", "trend_month", "روند ماهانه‌ی تولید", "_date", measures=["prod"])],
+                    "tables": [{"id": "t1", "title": "سال‌ها", "kind": "grouped"}],
+                    "fields": [{"key": k} for k in ("_code", "_name", "_well", "_year", "_month", "_production",
+                                                    "_hours", "_avg_flow", "_pressure")],
+                    "interactive_filters": [{"id": "f_date", "field": "_date", "kind": "date_range", "label": "ماه"},
+                                            {"id": "f_well", "field": "_name", "kind": "select", "label": "چاه"}],
+                    "drill": {"enabled": True, "path": ["_year", "_name"]}}},
+    {"key": "ref_videometry", "name": "ویدئومتری چاه‌ها", "category": REFS,
+     "description": "بازدیدهای ویدئومتری: عمق چاه، سطح ایستابی و ایرادات جدار به تفکیک مرکز.",
+     "definition": {"source": "vm_insp", "groups": [{"field": "_center"}],
+                    "measures": [m("n", label="تعداد بازدید"),
+                                 m("d", "_depth", "avg", "میانگین عمق (m)", decimals=1),
+                                 m("def", "_defects", "sum", "ایرادات جدار")],
+                    "kpis": [kpi("k_n", "بازدیدها"),
+                             kpi("k_def", "ایرادات جدار", value={"agg": "sum", "field": "_defects"})],
+                    "charts": [chart("c1", "bar", "بازدید هر مرکز", "_center")],
+                    "tables": [{"id": "t1", "title": "مراکز", "kind": "grouped"}],
+                    "fields": [{"key": k} for k in ("_date", "_code", "_name", "_center", "_depth", "_static",
+                                                    "_screen", "_defects", "_notes")],
+                    "interactive_filters": [{"id": "f_date", "field": "_date", "kind": "date_range", "label": "تاریخ"}],
+                    "drill": {"enabled": True, "path": ["_center", "_name"]}}},
+]
+
+
 def seed_templates(force=False) -> dict:
     """Create the starting reports once. Returns what was done."""
     from ..models import AppMeta
@@ -269,11 +397,16 @@ def seed_templates(force=False) -> dict:
     from . import access as acc
     from .catalogue import get_source
     from .lifecycle import publish, referenced_fields, save_definition, validate
-    if not force and AppMeta.get(SEED_KEY):
+    todo = []
+    if force or not AppMeta.get(SEED_KEY):
+        todo += TEMPLATES
+    if force or not AppMeta.get(SEED_KEY_V2):
+        todo += TEMPLATES_V2
+    if not todo:
         return {"skipped": True}
     done, skipped = [], []
     cats = {}
-    for t in TEMPLATES:
+    for t in todo:
         if Report.query.filter_by(template_key=t["key"]).first():
             continue
         d = dict(t["definition"])
@@ -306,6 +439,7 @@ def seed_templates(force=False) -> dict:
             publish(report, version)
         done.append(t["key"])
     AppMeta.set(SEED_KEY, "1")
+    AppMeta.set(SEED_KEY_V2, "1")
     db.session.commit()
     if skipped:
         log.info("Report templates not seeded (fields missing): %s", skipped)

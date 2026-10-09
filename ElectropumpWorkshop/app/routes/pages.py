@@ -26,6 +26,8 @@ NAV = [
     ("workflow", "فرایندساز", "🔀", "/workflow"),
     ("options", "مدیریت گزینه‌ها", "🗂", "/options"),
     ("catalogue", "کاتالوگ پمپ", "📘", "/catalogue"),
+    ("refdata", "بانک‌های اطلاعاتی", "🗄", "/refdata"),
+    ("warehouse", "انبار تجهیزات و قطعات", "🏬", "/warehouse"),
     ("transfer", "ورود / خروج داده", "🔁", "/transfer"),
     ("users", "کاربران", "👤", "/users"),
     ("settings", "تنظیمات", "⚙", "/settings"),
@@ -195,3 +197,17 @@ def healthz():
     """Unauthenticated on purpose: the launcher polls it before opening the
     browser, and a monitoring check must not need a password."""
     return {"ok": True, "app": current_app.config["APP_TITLE"]}
+
+
+@bp.get("/refdata")
+@permission_required("refdata.view")
+def refdata():
+    """The reference databases: flow tests, production trend, videometry."""
+    return render_template("refdata.html", active="refdata")
+
+
+@bp.get("/warehouse")
+@permission_required("warehouse.view")
+def warehouse():
+    """Equipment and parts warehouses: stock, movements, the manager's report."""
+    return render_template("warehouse.html", active="warehouse")

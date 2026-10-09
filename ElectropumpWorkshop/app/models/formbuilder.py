@@ -41,6 +41,10 @@ FIELD_TYPES = (
     # (series of x/y fields, an axis on either side, optional trend line). It
     # stores nothing.
     "chart",
+    # «اقلام انبار»: a small table — item, specification, plaque, condition,
+    # quantity — whose rows are posted to the warehouse ledger when the stage
+    # is sent (which warehouse, in or out, and why: ``wh_config``).
+    "wh_lines",
 )
 
 DEFAULT_PART_LABELS = ["فاز ۱", "فاز ۲", "فاز ۳"]
@@ -66,6 +70,10 @@ class FormSection(db.Model):
     # Drawn on the standalone «ثبت اطلاعات» page too, or only inside process
     # stages (the pump-selection forms belong to the کارتابل).
     show_on_entry = db.Column(db.Boolean, nullable=False, default=True)
+    # «فیلدهای محاسباتی پنهان باشند»: the section's formula fields are folded
+    # behind a «نمایش محاسبات» toggle — the readings are typed, the dozen
+    # numbers worked out of them stay out of the way until somebody asks.
+    collapse_formulas = db.Column(db.Boolean, nullable=False, default=False)
 
     fields = db.relationship("FormField", back_populates="section",
                              cascade="all, delete-orphan", order_by="FormField.sort_order")
@@ -78,6 +86,7 @@ class FormSection(db.Model):
             "description": self.description,
             "visible_when": self.visible_when,
             "show_on_entry": self.show_on_entry is not False,
+            "collapse_formulas": bool(self.collapse_formulas),
         }
         if include_fields:
             fields = [f for f in self.fields if f.is_active or not active_only]
@@ -162,6 +171,9 @@ class FormField(db.Model):
     # "axis": "left"|"right", "trend": "poly2"|"poly2_0"|"power"|"linear"|""}],
     # "x_label", "y_label", "y2_label"}
     chart_config = db.Column(db.Text)
+    # «اقلام انبار»: JSON {"warehouse": "equipment"|"parts", "direction":
+    # "in"|"out", "reason": …, "kinds": […], "conditions": […], "spec": bool}
+    wh_config = db.Column(db.Text)
     show_in_table = db.Column(db.Boolean, nullable=False, default=False)
     table_order = db.Column(db.Integer, nullable=False, default=0)
     export_header = db.Column(db.String(200))
@@ -229,6 +241,8 @@ class FormField(db.Model):
             "block_options": self.block_option_list,
             "result_type": self.result_type or "number",
             "chart_config": self.chart_spec,
+            "wh_config": (self._json(self.wh_config, {})
+                          if self.field_type == "wh_lines" else None),
             "part_labels": self.part_labels if self.field_type == "numbers" else None,
             "fill_stage_ids": self.fill_stage_list,
         }

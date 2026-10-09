@@ -35,6 +35,11 @@ PERMISSIONS = [
     ("workflow.view",  "مشاهده مسیر فرایندها",         "فرایند"),
     ("workflow.manage", "فرایندساز و تعریف مراحل",      "فرایند"),
     ("form.manage",    "فرم‌ساز و مدیریت گزینه‌ها",     "پیکربندی"),
+    ("refdata.view",   "مشاهده بانک‌های اطلاعاتی (دبی‌سنجی، روند تولید، ویدئومتری)",
+     "بانک‌های اطلاعاتی"),
+    ("refdata.manage", "ورود و به‌روزرسانی بانک‌های اطلاعاتی", "بانک‌های اطلاعاتی"),
+    ("warehouse.view", "مشاهده موجودی، گردش و گزارش انبار", "انبار"),
+    ("warehouse.manage", "ثبت ورود/خروج دستی و تعریف اقلام انبار", "انبار"),
     ("data.import",    "ورود داده از اکسل",            "پیکربندی"),
     ("backup.manage",  "پشتیبان‌گیری و بازیابی",        "سیستم"),
     ("audit.view",     "مشاهده گزارش تغییرات و لاگ",    "سیستم"),
@@ -55,7 +60,8 @@ ROLES = {
         "permissions": ["record.view", "record.create", "record.edit", "record.export",
                         "well.view", "well.manage", "dashboard.view", "report.view",
                         "data.import", "audit.view",
-                        "workflow.act", "workflow.view"],
+                        "workflow.act", "workflow.view",
+                        "refdata.view", "warehouse.view"],
     },
     "operator": {
         "label": "کاربر ثبت اطلاعات",
@@ -76,7 +82,8 @@ ROLES = {
     "viewer": {
         "label": "فقط مشاهده",
         "description": "مشاهده رکوردها و گزارش‌ها، بدون هیچ تغییری.",
-        "permissions": ["record.view", "well.view", "dashboard.view", "report.view"],
+        "permissions": ["record.view", "well.view", "dashboard.view", "report.view",
+                        "refdata.view", "warehouse.view"],
     },
 }
 
@@ -95,6 +102,8 @@ PAGE_PERMISSION = {
     "formbuilder": "form.manage",
     "options": "form.manage",
     "catalogue": "form.manage",
+    "refdata": "refdata.view",
+    "warehouse": "warehouse.view",
     "transfer": "data.import",
     "users": "user.manage",
     "settings": "settings.view",

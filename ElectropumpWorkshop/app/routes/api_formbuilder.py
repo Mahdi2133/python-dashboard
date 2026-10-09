@@ -135,13 +135,42 @@ def get_schema():
             .order_by(WorkflowDefinition.id).all()
             for s in sorted(w.stages, key=lambda x: x.stage_number)
             if s.is_active and s.stage_number > 0]
+        extra["warehouse"] = _warehouse_options()
     return ok({"sections": sections, "lookups": lookups,
                "conditional": conditional,
                "prefill_when": [{"value": k, "label": v}
                                 for k, v in PREFILL_WHEN.items()],
                "prefill_well": [{"value": "@well:" + k, "label": v}
                                 for k, v in PREFILL_WELL_ATTRS.items()],
+               "prefill_ref": _ref_options(),
                "field_types": list(FIELD_TYPES), **extra})
+
+
+def _warehouse_options():
+    """The «اقلام انبار» editor's lists, from the warehouse's own tables: the
+    conditions defined on the warehouse page and every equipment kind that
+    has a parts list in the item catalogue."""
+    try:
+        from ..warehouse.models import REASONS, WhCondition, WhItem
+        from ..warehouse.service import PART_COLUMNS
+        kinds = sorted({i.category for i in WhItem.query.filter_by(kind="part", is_active=True)
+                        if i.category})
+        return {"conditions": [{"code": c.code, "label": c.label} for c in
+                               WhCondition.query.filter_by(is_active=True)
+                               .order_by(WhCondition.sort_order)],
+                "equipment_types": kinds, "reasons": REASONS,
+                "columns": [{"code": k, "label": v} for k, v in PART_COLUMNS]}
+    except Exception:  # noqa: BLE001 — the form builder opens without them
+        return {}
+
+
+def _ref_options():
+    """The reference databases' values a field can start from («@ref:…»)."""
+    try:
+        from ..refdata.profile import catalogue_options
+        return catalogue_options()
+    except Exception:  # noqa: BLE001 — the form builder opens without them
+        return []
 
 
 @bp.post("/sections")
@@ -164,6 +193,7 @@ def create_section():
         description=payload.get("description"),
         visible_when=normalize_text(payload.get("visible_when")) or None,
         show_on_entry=payload.get("show_on_entry", True) in (True, "true", "1", 1),
+        collapse_formulas=payload.get("collapse_formulas") in (True, "true", "1", 1),
     )
     db.session.add(section)
     db.session.flush()
@@ -185,7 +215,7 @@ def update_section(section_id):
     for attr in ("columns", "sort_order"):
         if attr in payload:
             setattr(section, attr, int(payload[attr] or 0))
-    for attr in ("full_width", "is_active", "show_on_entry"):
+    for attr in ("full_width", "is_active", "show_on_entry", "collapse_formulas"):
         if attr in payload:
             setattr(section, attr, payload[attr] in (True, "true", "1", 1))
     record_audit("update", "form_section", section.id, summary=f"ویرایش بخش «{section.title}»")
@@ -272,7 +302,65 @@ def _special_settings(field, payload):
             return problem
     elif "chart_config" in payload:
         field.chart_config = None
+    if ftype == "wh_lines":
+        problem = _warehouse_settings(field, payload)
+        if problem:
+            return problem
+    elif "wh_config" in payload:
+        field.wh_config = None
     return _behaviour_settings(field, payload)
+
+
+def _warehouse_settings(field, payload):
+    """«اقلام انبار»: which warehouse, in or out, why, and which items/conditions."""
+    from ..warehouse.models import REASONS, WAREHOUSES
+    raw = payload.get("wh_config", field.wh_config)
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw or "{}")
+        except ValueError:
+            return "تنظیمات «اقلام انبار» نامعتبر است."
+    raw = raw if isinstance(raw, dict) else {}
+    try:
+        before = json.loads(field.wh_config or "{}")
+    except ValueError:
+        before = {}
+    before = before if isinstance(before, dict) else {}
+    if raw.get("warehouse") not in WAREHOUSES:
+        return "برای «اقلام انبار» انبار (تجهیزات یا قطعات) را انتخاب کنید."
+    if raw.get("direction") not in ("in", "out"):
+        return "برای «اقلام انبار» مشخص کنید ورود است یا خروج."
+    mode = raw.get("mode", before.get("mode")) or "rows"
+    cfg = {
+        "mode": "parts" if mode == "parts" else "rows",
+        "warehouse": raw["warehouse"], "direction": raw["direction"],
+        "reason": raw.get("reason") if raw.get("reason") in REASONS else "manual",
+        "kinds": [k for k in raw.get("kinds") or [] if k in ("equipment", "part")],
+        "categories": [normalize_text(c) for c in raw.get("categories") or [] if c],
+        "conditions": [c for c in raw.get("conditions") or [] if c],
+        "default_condition": raw.get("default_condition") or None,
+        "spec": bool(raw.get("spec", True)), "serial": bool(raw.get("serial", True)),
+    }
+    if cfg["mode"] == "parts":
+        # «فرم قطعات»: the equipment whose parts are listed, the counted
+        # columns, and the fields of the same form that name the equipment
+        # and its failure — a key the builder does not show is kept as it was
+        from ..warehouse.service import PART_COLUMNS
+        known = {k for k, _l in PART_COLUMNS}
+        pick = lambda k: (str(raw.get(k, before.get(k)) or "").strip() or None)  # noqa: E731
+        cfg.update({
+            "equipment_type": pick("equipment_type"),
+            "columns": [c for c in raw.get("columns", before.get("columns")) or [] if c in known],
+            "equipment_field": pick("equipment_field"), "failure_field": pick("failure_field"),
+            "cause_field": pick("cause_field"), "action_field": pick("action_field"),
+            "related_action": pick("related_action"),
+        })
+        if not cfg["equipment_type"]:
+            return "برای «فرم قطعات» تجهیز (الکتروموتور یا پمپ) را انتخاب کنید."
+        if not cfg["columns"]:
+            return "برای «فرم قطعات» دست‌کم یک ستون شمارش را انتخاب کنید."
+    field.wh_config = json.dumps(cfg, ensure_ascii=False)
+    return None
 
 
 def _chart_settings(field, payload):
@@ -287,6 +375,15 @@ def _chart_settings(field, payload):
     known = {f.field_name for f in FormField.query.all()}
     series = []
     for sr in raw.get("series") or []:
+        if isinstance(sr.get("catalogue"), dict):
+            # a catalogue curve: the fields naming the model, kept as set
+            refs = [r for r in (sr["catalogue"].get("type"), sr["catalogue"].get("stages"))
+                    if isinstance(r, str) and r]
+            missing = [n for n in refs if n not in known]
+            if missing:
+                return f"فیلد «{missing[0]}» برای نمودار پیدا نشد."
+            series.append(sr)
+            continue
         xs = [x for x in sr.get("x") or [] if x]
         ys = [y for y in sr.get("y") or [] if y]
         if not xs or not ys:
@@ -300,7 +397,10 @@ def _chart_settings(field, payload):
                        "x": xs, "y": ys,
                        "axis": "right" if sr.get("axis") == "right" else "left",
                        "trend": sr.get("trend") if sr.get("trend") in
-                       ("poly2", "poly2_0", "power", "linear") else ""})
+                       ("poly2", "poly2_0", "power", "linear") else "",
+                       # drawing settings the editor does not show, kept as set
+                       **{k: sr[k] for k in ("start", "connect", "scale", "color",
+                                              "hide_same_as") if k in sr}})
     if not series:
         return "برای نمودار دست‌کم یک سری با فیلدهای محور افقی و عمودی تعریف کنید."
     field.chart_config = json.dumps({
