@@ -52,6 +52,20 @@
       }).join('') + '</tbody></table></div>';
   }
 
+  /* «سوابق سنجش دبی»: one row per measurement, its one point at network pressure */
+  function recordsList(rows) {
+    if (!rows || !rows.length) return '';
+    return '<div class="table-scroll" style="max-height:220px"><table class="rp-table"><thead><tr><th>تاریخ</th>'
+      + '<th>دلیل</th><th>تیپ الکتروپمپ</th><th>عمق نصب</th><th>سطح ایستایی</th><th>سطح پویایی</th>'
+      + '<th>آبدهی (l/s)</th><th>فشار شبکه (atm)</th><th>آمپر</th></tr></thead><tbody>'
+      + rows.map(function (r) {
+        return '<tr><td>' + A.esc(r.test_date || '—') + '</td><td>' + A.esc(r.test_reason || '—') + '</td>'
+          + '<td dir="ltr">' + A.esc(r.electropump || '—') + '</td><td>' + num(r.install_depth) + '</td>'
+          + '<td>' + num(r.static_level) + '</td><td>' + num(r.dynamic_level) + '</td><td>' + num(r.flow) + '</td>'
+          + '<td>' + num(r.net_pressure) + '</td><td dir="ltr">' + A.esc(r.amps || '—') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+
   function videoList(rows) {
     if (!rows || !rows.length) return '';
     function ranges(list) {
@@ -139,24 +153,31 @@
     opts = opts || {};
     var p = data.profile || { values: {}, sources: [] };
     if (!p.sources || !p.sources.length) {
-      container.innerHTML = '<div class="hint">' + (opts.empty || 'در بانک‌های اطلاعاتی (دبی‌سنجی، روند تولید، ویدئومتری) داده‌ای برای این چاه پیدا نشد.') + '</div>';
+      container.innerHTML = '<div class="hint">' + (opts.empty || 'در بانک‌های اطلاعاتی (دبی‌سنجی، روند تولید، ویدئومتری، سوابق سنجش دبی) داده‌ای برای این چاه پیدا نشد.') + '</div>';
       return;
     }
     var latest = (data.tests || [])[0];
+    var rec = (data.records || [])[0];
+    var dnum = function (d) { return Number(String(d || '').replace(/\//g, '')) || 0; };
+    // the register's measurement stands for the latest flow test when it is newer
+    var recLatest = rec && (!latest || dnum(rec.test_date) > dnum(latest.test_date));
     var best = ['best.electropump', 'best.well_depth', 'best.static_level', 'best.install_depth',
                 'best.dynamic_level', 'best.operating_flow', 'best.last_install_date',
-                'pr.last_flow_month', 'pr.avg_flow_12', 'ft.test_date', 'ft.net_flow', 'ft.net_pressure',
+                'pr.last_flow_month', 'pr.avg_flow_12', 'ft.test_date', 'ft.source', 'ft.net_flow', 'ft.net_pressure',
                 'ft.design_flow', 'ft.discharge_pipe', 'ft.casing', 'ft.well_type', 'ft.starter',
                 'ft.efficiency', 'vm.date', 'vm.screen_start'];
     var html = '<div class="rp-sources">' + chips(p.sources) + '</div>'
       + '<div class="rp-grid">'
       + '<div><div class="rp-h">خلاصه (مقادیری که فرم‌ها پیش‌پر می‌کنند)</div>' + valuesGrid(data.labelled, best) + '</div>'
-      + (latest ? '<div><div class="rp-h">آخرین دبی‌سنجی — ' + A.esc(latest.test_date || '') + '</div>' + pointsTable(latest)
+      + (recLatest ? '<div><div class="rp-h">آخرین سنجش دبی (سوابق سنجش دبی) — ' + A.esc(rec.test_date || '') + '</div>'
+        + recordsList([rec]) + (rec.notes ? '<div class="hint mt-1">توضیحات: ' + A.esc(rec.notes) + '</div>' : '') + '</div>'
+        : latest ? '<div><div class="rp-h">آخرین دبی‌سنجی — ' + A.esc(latest.test_date || '') + '</div>' + pointsTable(latest)
         + (latest.expert_opinion ? '<div class="hint mt-1">نظر کارشناس: ' + A.esc(latest.expert_opinion) + '</div>' : '') + '</div>' : '')
       + '</div>';
     if ((data.months || []).length) html += '<div class="rp-h mt-2">روند تولید (همه‌ی ماه‌ها؛ نمایش از ۳۶ ماه اخیر)</div><div class="rp-chart"></div>';
     if (!opts.compact) {
-      if ((data.tests || []).length > 1) html += '<div class="rp-h mt-2">همه‌ی دبی‌سنجی‌ها</div>' + testsList(data.tests);
+      if ((data.tests || []).length > (recLatest ? 0 : 1)) html += '<div class="rp-h mt-2">همه‌ی دبی‌سنجی‌ها</div>' + testsList(data.tests);
+      if ((data.records || []).length) html += '<div class="rp-h mt-2">سوابق سنجش دبی</div>' + recordsList(data.records);
       if ((data.inspections || []).length) html += '<div class="rp-h mt-2">ویدئومتری</div>' + videoList(data.inspections);
       html += '<details class="mt-2"><summary>همه‌ی مقادیر بانک‌ها</summary>' + valuesGrid(data.labelled) + '</details>';
     } else if ((data.inspections || []).length) {

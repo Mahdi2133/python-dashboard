@@ -1,9 +1,9 @@
-/* «بانک‌های اطلاعاتی»: the three reference databases, one well's file,
+/* «بانک‌های اطلاعاتی»: the reference databases, one well's file,
    imports and manual links. */
 (function () {
   'use strict';
   var A = window.App;
-  var state = { ft: 1, pr: 1, vm: 1 };
+  var state = { ft: 1, pr: 1, vm: 1, fr: 1 };
   function fa(v) { return window.Jalali ? window.Jalali.toFaDigits(v) : String(v); }
   var num = function (v, d) { return window.RefPanel.num(v, d); };
 
@@ -13,6 +13,7 @@
     if (name === 'flowtest') loadFt();
     if (name === 'production') loadPr();
     if (name === 'videometry') loadVm();
+    if (name === 'flowrec') loadFr();
   }
 
   async function loadCards() {
@@ -142,6 +143,47 @@
     pager(A.qs('#vm-pages'), d.page, d.total, d.size, loadVm);
   }
 
+  /* ── سوابق سنجش دبی ──────────────────────────────────────────────── */
+  async function loadFr(page) {
+    state.fr = page || 1;
+    var q = '?page=' + state.fr + '&q=' + encodeURIComponent(A.qs('#fr-q').value.trim())
+      + '&center=' + encodeURIComponent(A.qs('#fr-center').value)
+      + (A.qs('#fr-unmatched').checked ? '&unmatched=1' : '');
+    var d = (await A.api.get('/api/refdata/flowrecords' + q)).data;
+    var sel = A.qs('#fr-center'), keep = sel.value;
+    if (sel.options.length <= 1) {
+      sel.innerHTML = '<option value="">همه‌ی مراکز</option>' + d.centers.map(function (o) {
+        return '<option>' + A.esc(o) + '</option>';
+      }).join('');
+      sel.value = keep;
+    }
+    A.qs('#fr-count').textContent = fa(d.total);
+    A.qs('#fr-body').innerHTML = d.rows.length ? d.rows.map(function (r) {
+      return '<tr class="clickable" data-fr="' + r.id + '"><td>' + A.esc(r.test_date || '—') + '</td>'
+        + '<td dir="ltr">' + A.esc(r.facility_code) + '</td><td>' + A.esc(r.name || '') + '</td>'
+        + '<td>' + A.esc(r.center || '') + '</td><td>' + linkCell('flowrec', r) + '</td>'
+        + '<td>' + A.esc(r.test_reason || '—') + '</td><td dir="ltr">' + A.esc(r.electropump || '—') + '</td>'
+        + '<td>' + num(r.well_depth) + '</td><td>' + num(r.install_depth) + '</td><td>' + num(r.static_level) + '</td>'
+        + '<td>' + num(r.dynamic_level) + '</td><td>' + num(r.flow) + '</td><td>' + num(r.net_pressure) + '</td>'
+        + '<td>' + (r.efficiency != null ? num(r.efficiency, 1) + '٪' : '—') + '</td></tr>';
+    }).join('') : '<tr><td colspan="14" class="table-empty">ردیفی پیدا نشد.</td></tr>';
+    pager(A.qs('#fr-pages'), d.page, d.total, d.size, loadFr);
+  }
+
+  async function openFr(id) {
+    var r = (await A.api.get('/api/refdata/flowrecords/' + id)).data, box = A.qs('#fr-detail');
+    box.innerHTML = '<div class="card mt-2"><div class="section-title">📋 ' + A.esc(r.name || '') + ' — <span dir="ltr">'
+      + A.esc(r.facility_code) + '</span> — ' + A.esc(r.test_date || '')
+      + (r.source_file ? ' <span class="hint">(' + A.esc(r.source_file) + ')</span>' : '') + '</div>'
+      + '<dl class="kv rp-kv">' + (r.raw_labelled || []).map(function (x) {
+        var v = typeof x.value === 'number' ? num(x.value) : A.esc(String(x.value));
+        return '<dt>' + A.esc(x.label) + '</dt><dd>' + v + '</dd>';
+      }).join('') + '</dl>'
+      + (r.notes ? '<div class="hint mt-1" style="white-space:pre-line">توضیحات: ' + A.esc(r.notes) + '</div>' : '')
+      + '</div>';
+    box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   /* ── manual link ─────────────────────────────────────────────────── */
   async function linkRow(source, id) {
     var name = window.prompt('نام دقیق چاه در سامانه (همان‌طور که در «چاه‌ها» ثبت است)؛ خالی = برداشتن اتصال:');
@@ -153,6 +195,7 @@
       if (source === 'flowtest') loadFt(state.ft);
       if (source === 'production') loadPr(state.pr);
       if (source === 'videometry') loadVm(state.vm);
+      if (source === 'flowrec') loadFr(state.fr);
       loadCards();
     } catch (err) { A.toast(err.message, 'error'); }
   }
@@ -168,7 +211,8 @@
       var res = await A.api.upload('/api/refdata/' + input.dataset.source + '/import', form);
       var LABELS = [['files', 'فایل'], ['sheets', 'شیت'], ['tests_added', 'آزمایش تازه'], ['tests_updated', 'آزمایش به‌روزشده'],
                     ['duplicates', 'فایل تکراری'], ['unmatched', 'بدون اتصال به چاه'], ['year', 'سال'], ['wells', 'چاه'],
-                    ['wells_added', 'چاه تازه'], ['months', 'ماه'], ['rows', 'ردیف'], ['added', 'تازه'], ['updated', 'به‌روزشده']];
+                    ['wells_added', 'چاه تازه'], ['months', 'ماه'], ['rows', 'ردیف'], ['added', 'تازه'], ['updated', 'به‌روزشده'],
+                    ['merged', 'ردیف تکراری ادغام‌شده']];
       box.innerHTML = '<div class="alert info">' + res.data.results.map(function (r) {
         if (r.error) return '⛔ ' + A.esc(r.file) + ': ' + A.esc(r.error);
         if (r.duplicate) return 'ℹ ' + A.esc(r.file) + ': قبلاً وارد شده است.';
@@ -198,12 +242,17 @@
     var show = function () { window.RefPanel.load(A.qs('#rd-well-box'), A.qs('#rd-well').value.trim()); };
     A.qs('#rd-well-go').addEventListener('click', show);
     A.qs('#rd-well').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); show(); } });
-    ['ft', 'pr', 'vm'].forEach(function (k) {
-      var loader = { ft: loadFt, pr: loadPr, vm: loadVm }[k];
+    ['ft', 'pr', 'vm', 'fr'].forEach(function (k) {
+      var loader = { ft: loadFt, pr: loadPr, vm: loadVm, fr: loadFr }[k];
       A.qs('#' + k + '-q').addEventListener('input', A.debounce(function () { loader(1); }, 350));
       A.qs('#' + k + '-unmatched').addEventListener('change', function () { loader(1); });
     });
     A.qs('#ft-office').addEventListener('change', function () { loadFt(1); });
+    A.qs('#fr-center').addEventListener('change', function () { loadFr(1); });
+    A.qs('#fr-body').addEventListener('click', function (e) {
+      if (e.target.closest('.rd-link')) return;
+      var tr = e.target.closest('tr[data-fr]'); if (tr) openFr(tr.dataset.fr);
+    });
     A.qs('#ft-body').addEventListener('click', function (e) {
       if (e.target.closest('.rd-link')) return;
       var tr = e.target.closest('tr[data-ft]'); if (tr) openFt(tr.dataset.ft);
@@ -221,7 +270,7 @@
         var res = await A.api.post('/api/refdata/relink', {});
         A.qs('#rd-import-result').innerHTML = '<div class="alert info">' + A.esc(res.message) + ' دبی‌سنجی: '
           + fa(res.data.flowtest.linked) + '، روند تولید: ' + fa(res.data.production.linked) + '، ویدئومتری: '
-          + fa(res.data.videometry.linked) + ' ردیف متصل.</div>';
+          + fa(res.data.videometry.linked) + '، سوابق سنجش دبی: ' + fa(res.data.flowrec.linked) + ' ردیف متصل.</div>';
         loadCards();
       } catch (err) { A.toast(err.message, 'error'); }
     });

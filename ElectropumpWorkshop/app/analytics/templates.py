@@ -390,6 +390,32 @@ TEMPLATES_V2 = [
 ]
 
 
+SEED_KEY_V3 = "report_templates_v3"
+TEMPLATES_V3 = [
+    {"key": "ref_flowrecords", "name": "سوابق سنجش دبی", "category": REFS,
+     "description": "سنجش‌های دبی چاه‌ها به تفکیک مرکز و سال: آبدهی و فشار شبکه، سطوح ایستایی و پویایی و راندمان.",
+     "definition": {"source": "fr_records", "groups": [{"field": "_center"}],
+                    "measures": [m("n", label="تعداد سنجش"),
+                                 m("q", "_flow", "avg", "میانگین آبدهی (l/s)", decimals=2),
+                                 m("eff", "_efficiency", "avg", "میانگین راندمان (%)", decimals=1),
+                                 m("w", "_code", "count_distinct", "تعداد چاه")],
+                    "kpis": [kpi("k_n", "سنجش‌ها"),
+                             kpi("k_w", "چاه‌ها", value={"agg": "count_distinct", "field": "_code"}),
+                             kpi("k_eff", "میانگین راندمان", unit="٪", decimals=1,
+                                 value={"agg": "avg", "field": "_efficiency"})],
+                    "charts": [chart("c1", "bar", "تعداد سنجش هر مرکز", "_center"),
+                               chart("c2", "trend_month", "روند سنجش‌ها", "_date")],
+                    "tables": [{"id": "t1", "title": "مراکز", "kind": "grouped"}],
+                    "fields": [{"key": k} for k in ("_date", "_code", "_name", "_well", "_center", "_reason",
+                                                    "_electropump", "_well_depth", "_install_depth", "_static",
+                                                    "_dynamic", "_flow", "_net_pressure", "_efficiency")],
+                    "interactive_filters": [{"id": "f_date", "field": "_date", "kind": "date_range", "label": "تاریخ"},
+                                            {"id": "f_center", "field": "_center", "kind": "select", "label": "مرکز"},
+                                            {"id": "f_reason", "field": "_reason", "kind": "select", "label": "دلیل سنجش"}],
+                    "drill": {"enabled": True, "path": ["_center", "_name"]}}},
+]
+
+
 def seed_templates(force=False) -> dict:
     """Create the starting reports once. Returns what was done."""
     from ..models import AppMeta
@@ -402,6 +428,8 @@ def seed_templates(force=False) -> dict:
         todo += TEMPLATES
     if force or not AppMeta.get(SEED_KEY_V2):
         todo += TEMPLATES_V2
+    if force or not AppMeta.get(SEED_KEY_V3):
+        todo += TEMPLATES_V3
     if not todo:
         return {"skipped": True}
     done, skipped = [], []
@@ -440,6 +468,7 @@ def seed_templates(force=False) -> dict:
         done.append(t["key"])
     AppMeta.set(SEED_KEY, "1")
     AppMeta.set(SEED_KEY_V2, "1")
+    AppMeta.set(SEED_KEY_V3, "1")
     db.session.commit()
     if skipped:
         log.info("Report templates not seeded (fields missing): %s", skipped)

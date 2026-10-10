@@ -73,7 +73,7 @@ if exist "dist\config.json" (
 )
 
 REM The whole instance folder travels: wells.db, the separate databases in
-REM instance\refdata (flow tests, production, videometry, warehouse) and the
+REM instance\refdata (flow tests, flow records, production, videometry, warehouse) and the
 REM uploaded documents in instance\attachments. Nothing already in dist is
 REM overwritten.
 if exist "instance\wells.db" (
@@ -109,7 +109,7 @@ echo  dist\
 echo    ├── ElectropumpWorkshop.exe
 echo    ├── config.json
 echo    ├── instance\wells.db      ^<-- با Navicat for SQLite باز می‌شود
-echo    ├── instance\refdata\      ^<-- دبی‌سنجی، روند تولید، ویدئومتری، انبار
+echo    ├── instance\refdata\      ^<-- دبی‌سنجی، سوابق سنجش دبی، روند تولید، ویدئومتری، انبار
 echo    ├── logs\
 echo    ├── backups\
 echo    └── exports\

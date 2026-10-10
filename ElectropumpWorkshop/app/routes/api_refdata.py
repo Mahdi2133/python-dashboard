@@ -14,11 +14,12 @@ from flask import Blueprint, current_app, request, send_file
 
 from ..extensions import db
 from ..refdata import SOURCES, bind_path
+from ..refdata import flowrecords as fr_mod
 from ..refdata import flowtest as ft_mod
 from ..refdata import production as pr_mod
 from ..refdata import videometry as vm_mod
-from ..refdata.models import (FlowPoint, FlowSource, FlowTest, ProdMonth, ProdSource,
-                              ProdWell, VideoInspection, VideoSource)
+from ..refdata.models import (FlowPoint, FlowSource, FlowTest, FrRecord, FrSource, ProdMonth,
+                              ProdSource, ProdWell, VideoInspection, VideoSource)
 from ..refdata.profile import catalogue_options, well_profile
 from ..refdata.textnorm import name_key
 from ..services.audit import record_audit
@@ -52,7 +53,7 @@ def _file_info(key):
 @permission_required("refdata.view")
 def summary():
     last = lambda model: (model.query.order_by(model.id.desc()).first())  # noqa: E731
-    lf, lp, lv = last(FlowSource), last(ProdSource), last(VideoSource)
+    lf, lp, lv, lr = last(FlowSource), last(ProdSource), last(VideoSource), last(FrSource)
     years = [y for (y,) in db.session.query(ProdMonth.year).distinct().order_by(ProdMonth.year)]
     return ok({"sources": [
         {"key": "flowtest", "title": SOURCES["flowtest"][0], "icon": SOURCES["flowtest"][2],
@@ -83,6 +84,15 @@ def summary():
          "range": [db.session.query(db.func.min(VideoInspection.insp_date)).scalar(),
                    db.session.query(db.func.max(VideoInspection.insp_date)).scalar()],
          "imported_at": lv.imported_at.isoformat(" ", "minutes") if lv else None},
+        {"key": "flowrec", "title": SOURCES["flowrec"][0], "icon": SOURCES["flowrec"][2],
+         **_file_info("flowrec"),
+         "rows": FrRecord.query.count(), "points": None,
+         "wells": db.session.query(db.func.count(db.distinct(FrRecord.main_well_id))).scalar(),
+         "unmatched": FrRecord.query.filter(FrRecord.main_well_id.is_(None)).count(),
+         "files": FrSource.query.count(), "errors": [],
+         "range": [db.session.query(db.func.min(FrRecord.test_date)).scalar(),
+                   db.session.query(db.func.max(FrRecord.test_date)).scalar()],
+         "imported_at": lr.imported_at.isoformat(" ", "minutes") if lr else None},
     ]})
 
 
@@ -105,7 +115,7 @@ def well():
         well_id = w.id if w else None
     if not well_id:
         return ok({"profile": {"values": {}, "sources": []}, "tests": [], "months": [],
-                   "inspections": []})
+                   "inspections": [], "records": []})
     prof = well_profile(well_id)
     tests = (FlowTest.query.filter_by(main_well_id=well_id)
              .order_by(FlowTest.test_date_num.desc().nullslast()).limit(30).all())
@@ -114,6 +124,8 @@ def well():
     months = sorted(pw.months, key=lambda m: (m.year, m.month)) if pw else []
     insp = (VideoInspection.query.filter_by(main_well_id=well_id)
             .order_by(VideoInspection.insp_date_num.desc().nullslast()).all())
+    recs = (FrRecord.query.filter_by(main_well_id=well_id)
+            .order_by(FrRecord.test_date_num.desc().nullslast(), FrRecord.id.desc()).limit(30).all())
     from ..refdata.profile import CATALOGUE
     labelled = [{"key": k, "label": CATALOGUE[k][0], "group": CATALOGUE[k][1],
                  "unit": CATALOGUE[k][2], "value": v}
@@ -124,7 +136,8 @@ def well():
                "months": [{"year": m.year, "month": m.month, "production": m.production,
                            "hours": m.hours, "avg_flow": m.avg_flow, "pressure": m.pressure,
                            "pressure_type": m.pressure_type} for m in months],
-               "inspections": [_video_row(v) for v in insp]})
+               "inspections": [_video_row(v) for v in insp],
+               "records": [_fr_row(r) for r in recs]})
 
 
 # ── tables ───────────────────────────────────────────────────────────────────
@@ -182,6 +195,20 @@ def _video_row(v, names=None):
             "no_screen": json.loads(v.no_screen or "[]"), "repair": json.loads(v.repair or "[]"),
             "tear": json.loads(v.tear or "[]"), "change": json.loads(v.change or "[]"),
             "clog": json.loads(v.clog or "[]")}
+
+
+def _fr_row(r, names=None):
+    from ..services.epump import electropump_label
+    return {"id": r.id, "facility_code": r.facility_code, "name": r.name, "center": r.center,
+            "main_well_id": r.main_well_id, "match_method": r.match_method,
+            "main_well": (names or {}).get(r.main_well_id),
+            "test_date": r.test_date, "test_reason": r.test_reason,
+            "electropump": electropump_label(r.pump_type, r.pump_stages, r.motor_kw) or r.pump_label,
+            "well_depth": r.well_depth, "install_depth": r.install_depth,
+            "static_level": r.static_level, "dynamic_level": r.dynamic_level, "flow": r.flow,
+            "head": r.head, "net_pressure": r.net_pressure, "line_pressure": r.line_pressure,
+            "efficiency": r.efficiency, "amps": r.amps_with_capacitor or r.amps_without_capacitor,
+            "last_rehab_date": r.last_rehab_date, "notes": r.notes}
 
 
 def _search(query, cols, text):
@@ -282,13 +309,53 @@ def videometry():
                "page": page, "size": size})
 
 
+@bp.get("/flowrecords")
+@permission_required("refdata.view")
+def flowrecords():
+    q = FrRecord.query
+    q = _search(q, [FrRecord.name, FrRecord.name_key, FrRecord.facility_code], request.args.get("q"))
+    if request.args.get("center"):
+        q = q.filter(FrRecord.center == request.args["center"])
+    if request.args.get("unmatched") == "1":
+        q = q.filter(FrRecord.main_well_id.is_(None))
+    if request.args.get("well_id", type=int):
+        q = q.filter(FrRecord.main_well_id == request.args.get("well_id", type=int))
+    total = q.count()
+    page, size = _page()
+    rows = (q.order_by(FrRecord.test_date_num.desc().nullslast(), FrRecord.id.desc())
+            .offset((page - 1) * size).limit(size).all())
+    names = _well_names(r.main_well_id for r in rows)
+    centers = [c for (c,) in db.session.query(FrRecord.center).distinct() if c]
+    return ok({"rows": [_fr_row(r, names) for r in rows], "total": total,
+               "page": page, "size": size, "centers": sorted(centers)})
+
+
+@bp.get("/flowrecords/<int:row_id>")
+@permission_required("refdata.view")
+def flowrecord_detail(row_id):
+    r = db.session.get(FrRecord, row_id)
+    if r is None:
+        return fail("ردیف پیدا نشد.", 404)
+    row = _fr_row(r, _well_names([r.main_well_id]))
+    raw = json.loads(r.raw_json or "{}")
+    # every column the register carried, under its own label, in its order
+    row["raw_labelled"] = [{"key": k, "label": fr_mod.LABELS[k], "value": raw[k]}
+                           for k in fr_mod.HEAD if k in raw and k != "notes"
+                           and raw[k] not in (None, "")]
+    src = db.session.get(FrSource, r.source_id) if r.source_id else None
+    row["source_file"] = src.file_name if src else None
+    return ok(row)
+
+
 # ── import, link, export ─────────────────────────────────────────────────────
-IMPORTERS = {"flowtest": ft_mod, "production": pr_mod, "videometry": vm_mod}
+IMPORTERS = {"flowtest": ft_mod, "production": pr_mod, "videometry": vm_mod, "flowrec": fr_mod}
 ACCEPT = {"flowtest": (".zip", ".xls", ".xlsx", ".xlsm"),
           "production": (".zip", ".xlsx", ".xlsm"),
-          "videometry": (".zip", ".xlsx", ".xlsm", ".json")}
+          "videometry": (".zip", ".xlsx", ".xlsm", ".json"),
+          "flowrec": (".zip", ".xlsx", ".xlsm")}
 # what a zip may carry for the banks that read one file at a time
-_INNER = {"production": (".xlsx", ".xlsm"), "videometry": (".json", ".xlsx", ".xlsm")}
+_INNER = {"production": (".xlsx", ".xlsm"), "videometry": (".json", ".xlsx", ".xlsm"),
+          "flowrec": (".xlsx", ".xlsm")}
 
 
 def _unpacked(source, name, data):
@@ -373,11 +440,12 @@ def relink():
     from ..refdata.matching import WellIndex
     index = WellIndex()
     out = {"flowtest": ft_mod.relink(index), "production": pr_mod.relink(index),
-           "videometry": vm_mod.relink(index)}
+           "videometry": vm_mod.relink(index), "flowrec": fr_mod.relink(index)}
     return ok(out, message="اتصال ردیف‌ها به چاه‌های سامانه دوباره بررسی شد.")
 
 
-MODELS = {"flowtest": FlowTest, "production": ProdWell, "videometry": VideoInspection}
+MODELS = {"flowtest": FlowTest, "production": ProdWell, "videometry": VideoInspection,
+          "flowrec": FrRecord}
 
 
 @bp.post("/<source>/<int:row_id>/link")
@@ -402,6 +470,8 @@ def link(source, row_id):
         targets = FlowTest.query.filter_by(well_key=row.well_key).all()
     elif source == "videometry":
         targets = VideoInspection.query.filter_by(facility_code=row.facility_code).all()
+    elif source == "flowrec":
+        targets = FrRecord.query.filter_by(facility_code=row.facility_code).all()
     else:
         targets = [row]
     for t in targets:
@@ -459,6 +529,15 @@ def export(source):
         for v in rows:
             ws.append([v.facility_code, v.name, v.center, names.get(v.main_well_id), v.insp_date,
                        v.depth, v.static_level, v.screen_start, v.defect_count, v.notes])
+    elif source == "flowrec":
+        ws.title = "سوابق سنجش دبی"
+        cols = [k for k in fr_mod.HEAD]
+        ws.append(["چاه در سامانه"] + [fr_mod.LABELS[k] for k in cols])
+        rows = FrRecord.query.order_by(FrRecord.facility_code, FrRecord.test_date_num).all()
+        names = _well_names(r.main_well_id for r in rows)
+        for r in rows:
+            raw = json.loads(r.raw_json or "{}")
+            ws.append([names.get(r.main_well_id)] + [raw.get(k) for k in cols])
     else:
         return fail("بانک اطلاعاتی نامعتبر است.", 404)
     for c in ws[1]:

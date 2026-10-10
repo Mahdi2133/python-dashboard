@@ -4,6 +4,8 @@ flowtest.db    دبی‌سنجی چاه‌ها: one row per test sheet, its pump
 production.db  روند تولید: the well register of the production report and
                its monthly production, hours, average flow and pressure
 videometry.db  ویدئومتری: one row per camera inspection of a well
+flowrecords.db سوابق سنجش دبی: the flow-measurement register, one row per
+               well and measurement date, at network pressure
 
 They are bound through Flask-SQLAlchemy binds (``__bind_key__``), so each
 lives in its own file next to wells.db (``refdata/<name>.db``), can be
@@ -243,3 +245,99 @@ class VideoInspection(db.Model):
     main_well_id = db.Column(db.Integer, index=True)
     match_method = db.Column(db.String(20))
     source_id = db.Column(db.Integer)
+
+
+# ── سوابق سنجش دبی ───────────────────────────────────────────────────────────
+class FrSource(db.Model):
+    __bind_key__ = "flowrec"
+    __tablename__ = "fr_sources"
+
+    id = db.Column(db.Integer, primary_key=True)
+    file_name = db.Column(db.String(400), nullable=False)
+    sha1 = db.Column(db.String(40), index=True)
+    rows = db.Column(db.Integer, default=0)
+    status = db.Column(db.String(20), default="ok")
+    message = db.Column(db.Text)
+    imported_at = db.Column(db.DateTime, default=local_now)
+
+
+class FrRecord(db.Model):
+    """One measurement of the register: the well, the electropump in it, the
+    levels, and one pumping point at network pressure with its electrics."""
+    __bind_key__ = "flowrec"
+    __tablename__ = "fr_records"
+    __table_args__ = (db.UniqueConstraint("facility_code", "test_date", name="uq_fr_code_date"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    facility_code = db.Column(db.String(40), nullable=False, index=True)   # کد تاسیس
+    center = db.Column(db.String(80))
+    name = db.Column(db.String(160))
+    name_key = db.Column(db.String(160), index=True)
+    address = db.Column(db.Text)
+    power_account = db.Column(db.String(40))               # شماره اشتراک برق
+    test_date = db.Column(db.String(10))
+    test_date_num = db.Column(db.Integer, index=True)
+    test_reason = db.Column(db.String(160))                # دبی‌سنجی دوره‌ای / نصب پمپ / …
+    pump_label = db.Column(db.String(60))                  # «293/12 + 45.5» as written
+    pump_type = db.Column(db.String(20))
+    pump_stages = db.Column(db.String(20))
+    motor_kw = db.Column(db.Float)
+    last_rehab_date = db.Column(db.String(10))
+    last_sholat_date = db.Column(db.String(10))
+    notes = db.Column(db.Text)
+    # the well
+    well_depth = db.Column(db.Float)
+    install_depth = db.Column(db.Float)
+    discharge_pipe_mm = db.Column(db.Float)                # قطر داخلی لوله آبده (mm)
+    # levels and losses
+    static_level = db.Column(db.Float)
+    dynamic_level = db.Column(db.Float)
+    dynamic_proposed = db.Column(db.Float)                 # سطح پویایی در دبی پیشنهادی
+    drawdown = db.Column(db.Float)                         # میزان افت (m)
+    level_drop = db.Column(db.Float)                       # افت سطح آب چاه (m)
+    aquifer_loss = db.Column(db.Float)
+    calc_loss = db.Column(db.Float)
+    well_loss = db.Column(db.Float)                        # «افت شبکه»
+    aquifer_coef = db.Column(db.Float)
+    well_coef = db.Column(db.Float)
+    efficiency_ratio = db.Column(db.Float)                 # راندمان و نرخ افت سفره
+    # flow and head
+    flow = db.Column(db.Float)                             # l/s at network pressure
+    compatible_flow = db.Column(db.Float)                  # دبی سازگار با توان آبدهی
+    discharge_volume = db.Column(db.Float)
+    water_column = db.Column(db.Float)
+    water_change = db.Column(db.Float)                     # m per l/s
+    head = db.Column(db.Float)
+    specific_resistance = db.Column(db.Float)
+    specific_capacity = db.Column(db.Float)
+    # pressure
+    pressure_regulated = db.Column(db.String(20))
+    line_pressure = db.Column(db.Float)                    # bar
+    net_pressure = db.Column(db.Float)                     # atm
+    # electrical
+    voltage_on = db.Column(db.Float)
+    voltage_off = db.Column(db.Float)
+    active_power = db.Column(db.Float)
+    apparent_power = db.Column(db.Float)
+    reactive_power = db.Column(db.Float)
+    cos_phi = db.Column(db.Float)
+    capacitor_kvar = db.Column(db.Float)
+    capacitor_type = db.Column(db.String(40))
+    capacitor_pf = db.Column(db.Float)
+    amps_capacitor = db.Column(db.String(60))              # «53/53/53»
+    amps_with_capacitor = db.Column(db.String(60))
+    amps_without_capacitor = db.Column(db.String(60))
+    mech_power = db.Column(db.Float)
+    specific_energy = db.Column(db.Float)
+    efficiency = db.Column(db.Float)                       # % at network pressure
+    energy_intensity = db.Column(db.Float)
+    ohm_pp = db.Column(db.String(60))                      # RS/RT/TS (kΩ)
+    ohm_pg = db.Column(db.String(60))                      # R/S/T to body (kΩ)
+    meter_start = db.Column(db.Float)
+    meter_end = db.Column(db.Float)
+    meter_status = db.Column(db.String(40))
+    raw_json = db.Column(db.Text)                          # every column read, by its label
+    main_well_id = db.Column(db.Integer, index=True)
+    match_method = db.Column(db.String(20))
+    source_id = db.Column(db.Integer)
+    imported_at = db.Column(db.DateTime, default=local_now)

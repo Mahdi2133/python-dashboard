@@ -1,7 +1,7 @@
 """Report-builder sources for the separate databases.
 
-قطعات (مونتاژ و دمونتاژ), گردش انبار, دبی‌سنجی, روند تولید and ویدئومتری
-each become a source of the report builder like the records and processes:
+قطعات (مونتاژ و دمونتاژ), گردش انبار, دبی‌سنجی, روند تولید, ویدئومتری and
+سوابق سنجش دبی each become a source of the report builder like the records and processes:
 every column a field to group, filter, sum or chart by. A row that belongs to
 a register well carries that well's center, so a user limited to some centers
 sees only theirs.
@@ -260,6 +260,53 @@ def load_video(scope):
     return rows
 
 
+# ── سوابق سنجش دبی ───────────────────────────────────────────────────────────
+def frec_fields():
+    h, w, e, n, el = "سنجش", "چاه", "الکتروپمپ", "اندازه‌گیری", "برق"
+    return [
+        _fdef("_date", "تاریخ دبی‌سنجی", "date", h), _fdef("_year", "سال", "integer", h),
+        _fdef("_reason", "دلیل سنجش دبی", "single", h), _fdef("_notes", "توضیحات", "text", h),
+        _fdef("_code", "کد تاسیس", "text", w), _fdef("_name", "نام تاسیس", "single", w),
+        _fdef("_well", "چاه در سامانه", "single", w), _fdef("_center", "مرکز", "center", w),
+        _fdef("_electropump", "تیپ الکتروپمپ", "single", e), _fdef("_pump_type", "تیپ پمپ", "single", e),
+        _fdef("_stages", "طبقات", "single", e), _fdef("_motor_kw", "توان موتور (kW)", "decimal", e),
+        _fdef("_rehab", "تاریخ آخرین بهسازی", "text", e),
+        _fdef("_well_depth", "عمق چاه", "decimal", n), _fdef("_install_depth", "عمق نصب", "decimal", n),
+        _fdef("_static", "سطح ایستایی", "decimal", n), _fdef("_dynamic", "سطح پویایی", "decimal", n),
+        _fdef("_drawdown", "افت سطح آب چاه (m)", "decimal", n),
+        _fdef("_flow", "آبدهی (l/s)", "decimal", n), _fdef("_head", "هد (m)", "decimal", n),
+        _fdef("_spcap", "ظرفیت ویژه", "decimal", n),
+        _fdef("_net_pressure", "فشار شبکه (atm)", "decimal", n), _fdef("_line_pressure", "فشار خط (bar)", "decimal", n),
+        _fdef("_active_power", "توان اکتیو (kW)", "decimal", el), _fdef("_cos_phi", "ضریب قدرت", "decimal", el),
+        _fdef("_efficiency", "راندمان (%)", "decimal", el), _fdef("_energy", "شدت انرژی", "decimal", el),
+    ]
+
+
+def load_frec(scope):
+    from ..refdata.models import FrRecord
+    from ..services.epump import electropump_label
+    wells = _wells()
+    rows = []
+    for r in FrRecord.query.all():
+        name, center_id, center = wells.get(r.main_well_id, (None, None, None))
+        if scope is not None and not _in_scope(scope, center_id):
+            continue
+        rows.append({"_id": r.id, "_date": _jdate(r.test_date),
+                     "_year": int(r.test_date[:4]) if r.test_date else None,
+                     "_reason": r.test_reason, "_notes": r.notes, "_code": r.facility_code,
+                     "_name": r.name, "_well": name, "_center": center or r.center,
+                     "_electropump": electropump_label(r.pump_type, r.pump_stages, r.motor_kw) or r.pump_label,
+                     "_pump_type": r.pump_type, "_stages": r.pump_stages, "_motor_kw": r.motor_kw,
+                     "_rehab": r.last_rehab_date, "_well_depth": r.well_depth,
+                     "_install_depth": r.install_depth, "_static": r.static_level,
+                     "_dynamic": r.dynamic_level, "_drawdown": r.level_drop, "_flow": r.flow,
+                     "_head": r.head, "_spcap": r.specific_capacity, "_net_pressure": r.net_pressure,
+                     "_line_pressure": r.line_pressure, "_active_power": r.active_power,
+                     "_cos_phi": r.cos_phi, "_efficiency": r.efficiency,
+                     "_energy": r.energy_intensity, "_center_id": center_id})
+    return rows
+
+
 def register(SOURCES, Source):
     SOURCES["wh_parts"] = Source(
         "wh_parts", "قطعات: مونتاژ و دمونتاژ (کارگاه مکانیک)",
@@ -279,3 +326,6 @@ def register(SOURCES, Source):
     SOURCES["vm_insp"] = Source(
         "vm_insp", "ویدئومتری چاه‌ها", "هر ردیف یک بازدید ویدئومتری: عمق، سطح ایستابی و ایرادات جدار.",
         ("refdata.view", "report.manage"), "بازدید", video_fields, load_video)
+    SOURCES["fr_records"] = Source(
+        "fr_records", "سوابق سنجش دبی", "هر ردیف یک سنجش دبی چاه (بانک سوابق سنجش دبی): سطوح، آبدهی و فشار شبکه، "
+        "توان و راندمان.", ("refdata.view", "report.manage"), "سنجش", frec_fields, load_frec)

@@ -17,6 +17,7 @@ SOURCES = {
     "flowtest": ("دبی‌سنجی چاه‌ها", "flowtest.db", "💧"),
     "production": ("روند تولید", "production.db", "📈"),
     "videometry": ("ویدئومتری چاه‌ها", "videometry.db", "🎥"),
+    "flowrec": ("سوابق سنجش دبی", "flowrecords.db", "📋"),
 }
 BIND_FILES = {key: fname for key, (_t, fname, _i) in SOURCES.items()}
 BIND_FILES["warehouse"] = "warehouse.db"

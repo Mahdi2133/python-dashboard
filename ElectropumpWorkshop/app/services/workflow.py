@@ -2565,9 +2565,11 @@ def previous_values_for(well_id, before_record_id=None) -> dict:
             if found:
                 break
     newest = used[0] if used else (history[0] if history else None)
-    ref_titles = {"ft": "flowtest", "pr": "production", "vm": "videometry"}
+    ref_titles = {"ft": "flowtest", "pr": "production", "vm": "videometry", "fr": "flowrec"}
     wanted_refs = {ref_titles.get(k) for k in refs_used} | (
-        {"flowtest", "production", "videometry"} if "best" in refs_used else set())
+        {"flowtest", "production", "videometry", "flowrec"} if "best" in refs_used else set())
+    if "ft" in refs_used and (profile or {}).get("values", {}).get("ft.source") == "سوابق سنجش دبی":
+        wanted_refs.add("flowrec")        # the latest «flow test» was the register's measurement
     return {
         "refs": [s for s in (profile or {}).get("sources", []) if s["key"] in wanted_refs],
         "values": values,

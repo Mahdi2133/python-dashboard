@@ -363,6 +363,9 @@ tbody tr.inactive td:first-child::before { content:'⛔ '; }
 
 /* ── JALALI DATEPICKER ───────────────────────────────────────────────────── */
 .jdp-wrap { position:relative; }
+/* a date never clips in a narrow column: «1405/01/10» needs its ten characters */
+.jdp-wrap input.jdate { min-width: 0; padding-inline: 6px; font-variant-numeric: tabular-nums; text-overflow: clip; }
+.jdp-wrap input.jdate:not(:focus) { letter-spacing: -0.2px; }
 /* inset-inline-START is the right edge under dir=rtl, which is where the
    panel should hang from; JS additionally clamps it inside the viewport. */
 .jdp-panel { position:absolute; inset-inline-start:0; top:100%; margin-top:4px; width:272px;

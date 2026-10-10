@@ -3258,6 +3258,176 @@ def main():
         from app.models import AppMeta as _AM13
         check("تغییرات فرم‌های R13 یک‌بار اجرا و ثبت شد", _AM13.get(_K13) == "done")
 
+    print("\n— R14: تطبیق چاه‌ها، بانک «سوابق سنجش دبی»، اولویت‌ها، آمپر از کاتالوگ —")
+    with app.app_context():
+        from app.extensions import db as _db14
+        from app.models import LookupCategory as _LC14, LookupItem as _LI14, Well as _W14
+        from app.refdata.matching import WellIndex as _WI14
+        _cat14 = _LC14.query.filter_by(code="center").first()
+        _c14 = [_LI14(category_id=_cat14.id, value=v, label=v) for v in ("مرکزالف۱۴", "مرکزب۱۴")]
+        _db14.session.add_all(_c14)
+        _db14.session.flush()
+        _wa = _W14(name="سپاد آزمون 1", pm_code="99/1/1", well_class="9918445", center_id=_c14[0].id)
+        _wb = _W14(name="سوران آزمون 8", pm_code="99/2/8", well_class="9915430", center_id=_c14[1].id)
+        _wbo = _W14(name="سوران آزمون 8 - قدیم", pm_code="99/2/8", well_class="9915430",
+                    center_id=_c14[1].id, is_active=False)
+        _db14.session.add_all([_wa, _wb, _wbo])
+        _db14.session.commit()
+        _ix14 = _WI14()
+        _m_copy = _ix14.match(well_class="9918445", name="سوران آزمون 8", center="مرکزب۱۴")
+        _m_code = _ix14.match(pm_code="99/2/8", name="سوران آزمون 8 - قدیم", center="مرکزب۱۴")
+        _m_cls = _ix14.match(well_class="9915430", name="سوران آزمون 8 - قدیم", center="مرکزب۱۴")
+        _m_junk = _ix14.match(well_class="ندارد", name="سوران آزمون 8", center="مرکزب۱۴")
+        _m_muni = _ix14.match(name="سوران آزمون 8 (شهرداری)", center="مرکزب۱۴")
+        _m_hash = _ix14.match(name="#سوران آزمون 8", center="مرکزب۱۴")
+        _m_far = _ix14.match(well_class="9918445", name="چاه بی‌ربط", center="مرکزب۱۴")
+        _ids14 = (_wa.id, _wb.id, _wbo.id)
+    check("کلاسه‌ی چاه دیگر در فرم کپی‌شده: نام چاه آزمایش‌شده تصمیم می‌گیرد (سوران 8 با کلاسه‌ی سپاد 1)",
+          _m_copy == (_ids14[1], "name"), str(_m_copy))
+    check("چاه فعال بر نسخه‌ی «قدیم»/ادغام‌شده با همان کد ترجیح دارد",
+          _m_code == (_ids14[1], "code") and _m_cls == (_ids14[1], "class"), f"{_m_code} {_m_cls}")
+    check("کلاسه‌ی بی‌معنی («ندارد») کنار گذاشته و با نام تطبیق می‌شود", _m_junk == (_ids14[1], "name"), str(_m_junk))
+    check("چاه «(شهرداری)» به چاه هم‌نام شرکت وصل نمی‌شود", _m_muni == (None, None), str(_m_muni))
+    check("علامت‌های «#» در نام نادیده گرفته می‌شود", _m_hash == (_ids14[1], "name"), str(_m_hash))
+    check("کلاسه‌ی اداره‌ی دیگر بدون شباهت نام پذیرفته نمی‌شود", _m_far == (None, None), str(_m_far))
+
+    from openpyxl import Workbook as _WB14
+    _wb14 = _WB14()
+    _ws14 = _wb14.active
+    _ws14.title = "سوابق سنجش دبی"
+    _hd14 = ["کد تاسيس", "مرکز استقرار", "نام تاسيس", "تاريخ دبي سنجي", "دليل سنجش دبي", "تیپ الکتروپمپ شناور",
+             "توضيحات", "عمق کلي چاه - متر", "عمق نصب الکتروپمپ - متر", "قطر داخلي لوله آبده - ميليمتر",
+             "سطح ايستايي - متر", "سطح پويايي - متر", "ميزان آبدهي - Litr/S", "هد - متر",
+             "ميزان فشار شبکه- اتمسفر", "شدت جريان 1 با خازن - آمپر", "شدت جريان 2 با خازن - آمپر",
+             "شدت جريان 3 با خازن - آمپر", "راندمان  در فشار شبکه", "سطح ايستايي - متر2"]
+    _ws14.append(["اطلاعات شناسنامه ای چاه "])
+    _ws14.append(["تعداد"] + [0] * (len(_hd14) - 1))
+    _ws14.append(_hd14)
+    _ws14.append(["99/2/8", "مرکزب۱۴", "سوران آزمون 8 - قديم", "1405/02/01", "نصب پمپ", "384/12 + 92", "پمپ نو",
+                  238, 222, 150, 154, 165, 20.8, 256.9, 8, 159, 151, 152, 0.537, 0])
+    _ws14.append(["99/2/8", "مرکزب۱۴", "سوران آزمون 8 - قديم", "1405/02/01", "نصب پمپ", None, None,
+                  0, 0, 0, 0, 0, 0, None, None, None, None, None, None, 0])
+    _ws14.append(["99/1/1", "مرکزالف۱۴", "سپاد آزمون 1", "1403/05/01", "دبي سنجي دوره اي", None, None,
+                  0, 200, 0, 0, 120, 9, None, 4, None, None, None, None, 0])
+    _x14 = io.BytesIO()
+    _wb14.save(_x14)
+    imp14 = c.post("/api/refdata/flowrec/import", data={"files": (io.BytesIO(_x14.getvalue()), "سوابق.xlsx")},
+                   content_type="multipart/form-data")
+    _res14 = ((imp14.get_json() or {}).get("data") or {}).get("results") or [{}]
+    check("سوابق سنجش دبی وارد می‌شود (ردیف تکراری همان روز ادغام، همه متصل به چاه با کد تاسیس)",
+          imp14.status_code == 200 and _res14[0].get("rows") == 2 and _res14[0].get("merged") == 1
+          and _res14[0].get("unmatched") == 0, str(_res14)[:300])
+    dup14 = c.post("/api/refdata/flowrec/import", data={"files": (io.BytesIO(_x14.getvalue()), "سوابق.xlsx")},
+                   content_type="multipart/form-data").get_json()["data"]["results"][0]
+    check("همان فایل دوباره وارد نمی‌شود", dup14.get("duplicate") is True, str(dup14))
+    with app.app_context():
+        from app.refdata.models import FrRecord as _FR14
+        _r14 = _FR14.query.filter_by(facility_code="99/2/8").first()
+        _r14b = _FR14.query.filter_by(facility_code="99/1/1").first()
+        _r14v = (_r14.main_well_id, _r14.pump_type, _r14.pump_stages, _r14.motor_kw, _r14.efficiency,
+                 _r14.amps_with_capacitor, _r14.static_level, _r14.flow, _r14.notes)
+        _r14bv = (_r14b.well_depth, _r14b.static_level, _r14b.install_depth, _r14b.main_well_id)
+    check("ستون‌ها با برچسب خوانده می‌شوند (تیپ، راندمان ٪، آمپر سه فاز؛ ردیف دوم خالی‌ها را پاک نمی‌کند)",
+          _r14v == (_ids14[1], "384", "12", 92.0, 53.7, "159/151/152", 154.0, 20.8, "پمپ نو"), str(_r14v))
+    check("صفر به معنی «اندازه‌گیری نشده» خالی می‌ماند", _r14bv == (None, None, 200.0, _ids14[0]), str(_r14bv))
+
+    with app.app_context():
+        from app.refdata.models import FlowPoint as _FP14, FlowTest as _FT14, VideoInspection as _VI14
+        from app.refdata.profile import well_profile as _wp14
+        _t14 = _FT14(well_name="سوران آزمون 8", well_key="k14b", main_well_id=_ids14[1], test_date="1404/01/10",
+                     test_date_num=14040110, static_level=150.0, install_depth=210.0, pump_type="345",
+                     pump_stages="9", design_flow=18.0, net_flow=15.0)
+        _t14.points = [_FP14(point_no=1, flow=18.0, dynamic_level=170.0, pressure=6.0),
+                       _FP14(point_no=2, flow=15.0, dynamic_level=168.0, pressure=7.0, at_network=True)]
+        _t14a = _FT14(well_name="سپاد آزمون 1", well_key="k14a", main_well_id=_ids14[0], test_date="1404/03/03",
+                      test_date_num=14040303, static_level=101.0)
+        _t14a.points = [_FP14(point_no=1, flow=9.5, dynamic_level=125.0, pressure=4.0, at_network=True)]
+        _db14.session.add_all([_t14, _t14a])
+        _db14.session.commit()
+        _pb = _wp14(_ids14[1])["values"]
+        _pa = _wp14(_ids14[0])["values"]
+        _db14.session.add(_VI14(facility_code="99/2/8", main_well_id=_ids14[1], insp_date="1402/11/15",
+                                insp_date_num=14021115, static_level=147.0))
+        _db14.session.commit()
+        _pbv = _wp14(_ids14[1])["values"]
+    check("سوابق جدیدتر از آخرین دبی‌سنجی: مقادیر دبی‌سنجی از سوابق (تاریخ، منبع، نقطه‌ی فشار شبکه)",
+          _pb.get("ft.test_date") == "1405/02/01" and _pb.get("ft.source") == "سوابق سنجش دبی"
+          and _pb.get("ft.q1") == 20.8 and _pb.get("ft.press1_m") == 80.0 and "ft.q2" not in _pb
+          and _pb.get("ft.net_flow") == 20.8 and _pb.get("ft.electropump") == "384/12+92", str(_pb)[:400])
+    check("نقاط آزمایش قدیمی‌تر مخلوط نمی‌شود و داده‌ی پمپ قبلی کنار می‌رود",
+          "ft.dyn2" not in _pb and "ft.design_flow" not in _pb and _pb.get("ft.prev_static") == 150.0
+          and _pb.get("ft.prev_install_depth") == 210.0 and _pb.get("ft.last_install_date") == "1405/02/01",
+          str({k: _pb.get(k) for k in ("ft.dyn2", "ft.design_flow", "ft.prev_static", "ft.last_install_date")}))
+    check("سطح دینامیک و استاتیک از سنجش جدیدتر (بدون ویدئومتری)",
+          _pb.get("best.dynamic_level") == 165.0 and _pb.get("best.static_level") == 154.0,
+          str((_pb.get("best.dynamic_level"), _pb.get("best.static_level"))))
+    check("سطح استاتیک: ویدئومتری بر همه مقدم است", _pbv.get("best.static_level") == 147.0,
+          str(_pbv.get("best.static_level")))
+    check("دبی‌سنجی جدیدتر از سوابق: آخرین دبی‌سنجی ملاک است",
+          _pa.get("ft.test_date") == "1404/03/03" and _pa.get("ft.source") == "بانک دبی‌سنجی"
+          and _pa.get("ft.q1") == 9.5 and _pa.get("best.static_level") == 101.0
+          and _pa.get("best.dynamic_level") == 125.0 and _pa.get("fr.test_date") == "1403/05/01", str(_pa)[:400])
+    check("تیپ الکتروپمپ فعلی از جدیدترین منبع (سوابق)", _pb.get("best.electropump") == "384/12+92",
+          str(_pb.get("best.electropump")))
+
+    fl14 = c.get("/api/refdata/flowrecords?q=99/2/8").get_json()["data"]
+    check("فهرست سوابق سنجش دبی و جستجو", fl14["total"] == 1 and fl14["rows"][0]["main_well"] == "سوران آزمون 8",
+          str(fl14)[:200])
+    det14 = c.get(f"/api/refdata/flowrecords/{fl14['rows'][0]['id']}").get_json()["data"]
+    check("جزئیات سنجش با برچسب‌های خود کاربرگ",
+          any(x["label"] == "سطح ایستایی - متر" and x["value"] == 154 for x in det14["raw_labelled"]),
+          str(det14.get("raw_labelled"))[:300])
+    check("خروجی اکسل سوابق سنجش دبی", c.get("/api/refdata/flowrec/export.xlsx").status_code == 200)
+    _sum14 = {s_["key"]: s_ for s_ in c.get("/api/refdata/summary").get_json()["data"]["sources"]}
+    check("کارت «سوابق سنجش دبی» در خلاصه‌ی بانک‌ها", _sum14.get("flowrec", {}).get("rows") == 2
+          and _sum14["flowrec"]["file"] == "flowrecords.db", str(_sum14.get("flowrec"))[:200])
+    rel14 = c.post("/api/refdata/relink", json={}).get_json()["data"]
+    check("اتصال دوباره شامل سوابق سنجش دبی", rel14.get("flowrec", {}).get("linked") == 2, str(rel14))
+    lnk14 = c.post(f"/api/refdata/flowrec/{fl14['rows'][0]['id']}/link", json={"well_id": _ids14[0]})
+    with app.app_context():
+        _ml14 = _FR14.query.filter_by(facility_code="99/2/8").first().match_method
+    check("اتصال دستی سوابق به چاه", lnk14.status_code == 200 and _ml14 == "manual", str(lnk14.get_json())[:200])
+    c.post(f"/api/refdata/flowrec/{fl14['rows'][0]['id']}/link", json={"well_id": _ids14[1]})
+    wl14 = c.get(f"/api/refdata/well?well_id={_ids14[1]}").get_json()["data"]
+    check("پرونده‌ی چاه سوابق سنجش دبی را نشان می‌دهد", len(wl14.get("records") or []) == 1
+          and any(s_["key"] == "flowrec" for s_ in wl14["profile"]["sources"]), str(wl14.get("records"))[:200])
+    with app.app_context():
+        from app.analytics.catalogue import get_source as _gs14
+        _src14 = _gs14("fr_records")
+        _rows14 = _src14._loader(None) if _src14 else []
+        from app.models.report import Report as _Rep14
+        _tpl14 = _Rep14.query.filter_by(template_key="ref_flowrecords").first()
+    check("گزارش‌ساز: منبع «سوابق سنجش دبی» و الگوی گزارش آن",
+          _src14 is not None and len(_rows14) == 2 and _tpl14 is not None, f"{_src14} {len(_rows14)} {_tpl14}")
+
+    from app.services import upgrade_r14 as _u14
+    with app.app_context():
+        from app.models import AppMeta as _AM14, FormField as _FF14, FormSection as _FS14
+        check("تغییرات R14 یک‌بار اجرا و ثبت شد", _AM14.get(_u14.KEY) == "done")
+        _fbp = _FF14.query.filter_by(field_name="flow_before_pull").first()
+        _fbp.prefill_from = None          # an earlier check cleared what the startup set
+        _db14.session.commit()
+        _u14._last_flow()
+        _db14.session.commit()
+        _fbp = _FF14.query.filter_by(field_name="flow_before_pull").first()
+        check("«آخرین دبی» (دبی قبل از کشیدن) از آخرین دبی بهره‌برداری روند تولید",
+              _fbp is not None and _fbp.prefill_from == "@ref:pr.last_flow", str(_fbp and _fbp.prefill_from))
+        _amp = _FF14.query.filter_by(field_name="ps_max_amp").first()
+        _sec = _amp.section_id
+        _db14.session.add_all([_FF14(section_id=_sec, field_name="am_pump", label="تیپ پمپ", field_type="text"),
+                               _FF14(section_id=_sec, field_name="no_ste_2", label="طبقات", field_type="text")])
+        _amp.field_type, _amp.formula, _amp.prefill_from = "number", None, "@ref:ft.allowed_current"
+        _db14.session.commit()
+        _done14 = _u14._max_amp()
+        _db14.session.commit()
+        _amp = _FF14.query.filter_by(field_name="ps_max_amp").first()
+        _ampv = (_done14, _amp.field_type, _amp.formula, _amp.prefill_from)
+        from app.analytics.formula import Evaluator as _Ev14, parse as _p14
+        _cat14v = _Ev14({}).row(_p14('CAT_A("152", "4")'), {})
+    check("«حداکثر آمپر مجاز» از کاتالوگ برای تیپ و طبقات پیشنهادی",
+          _ampv == (1, "formula", "CAT_A([am_pump], [no_ste_2])", None), str(_ampv))
+    check("CAT_A جریان نامی کاتالوگ را برمی‌گرداند", _cat14v == 3.9, str(_cat14v))
+
     print("\n— ترتیب تب‌ها —")
     check("صفحه اصلی، ثبت اطلاعات است",
           b"page-mode" in c.get("/", follow_redirects=True).data)

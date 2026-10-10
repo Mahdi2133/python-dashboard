@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h2>🗄 بانک‌های اطلاعاتی</h2>
-    <div class="sub">دبی‌سنجی چاه‌ها، روند تولید و ویدئومتری — هر کدام یک پایگاه داده‌ی جداگانه در پوشه‌ی
+    <div class="sub">دبی‌سنجی چاه‌ها، روند تولید، ویدئومتری و سوابق سنجش دبی — هر کدام یک پایگاه داده‌ی جداگانه در پوشه‌ی
       <code dir="ltr">instance/refdata</code>. فرم‌ها مقادیر را از همین‌جا پیش‌پر می‌کنند
       (فرم‌ساز ← «پر شدن خودکار» ← بانک‌های اطلاعاتی).</div>
   </div>
@@ -17,6 +17,7 @@
   <button class="tab" data-tab="flowtest">💧 دبی‌سنجی</button>
   <button class="tab" data-tab="production">📈 روند تولید</button>
   <button class="tab" data-tab="videometry">🎥 ویدئومتری</button>
+  <button class="tab" data-tab="flowrec">📋 سوابق سنجش دبی</button>
   <button class="tab" data-tab="import">📥 ورود و به‌روزرسانی</button>
 </div>
 
@@ -104,6 +105,29 @@
   </div>
 </div>
 
+<!-- سوابق سنجش دبی -->
+<div class="tab-panel hidden" data-panel="flowrec">
+  <div class="table-wrapper">
+    <div class="table-toolbar">
+      <h2>سوابق سنجش دبی <span class="record-count-badge" id="fr-count">۰</span></h2>
+      <div class="toolbar-actions">
+        <input type="text" id="fr-q" placeholder="جستجو: نام چاه یا کد تاسیس">
+        <select id="fr-center"><option value="">همه‌ی مراکز</option></select>
+        <label class="small"><input type="checkbox" id="fr-unmatched" style="width:auto"> فقط بدون اتصال</label>
+        <a class="btn-ghost" href="/api/refdata/flowrec/export.xlsx">⬇ اکسل</a>
+      </div>
+    </div>
+    <div class="table-scroll"><table>
+      <thead><tr><th>تاریخ</th><th>کد تاسیس</th><th>نام</th><th>مرکز</th><th>چاه در سامانه</th><th>دلیل سنجش</th>
+        <th>تیپ الکتروپمپ</th><th>عمق چاه</th><th>عمق نصب</th><th>سطح ایستایی</th><th>سطح پویایی</th>
+        <th>آبدهی (l/s)</th><th>فشار شبکه (atm)</th><th>راندمان</th></tr></thead>
+      <tbody id="fr-body"></tbody>
+    </table></div>
+    <div class="pagination" id="fr-pages"></div>
+  </div>
+  <div id="fr-detail"></div>
+</div>
+
 <!-- ورود -->
 <div class="tab-panel hidden" data-panel="import">
   <div class="alert info">
@@ -126,6 +150,12 @@
       <h3>🎥 ویدئومتری</h3>
       <p class="hint">کاربرگ ویدئومتری (.xlsx با ستون‌های «کد تاسیس»، «تاریخ اقدام»، …)، خروجی JSON، یا هر دو در یک فایل zip.</p>
       <input type="file" class="rd-file" data-source="videometry" multiple accept=".zip,.xlsx,.xlsm,.json">
+    </div>
+    <div class="chart-card">
+      <h3>📋 سوابق سنجش دبی</h3>
+      <p class="hint">کاربرگ «سوابق سنجش دبی» (.xlsx با ستون‌های «کد تاسيس»، «تاريخ دبي سنجي»، …) یا فایل zip آن.
+        اگر تاریخ آن از آخرین دبی‌سنجی چاه جدیدتر باشد، فرم‌ها مقادیر دبی‌سنجی را از همین سابقه می‌گیرند.</p>
+      <input type="file" class="rd-file" data-source="flowrec" multiple accept=".zip,.xlsx,.xlsm">
     </div>
   </div>
   <div class="card mt-2">
