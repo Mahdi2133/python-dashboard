@@ -3428,6 +3428,180 @@ def main():
           _ampv == (1, "formula", "CAT_A([am_pump], [no_ste_2])", None), str(_ampv))
     check("CAT_A جریان نامی کاتالوگ را برمی‌گرداند", _cat14v == 3.9, str(_cat14v))
 
+    print("\n— R15: کارتابل به تفکیک اداره، جدول ردیفی، جستجو، انبار به تفکیک تیپ —")
+    bd15 = c.get("/api/workflow/board?days=3650")
+    _bd15 = (bd15.get_json() or {}).get("data") or {}
+    check("«وضعیت چاه‌ها» به تفکیک اداره (رفته / مانده)", bd15.status_code == 200
+          and isinstance(_bd15.get("offices"), list) and set(_bd15.get("totals", {})) >= {"todo", "done", "waiting"},
+          str(_bd15)[:200])
+    check("متولی هم «وضعیت چاه‌ها»ی خودش را می‌بیند", kahani.get("/api/workflow/board").status_code == 200)
+    _inb15 = (c.get("/api/workflow/inbox").get_json() or {}).get("data") or []
+    check("ردیف‌های کارتابل اداره‌ی چاه را دارند", all("well_center" in r for r in _inb15), str(_inb15[:1])[:200])
+    with app.app_context():
+        from app.models import WorkflowStage as _WS15
+        _st15 = _WS15.query.filter(_WS15.stage_number > 0).first()
+        _st15_id = _st15.id
+    up15 = c.put(f"/api/workflow/stages/{_st15_id}", json={"show_refdata": False})
+    with app.app_context():
+        _sr15 = _WS15.query.get(_st15_id).show_refdata
+    check("فرایندساز: نمایش «اطلاعات بانک‌های اطلاعاتی» در هر مرحله خاموش می‌شود",
+          up15.status_code == 200 and _sr15 is False, str(up15.get_json())[:200])
+    c.put(f"/api/workflow/stages/{_st15_id}", json={"show_refdata": True})
+
+    g15 = c.post("/api/form-builder/sections", json={"code": "t_r15_grid", "title": "جدول آزمون", "layout": "grid",
+                                                     "grid_label": "ردیف {n}", "show_on_entry": False})
+    _g15 = (g15.get_json() or {}).get("data") or {}
+    check("بخش «جدول ردیفی» ساخته می‌شود", g15.status_code == 200 and _g15.get("layout") == "grid"
+          and _g15.get("grid_label") == "ردیف {n}", str(_g15)[:200])
+    for n15 in (1, 2):
+        c.post("/api/form-builder/fields", json={"field_name": f"t15_q{n15}", "label": f"ردیف {n15} — آبدهی",
+                                                 "field_type": "number", "section_id": _g15.get("id")})
+    c.post("/api/form-builder/fields", json={"field_name": "t15_note", "label": "یادداشت", "field_type": "text",
+                                             "section_id": _g15.get("id")})
+    from app.services.gridlayout import grid_cells as _gc15, strip_row as _sr15f
+    with app.app_context():
+        from app.models import FormSection as _FS15
+        _gs15 = _FS15.query.get(_g15.get("id"))
+        _cells15 = _gc15(_gs15, [f.field_name for f in _gs15.fields])
+        _strip15 = _sr15f("ردیف 2 — آبدهی", _gs15, 2)
+    check("ردیف‌ها از شماره‌ی انتهای نام؛ فیلد بی‌شماره بیرون جدول", _cells15 == {"t15_q1": ("t15_q", 1), "t15_q2": ("t15_q", 2)}
+          and _strip15 == "آبدهی", f"{_cells15} {_strip15}")
+    c.put(f"/api/form-builder/sections/{_g15.get('id')}", json={"layout": ""})
+    with app.app_context():
+        check("چیدمان دوباره ستونی می‌شود", _FS15.query.get(_g15.get("id")).layout is None)
+        from app.models import FormField as _FF15
+        _pc15 = _FF15.query.filter_by(field_name="pump_curr").first()
+        _mc15 = _FF15.query.filter_by(field_name="motor_curr").first()
+    check("تیپ پمپ و موتور دراپ‌دان (با جستجو) است", _pc15 is not None and _pc15.field_type == "select"
+          and _mc15.field_type == "select", f"{_pc15 and _pc15.field_type} {_mc15 and _mc15.field_type}")
+
+    from app.services.workflow import chart_inputs as _ci15
+    _cin15 = _ci15({"series": [{"x": ["fc_m3min1"], "y": ["fc_eff1"],
+                                "curve": {"y": "100 * [fc_b] / ([fc_b] + [fc_a] * [x])",
+                                          "require": "AND([fc_b] > 0, [fc_a] >= 0)"}}]})
+    check("خلاصه‌ی نمودار: فیلدهای منحنی (a و b) هم فرستاده می‌شوند",
+          _cin15 == ["fc_m3min1", "fc_eff1", "fc_b", "fc_a"], str(_cin15))
+    from app.warehouse.service import register_type as _rt15, variant_of as _vo15
+    check("تیپ از مشخصات: kW، تیپ/طبقه، الکتروپمپ",
+          (_vo15("73.5 kW"), _vo15("384 / 10"), _vo15("384/10+73.5"), _vo15("۶۲٫۵")) == ("73.5", "384/10", "384/10+73.5", "62.5"))
+    check("تیپ از نام شناسنامه", (_rt15("پمپ شناور6608/15", "پمپ شناور"), _rt15("الکتروموتور شناور30kw", "الکتروموتور شناور"),
+                                 _rt15("الکتروموتور شناور247a", "الکتروموتور شناور"),
+                                 _rt15("الکتروموتور شناور 9A45", "الکتروموتور شناور"),
+                                 _rt15("الکتروموتور شناور24kw9a7a", "الکتروموتور شناور")) == ("6608/15", "30", "24", "45", "24"))
+    with app.app_context():
+        from app.extensions import db as _db15
+        from app.warehouse.models import WhEquipment as _WE15, WhItem as _WI15, WhMovement as _WM15
+        # by code: an earlier check renames the first part of the list
+        _imp15 = _WI15.query.filter_by(code="PS-01").first()
+        _sh15 = _WI15.query.filter_by(code="PS-04").first()
+        _rules15 = (_imp15 and _imp15.qty_rule, _imp15 and _imp15.per_type, _sh15 and _sh15.qty_rule)
+        _db15.session.add(_WE15(code="MP/T15", name="پمپ شناور384/10", kind="پمپ شناور", type_label="384/10"))
+        _db15.session.commit()
+        _ids15 = {i.code: i.id for i in _WI15.query.all() if i.code}
+    check("پروانه به تعداد طبقات و به تفکیک تیپ؛ شافت یک عدد", _rules15 == ("stages", True, "1"), str(_rules15))
+
+    # a little process of the warehouse forms: join into one electropump, parts by type, equipment out
+    sec15 = (c.post("/api/form-builder/sections", json={"code": "t_r15_wh", "title": "انبار آزمون",
+                                                       "show_on_entry": False}).get_json() or {}).get("data") or {}
+    for fname, ftype in (("t15_pump", "text"), ("t15_stages", "number"), ("t15_pcode", "text")):
+        c.post("/api/form-builder/fields", json={"field_name": fname, "label": fname, "field_type": ftype,
+                                                 "section_id": sec15.get("id")})
+    jn15 = c.post("/api/form-builder/fields", json={
+        "field_name": "t15_join", "label": "الکتروپمپ آزمون", "field_type": "wh_lines", "section_id": sec15.get("id"),
+        "wh_config": {"mode": "rows", "warehouse": "equipment", "direction": "in", "reason": "assembled",
+                      "condition": False, "default_condition": "assembled", "join_into": "EQ-03",
+                      "serial_source": "register",
+                      "preset": [{"item_code": "EQ-01", "spec": "[t15_stages]", "serial": "[t15_pcode]"}],
+                      "preset_lock": True}})
+    pt15 = c.post("/api/form-builder/fields", json={
+        "field_name": "t15_parts", "label": "قطعات آزمون", "field_type": "wh_lines", "section_id": sec15.get("id"),
+        "wh_config": {"mode": "parts", "warehouse": "parts", "direction": "out", "reason": "assembly",
+                      "equipment_type": "پمپ شناور", "columns": ["total", "installed_new", "installed_repair"],
+                      "list_all": True, "check_stock": True, "stages_field": "t15_stages", "type_field": "t15_pump",
+                      "equipment_field": "t15_pcode", "equipment_out": True, "equipment_item": "EQ-02"}})
+    with app.app_context():
+        _jc15 = _FF15.query.filter_by(field_name="t15_join").first()
+        _jcfg15 = json.loads(_jc15.wh_config or "{}")
+        _pcfg15 = json.loads(_FF15.query.filter_by(field_name="t15_parts").first().wh_config or "{}")
+    check("فرم‌ساز تنظیمات تازه‌ی انبار را نگه می‌دارد (اتصال، پلاک از شناسنامه، بدون وضعیت، کل/نو/تعمیری، موجودی، خروج تجهیز)",
+          jn15.status_code == 200 and pt15.status_code == 200 and _jcfg15.get("join_into") == "EQ-03"
+          and _jcfg15.get("condition") is False and _jcfg15.get("serial_source") == "register"
+          and _jcfg15["preset"][0].get("serial") == "[t15_pcode]" and _pcfg15.get("list_all") is True
+          and _pcfg15.get("equipment_out") is True and _pcfg15.get("stages_field") == "t15_stages"
+          and _pcfg15.get("columns") == ["total", "installed_new", "installed_repair"], f"{_jcfg15} {_pcfg15}"[:400])
+    with app.app_context():
+        from app.models import WorkflowInstance as _WIn15
+        from app.warehouse.service import post_stage as _ps15, stock as _stk15
+        _inst15 = _WIn15.query.first()
+        _stage15 = _inst15.workflow.stages[1]
+        _db15.session.add(_WM15(jdate="1405/07/01", warehouse="equipment", direction="in", reason="pull",
+                                item_id=_ids15["EQ-02"], item_name="پمپ شناور", qty=1, condition="pulled",
+                                spec="384/10", variant="384/10", serial="MP/T15"))
+        _db15.session.commit()
+        _ps15(_inst15, _stage15, {
+            "t15_pump": "384", "t15_stages": "10", "t15_pcode": "MP/T15",
+            "t15_join": [{"item_id": _ids15["EQ-01"], "spec": "73.5 kW", "serial": "EM/T15"},
+                         {"item_id": _ids15["EQ-02"], "spec": "384/10", "serial": "MP/T15"}],
+            "t15_parts": [{"item_id": _imp15.id, "item_name": _imp15.name, "total": 10, "installed_new": 6,
+                           "installed_repair": 4}]}, None)
+        _db15.session.commit()
+        _impn15 = _imp15.name
+        _mv15 = [(m.item_name, m.direction, m.variant, m.condition, m.qty, m.serial)
+                 for m in _WM15.query.filter_by(instance_id=_inst15.id, stage_number=_stage15.stage_number).all()]
+        _bal15 = {(r["item_name"], r["variant"], r["condition"]): r["balance"] for r in _stk15()}
+    check("دو ردیف الکتروموتور و پمپ یک الکتروپمپ متصل می‌شوند", ("الکتروپمپ کامل (مونتاژشده)", "in", "384/10+73.5",
+          "assembled", 1.0, "EM/T15 + MP/T15") in _mv15, str(_mv15))
+    check("پروانه به تفکیک تیپ پمپ از انبار قطعات خارج می‌شود (نو و تعمیری)",
+          (_impn15, "out", "384", "new", 6.0, "MP/T15") in _mv15 and (_impn15, "out", "384", "reusable", 4.0, "MP/T15") in _mv15,
+          str(_mv15))
+    check("تجهیز دمونتاژشده با همان تیپ و وضعیت از انبار تجهیزات خارج می‌شود",
+          ("پمپ شناور", "out", "384/10", "pulled", 1.0, "MP/T15") in _mv15
+          and _bal15.get(("پمپ شناور", "384/10", "pulled")) == 0, f"{_mv15} {_bal15.get(('پمپ شناور', '384/10', 'pulled'))}")
+    ss15 = kahani.get("/api/warehouse/stock-summary")
+    check("موجودی انبار برای متولی (کاهانی) خوانده می‌شود", ss15.status_code == 200
+          and "equipment" in (ss15.get_json() or {}).get("data", {}), str(ss15.status_code))
+
+    # the stock count: export it, change it, import it back (it replaces the opening balance)
+    from openpyxl import Workbook as _WB15
+    _wbk15 = _WB15()
+    _wsk15 = _wbk15.active
+    _wsk15.append(["انبار", "کد کالا", "نام کالا", "تیپ", "وضعیت", "تعداد"])
+    _wsk15.append(["انبار تجهیزات", "EQ-01", None, "37", "تعمیری", 5])
+    _wsk15.append(["انبار قطعات", "PS-01", None, "384", "نو", 40])
+    _wsk15.append(["انبار قطعات", None, "قطعه‌ی ناموجود", None, None, 3])
+    _xk15 = io.BytesIO()
+    _wbk15.save(_xk15)
+    op15 = c.post("/api/warehouse/opening/import", data={"file": (io.BytesIO(_xk15.getvalue()), "count.xlsx")},
+                  content_type="multipart/form-data")
+    _op15 = (op15.get_json() or {}).get("data") or {}
+    with app.app_context():
+        _bal15 = {(r["item_name"], r["variant"], r["condition"]): r["balance"] for r in _stk15()}
+    check("انبارگردانی از اکسل جایگزین موجودی اول دوره می‌شود (به تفکیک تیپ)",
+          op15.status_code == 200 and _op15.get("rows") == 2 and _op15.get("unknown_count") == 1
+          and _bal15.get(("الکتروموتور شناور", "37", "repair")) == 5, f"{_op15} {_bal15.get(('الکتروموتور شناور', '37', 'repair'))}")
+    check("خروجی انبارگردانی و شناسنامه", c.get("/api/warehouse/opening.xlsx").status_code == 200
+          and c.get("/api/warehouse/register.xlsx").status_code == 200)
+    _wbr15 = _WB15()
+    _wbr15.active.append(["کد تجهیز / پلاک", "نوع تجهیز", "تیپ", "شرح"])
+    _wbr15.active.append(["EM/R15", "الکتروموتور", "45", "موتور آزمون"])
+    _xr15 = io.BytesIO()
+    _wbr15.save(_xr15)
+    rg15 = c.post("/api/warehouse/register/import", data={"file": (io.BytesIO(_xr15.getvalue()), "reg.xlsx")},
+                  content_type="multipart/form-data")
+    lst15 = (c.get("/api/warehouse/register?q=EM/R15").get_json() or {}).get("data") or {}
+    check("شناسنامه‌ی تجهیزات از اکسل وارد و جستجو می‌شود", rg15.status_code == 200 and lst15.get("total") == 1
+          and lst15["rows"][0]["type_label"] == "45" and lst15["rows"][0]["kind"] == "الکتروموتور شناور", str(lst15)[:200])
+    with app.app_context():
+        from app.analytics.catalogue import get_source as _gsrc15
+        from app.models.report import Report as _Rp15
+        _src15 = _gsrc15("wh_stock")
+        check("گزارش‌ساز: منبع «موجودی انبار به تفکیک تیپ» و الگوی آن",
+              _src15 is not None and len(_src15._loader(None)) > 0
+              and _Rp15.query.filter_by(template_key="wh_stock_by_type").first() is not None)
+        from app.models import AppMeta as _AM15
+        from app.services.upgrade_r15 import KEY as _K15
+        check("تغییرات R15 یک‌بار اجرا و ثبت شد", _AM15.get(_K15) == "done")
+
     print("\n— ترتیب تب‌ها —")
     check("صفحه اصلی، ثبت اطلاعات است",
           b"page-mode" in c.get("/", follow_redirects=True).data)

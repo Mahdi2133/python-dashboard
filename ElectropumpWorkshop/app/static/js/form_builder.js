@@ -581,7 +581,7 @@
     if (!box) return;
     var items = ((schema && schema.warehouse) || {}).items || [];
     box.innerHTML = whPreset.length ? '<table class="fb-mini-table"><thead><tr><th>کالا</th><th>مشخصات (فرمول یا متن)</th>'
-      + '<th>تعداد</th><th></th></tr></thead><tbody>' + whPreset.map(function (r, i) {
+      + '<th>پلاک (فرمول، اختیاری)</th><th>تعداد</th><th></th></tr></thead><tbody>' + whPreset.map(function (r, i) {
         var known = items.some(function (it) { return it.code === r.item_code; });
         return '<tr data-preset="' + i + '"><td><select class="fb-wp-item"><option value="">—</option>'
           + items.map(function (it) {
@@ -590,6 +590,7 @@
             }).join('')
           + (r.item_code && !known ? '<option value="' + A.esc(r.item_code) + '" selected>' + A.esc(r.item_code) + '</option>' : '')
           + '</select></td><td><input type="text" dir="ltr" class="fb-wp-spec" value="' + A.esc(r.spec || '') + '"></td>'
+          + '<td><input type="text" dir="ltr" class="fb-wp-serial" value="' + A.esc(r.serial || '') + '" placeholder="[mt_motor_code]"></td>'
           + '<td><input type="number" step="any" class="fb-wp-qty" value="' + A.esc(r.qty || 1) + '" style="width:70px"></td>'
           + '<td><button type="button" class="btn-sm btn-del fb-wp-del">✕</button></td></tr>';
       }).join('') + '</tbody></table>' : '<span class="hint">ردیف ثابتی تعریف نشده است.</span>';
@@ -603,6 +604,7 @@
       var r = whPreset[+tr.dataset.preset];
       if (ev.target.classList.contains('fb-wp-item')) r.item_code = ev.target.value;
       if (ev.target.classList.contains('fb-wp-spec')) r.spec = ev.target.value;
+      if (ev.target.classList.contains('fb-wp-serial')) r.serial = ev.target.value;
       if (ev.target.classList.contains('fb-wp-qty')) r.qty = Number(ev.target.value) || 1;
     };
     box.addEventListener('change', sync);
@@ -643,10 +645,17 @@
     A.qs('#fb-wh-parts-state').textContent = active + ' قطعه‌ی فعال';
     box.innerHTML = '<input type="search" class="fb-parts-q" placeholder="جستجوی قطعه…">'
       + '<div class="table-scroll" style="max-height:280px"><table class="fb-mini-table"><thead><tr><th>کد انباری</th><th>شرح قطعه</th>'
-      + '<th>فعال</th></tr></thead><tbody>' + partsList.map(function (p, i) {
+      + '<th>تعداد در هر تجهیز</th><th>موجودی به تفکیک تیپ پمپ</th><th>فعال</th></tr></thead><tbody>' + partsList.map(function (p, i) {
+        var rule = p.qty_rule || '';
         return '<tr data-part="' + i + '"' + (p.is_active ? '' : ' class="inactive"') + '>'
           + '<td><input type="text" dir="ltr" class="fb-pl-code" value="' + A.esc(p.code || '') + '" style="width:120px"></td>'
           + '<td><input type="text" class="fb-pl-name" value="' + A.esc(p.name || '') + '"></td>'
+          + '<td><select class="fb-pl-rule"><option value=""' + (!rule ? ' selected' : '') + '>دستی</option>'
+          + '<option value="stages"' + (rule === 'stages' ? ' selected' : '') + '>به تعداد طبقات</option>'
+          + ['1', '2', '3', '4'].map(function (n) { return '<option value="' + n + '"' + (rule === n ? ' selected' : '') + '>' + n + ' عدد</option>'; }).join('')
+          + (rule && rule !== 'stages' && ['1', '2', '3', '4'].indexOf(rule) === -1 ? '<option value="' + A.esc(rule) + '" selected>' + A.esc(rule) + ' عدد</option>' : '')
+          + '</select></td>'
+          + '<td><input type="checkbox" class="fb-pl-type" style="width:auto"' + (p.per_type ? ' checked' : '') + '></td>'
           + '<td><input type="checkbox" class="fb-pl-active" style="width:auto"' + (p.is_active ? ' checked' : '') + '></td></tr>';
       }).join('') + '</tbody></table></div>';
   }
@@ -668,6 +677,8 @@
       if (ev.target.classList.contains('fb-pl-code')) p.code = ev.target.value;
       if (ev.target.classList.contains('fb-pl-name')) p.name = ev.target.value;
       if (ev.target.classList.contains('fb-pl-active')) { p.is_active = ev.target.checked; tr.classList.toggle('inactive', !p.is_active); }
+      if (ev.target.classList.contains('fb-pl-rule')) p.qty_rule = ev.target.value;
+      if (ev.target.classList.contains('fb-pl-type')) p.per_type = ev.target.checked;
       p._dirty = true;
     };
     box.addEventListener('input', sync);
@@ -684,7 +695,7 @@
       var rows = partsList.filter(function (p) { return p._dirty && (p.id || String(p.name || '').trim()); })
         .map(function (p) {
           return { id: p.id, code: p.code, name: p.name, kind: 'part', category: p.category || A.qs('#fb-wh-eq').value,
-                   is_active: p.is_active };
+                   is_active: p.is_active, qty_rule: p.qty_rule || '', per_type: !!p.per_type };
         });
       if (!rows.length) { A.toast('تغییری در فهرست قطعات نیست.', 'info'); return; }
       try {
@@ -737,6 +748,11 @@
     checks('#fb-wh-cols', L.cols, cfg.columns || []);
     whPreset = (cfg.preset || []).map(function (r) { return Object.assign({}, r); });
     A.qs('#fb-wh-preset-lock').checked = !!cfg.preset_lock;
+    var set = function (id, v) { var el = A.qs(id); if (!el) return; if (el.type === 'checkbox') el.checked = !!v; else el.value = v || ''; };
+    set('#fb-wh-stagesf', cfg.stages_field); set('#fb-wh-typef', cfg.type_field);
+    set('#fb-wh-listall', cfg.list_all); set('#fb-wh-stock', cfg.check_stock); set('#fb-wh-eqout', cfg.equipment_out);
+    set('#fb-wh-cond', cfg.condition !== false); set('#fb-wh-reg', cfg.serial_source === 'register');
+    set('#fb-wh-join', cfg.join_into);
     drawWhPreset();
     whModeSync();
   }
@@ -744,6 +760,8 @@
     var picked = function (box) {
       return A.qsa(box + ' input:checked').map(function (i) { return i.value; });
     };
+    var val = function (id) { var el = A.qs(id); return el ? el.value.trim() : ''; };
+    var chk = function (id) { var el = A.qs(id); return !!(el && el.checked); };
     var mode = A.qs('#fb-wh-mode').value;
     return { mode: mode, warehouse: A.qs('#fb-wh-wh').value, direction: A.qs('#fb-wh-dir').value,
              reason: A.qs('#fb-wh-reason').value,
@@ -753,7 +771,11 @@
              failure_field: A.qs('#fb-wh-fail').value.trim(), cause_field: A.qs('#fb-wh-cause').value.trim(),
              action_field: A.qs('#fb-wh-act').value.trim(),
              preset: whPreset.filter(function (r) { return r.item_code; }),
-             preset_lock: A.qs('#fb-wh-preset-lock').checked };
+             preset_lock: A.qs('#fb-wh-preset-lock').checked,
+             stages_field: val('#fb-wh-stagesf'), type_field: val('#fb-wh-typef'),
+             list_all: chk('#fb-wh-listall'), check_stock: chk('#fb-wh-stock'), equipment_out: chk('#fb-wh-eqout'),
+             condition: A.qs('#fb-wh-cond') ? A.qs('#fb-wh-cond').checked : true,
+             serial_source: chk('#fb-wh-reg') ? 'register' : null, join_into: val('#fb-wh-join') || null };
   }
 
   function fillChart(field) {
@@ -1044,6 +1066,8 @@
     A.qs('#sb-entry').value = section && section.show_on_entry === false ? '0' : '1';
     A.qs('#sb-collapse').value = section && section.collapse_formulas ? '1' : '0';
     A.qs('#sb-repeat').value = section && section.repeat_group ? section.repeat_group : '';
+    var lay = A.qs('#sb-layout'); if (lay) lay.value = section && section.layout === 'grid' ? 'grid' : '';
+    var gl = A.qs('#sb-grid-label'); if (gl) gl.value = section && section.grid_label ? section.grid_label : '';
     fillWhen(section && section.visible_when, 'sb');
     fillBring(section);
     A.qs('#sb-delete').classList.toggle('hidden', !section);
@@ -1059,6 +1083,8 @@
       show_on_entry: A.qs('#sb-entry').value === '1',
       collapse_formulas: A.qs('#sb-collapse').value === '1',
       repeat_group: A.qs('#sb-repeat').value.trim(),
+      layout: A.qs('#sb-layout') ? A.qs('#sb-layout').value : '',
+      grid_label: A.qs('#sb-grid-label') ? A.qs('#sb-grid-label').value.trim() : '',
       visible_when: readWhen('sb')
     };
     if (!payload.code || !payload.title) {
@@ -1154,7 +1180,12 @@
     A.qs('#fb-lookup').innerHTML = '<option value="">— گزینه‌های اختصاصی —</option>'
       + Object.keys(schema.lookups).filter(function (c) { return c !== '__months__'; })
         .map(function (c) { return '<option value="' + A.esc(c) + '">' + A.esc(c) + '</option>'; })
-        .join('');
+        .join('')
+      /* for a text field: its value searched in the equipment register */
+      + '<optgroup label="شناسنامه‌ی تجهیزات (فیلد متنی کد / پلاک)">'
+      + '<option value="equipment:motor">شناسنامه‌ی تجهیزات — الکتروموتور</option>'
+      + '<option value="equipment:pump">شناسنامه‌ی تجهیزات — پمپ</option>'
+      + '<option value="equipment">شناسنامه‌ی تجهیزات — همه</option></optgroup>';
 
     A.qs('#btn-new-field').addEventListener('click', function () { openFieldEditor(null); });
     A.qs('#btn-new-section').addEventListener('click', function () { openSectionEditor(null); });

@@ -37,6 +37,7 @@ hiddenimports = [
     'app.refdata', 'app.refdata.models', 'app.refdata.flowtest', 'app.refdata.production',
     'app.refdata.videometry', 'app.refdata.flowrecords', 'app.refdata.matching', 'app.refdata.profile',
     'app.refdata.textnorm', 'app.services.upgrade_r13', 'app.services.upgrade_r14',
+    'app.services.upgrade_r15', 'app.services.gridlayout',
     'app.warehouse', 'app.warehouse.models', 'app.warehouse.service', 'app.warehouse.partsbook',
     'openpyxl.chart', 'reportlab.graphics.charts.barcharts', 'reportlab.graphics.charts.linecharts',
     'reportlab.graphics.charts.piecharts',

@@ -84,16 +84,103 @@
         + 'آغاز شود.</div></button>'
       : '';
     html = extra + html;
-    var lastRef = null;
-    box.innerHTML = html + items.map(function (it, i) {
-      var header = '';
-      if (it.id !== lastRef) {
-        lastRef = it.id;
-        header = '<div class="wf-group">فرایند #' + J.toFaDigits(it.id)
-          + (it.well ? ' — ' + A.esc(it.well) : '') + '</div>';
-      }
-      return header + itemHtml(it, i);
+    /* Several offices run their wells at the same time, so the work is
+       grouped by the well's مرکز (folded and unfolded by hand, remembered),
+       and inside it by process — one well, one heading. */
+    var offices = [], byOffice = {};
+    items.forEach(function (it, i) {
+      var name = officeOf(it);
+      if (!byOffice[name]) { byOffice[name] = []; offices.push(name); }
+      byOffice[name].push(i);
+    });
+    box.innerHTML = html + offices.map(function (name) {
+      var idx = byOffice[name], lastRef = null;
+      var wells = {};
+      idx.forEach(function (i) { wells[items[i].id] = 1; });
+      return '<details class="wf-office"' + (officeFolded(name) ? '' : ' open') + ' data-office="' + A.esc(name) + '">'
+        + '<summary><span>🏢 ' + A.esc(name) + '</span><span class="wf-office-n">'
+        + J.toFaDigits(Object.keys(wells).length) + ' چاه · ' + J.toFaDigits(idx.length) + ' کار</span></summary>'
+        + idx.map(function (i) {
+          var it = items[i], header = '';
+          if (it.id !== lastRef) {
+            lastRef = it.id;
+            header = '<div class="wf-group">' + (it.well ? A.esc(it.well) : 'فرایند')
+              + ' <span class="hint">#' + J.toFaDigits(it.id) + '</span></div>';
+          }
+          return header + itemHtml(it, i);
+        }).join('') + '</details>';
     }).join('');
+  }
+
+  function officeOf(it) { return it.well_center || 'بدون مرکز'; }
+  function officeFolded(name) {
+    try { return window.localStorage.getItem('wf-office-fold:' + name) === '1'; } catch (e) { return false; }
+  }
+  document.addEventListener('toggle', function (ev) {
+    var d = ev.target;
+    if (!d || !d.classList || !d.classList.contains('wf-office')) return;
+    try { window.localStorage.setItem('wf-office-fold:' + d.dataset.office, d.open ? '0' : '1'); } catch (e) { /* private window */ }
+  }, true);
+
+  /* ── «وضعیت چاه‌ها»: by office, which wells reached my stage, which wait
+     for me and which have gone on ─────────────────────────────────────── */
+  var board = null;
+  async function loadBoard() {
+    var wrap = A.qs('#wf-board');
+    if (!wrap) return;
+    var q = '?days=' + encodeURIComponent((A.qs('#wb-days') || {}).value || 60)
+      + ((A.qs('#wb-stage') || {}).value ? '&stage_id=' + A.qs('#wb-stage').value : '');
+    try {
+      board = (await A.api.get('/api/workflow/board' + q)).data;
+    } catch (err) {
+      fill('#wb-body', '<div class="hint">' + A.esc(err.message) + '</div>');
+      return;
+    }
+    var sel = A.qs('#wb-stage');
+    if (sel && sel.options.length <= 1 && board.stages.length > 1) {
+      sel.innerHTML = '<option value="">همه‌ی مرحله‌های من</option>' + board.stages.map(function (st) {
+        return '<option value="' + st.id + '">' + J.toFaDigits(st.stage_number) + ' — ' + A.esc(st.title) + '</option>';
+      }).join('');
+    }
+    if (sel) sel.closest('.wb-field').classList.toggle('hidden', board.stages.length < 2 && !sel.value);
+    renderBoard();
+  }
+
+  function renderBoard() {
+    if (!board) return;
+    var t = board.totals, remaining = t.todo + t.returned + t.approval + t.waiting;
+    setText('#wb-totals', board.offices.length
+      ? J.toFaDigits(board.offices.length) + ' اداره · باقی‌مانده ' + J.toFaDigits(remaining)
+        + ' · انجام‌شده ' + J.toFaDigits(t.done) : '');
+    var needle = ((A.qs('#wb-q') || {}).value || '').trim();
+    if (!board.offices.length) {
+      fill('#wb-body', '<div class="hint">در این بازه چاهی به مرحله‌های شما نرسیده است.</div>');
+      return;
+    }
+    fill('#wb-body', board.offices.map(function (o) {
+      var wells = o.wells.filter(function (w) { return !needle || (w.well || '').indexOf(needle) !== -1; });
+      if (needle && !wells.length) return '';
+      var total = o.remaining + o.done, pct = total ? Math.round(100 * o.done / total) : 0;
+      var chips = function (list) {
+        return list.map(function (w) {
+          return '<button type="button" class="wb-chip wb-' + w.state + '" data-wb-inst="' + w.instance_id
+            + '" data-wb-stage="' + w.stage_number + '" title="' + A.esc(w.state_label + ' — مرحله '
+            + w.stage_number + ': ' + w.stage_title + (w.done_at_j ? ' — ' + w.done_at_j : '')) + '">'
+            + A.esc(w.well || ('#' + w.instance_id))
+            + (board.stages.length > 1 ? ' <small>' + J.toFaDigits(w.stage_number) + '</small>' : '') + '</button>';
+        }).join('');
+      };
+      var left = wells.filter(function (w) { return w.state !== 'done'; });
+      var gone = wells.filter(function (w) { return w.state === 'done'; });
+      return '<div class="wb-office">'
+        + '<div class="wb-head"><b>🏢 ' + A.esc(o.office) + '</b>'
+        + '<span class="wb-counts"><span class="wb-n-left">باقی‌مانده ' + J.toFaDigits(o.remaining) + '</span>'
+        + '<span class="wb-n-done">انجام‌شده ' + J.toFaDigits(o.done) + '</span></span></div>'
+        + '<div class="wb-bar"><span style="width:' + pct + '%"></span></div>'
+        + (left.length ? '<div class="wb-sub">مانده</div><div class="wb-chips">' + chips(left) + '</div>' : '')
+        + (gone.length ? '<div class="wb-sub">رفته</div><div class="wb-chips">' + chips(gone) + '</div>' : '')
+        + '</div>';
+    }).join(''));
   }
 
   /* «ارجاع برای تأیید» in the list: requests waiting on me, and the answers
@@ -194,7 +281,14 @@
   async function loadInbox() {
     try {
       var res = await A.api.get('/api/workflow/inbox');
-      items = res.data || [];
+      items = (res.data || []).map(function (it, n) { it._n = n; return it; });
+      // by office, then by well; inside one process the server's order stays
+      items.sort(function (a, b) {
+        var oa = officeOf(a), ob = officeOf(b);
+        if (oa !== ob) return oa === 'بدون مرکز' ? 1 : ob === 'بدون مرکز' ? -1 : oa.localeCompare(ob, 'fa');
+        if ((a.well || '') !== (b.well || '')) return (a.well || '').localeCompare(b.well || '', 'fa');
+        return a._n - b._n;
+      });
       /* Step zero is a stage like any other, so it is a card in the work list
          rather than a button hanging over every page. Only its owner gets it,
          and only there does the «شروع فرایند» form exist. */
@@ -531,7 +625,7 @@
                 detail.operation_label,
                 Object.assign({}, detail.payload || {}, detail.draft || {}));
       if (detail.well) fillPrevious(detail.well);
-      resetRefPanel(detail.well);
+      resetRefPanel(detail.well, detail.form && detail.form.stage);
       renderApprovalPanel(detail);
       /* A blocking approval in front of this stage stops it being filled —
          the server refuses it either way, so the button says so first. */
@@ -899,13 +993,48 @@
     }
   }
 
+  /* «نمایش فقط وقتی…» as this stage draws it. A «فیلد مشترک» is drawn
+     under its source's name but with its own rule — «تیپ الکتروموتور» in the
+     assembly opens on «مونتاژ کدام تجهیز؟», not on the pump type it waits for
+     in the entry form — so the rules come from the stage's own forms and
+     fields; the global list only fills in for what the stage does not draw. */
+  function ruleEntry(raw) {
+    var any = String(raw || '').split(';').map(function (part) {
+      var k = part.indexOf('=');
+      if (k < 1) return null;
+      var on = part.slice(0, k).trim();
+      var vals = part.slice(k + 1).split('|').map(function (v) { return v.trim(); }).filter(Boolean);
+      return on ? { on: on, value: vals.join('|') } : null;
+    }).filter(Boolean);
+    return any.length ? { on: any[0].on, value: any[0].value, any: any } : null;
+  }
+  function stageConditional(sections) {
+    var mine = [], fieldsHere = {}, sectionsHere = {};
+    (sections || []).forEach(function (s) {
+      if (s.code) sectionsHere[s.code] = true;
+      var r = ruleEntry(s.visible_when);
+      if (r && s.code) {
+        mine.push(Object.assign({ section: s.code,
+                                  fields: (s.fields || []).map(function (f) { return f.field_name; }) }, r));
+      }
+      (s.fields || []).forEach(function (f) {
+        fieldsHere[f.field_name] = true;
+        var fr = ruleEntry(f.visible_when);
+        if (fr) mine.push(Object.assign({ field: f.field_name }, fr));
+      });
+    });
+    return mine.concat((schema.conditional || []).filter(function (r) {
+      return r.section ? !sectionsHere[r.section] : !fieldsHere[r.field];
+    }));
+  }
+
   function buildForm(sections, operationLabel, values) {
     var root = A.qs('#wf-form');
     if (!root) return;
     form = window.FormEngine({
       root: root,
       schema: { sections: sections, lookups: schema.lookups,
-                conditional: schema.conditional },
+                conditional: stageConditional(sections) },
       flat: true,
       /* The operation was settled at step zero and is not on this form, so it
          is handed to the engine as context — otherwise a rule keyed on it
@@ -976,12 +1105,14 @@
 
   /* What the reference databases know about this well — flow tests,
      production trend, videometry — loaded when the box is opened. */
-  function resetRefPanel(well) {
+  function resetRefPanel(well, stage) {
     var refWrap = A.qs('#wf-ref-wrap');
     if (!refWrap) return;
     refWrap.open = false;
     A.qs('#wf-ref').innerHTML = '';
-    refWrap.classList.toggle('hidden', !well);
+    // the process builder decides, per stage, whether this box is shown
+    var shown = !!well && !(stage && stage.show_refdata === false);
+    refWrap.classList.toggle('hidden', !shown);
     refWrap.dataset.well = well || '';
     refWrap.dataset.loaded = '';
   }
@@ -1096,6 +1227,10 @@
   async function submitStage() {
     if (!current) return;
     var button = A.qs('#wf-submit');
+    /* «موجودی کافی نیست»: the stock alarm is a warning, not a block — the
+       count may not be up to date — so the owner confirms knowingly */
+    var alerts = form && form.stockAlerts ? form.stockAlerts() : [];
+    if (alerts.length && !window.confirm('⚠ ' + alerts.join('\n⚠ ') + '\n\nبا وجود این هشدارها مرحله ثبت شود؟')) return;
     button.disabled = true;
     form.clearErrors();
     try {
@@ -1476,7 +1611,18 @@
       var button = ev.target.closest('[data-i]');
       if (button) openStage(items[Number(button.dataset.i)]);
     });
-    A.qs('#btn-refresh').addEventListener('click', loadInbox);
+    A.qs('#btn-refresh').addEventListener('click', function () { loadInbox(); loadBoard(); });
+    loadBoard();
+    ['#wb-days', '#wb-stage'].forEach(function (sel) {
+      var el = A.qs(sel); if (el) el.addEventListener('change', loadBoard);
+    });
+    var wq = A.qs('#wb-q'); if (wq) wq.addEventListener('input', renderBoard);
+    document.addEventListener('click', function (ev) {
+      var chip = ev.target.closest('[data-wb-inst]');
+      if (!chip) return;
+      openStage({ id: Number(chip.dataset.wbInst), stage_number: Number(chip.dataset.wbStage) });
+      var d = A.qs('#wf-detail'); if (d) d.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
     var decisionBox = A.qs('#wf-decision-options');
     if (decisionBox) decisionBox.addEventListener('change', function (ev) {
       // Picking a stage to go back to is choosing that decision.

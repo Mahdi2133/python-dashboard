@@ -810,6 +810,9 @@ def submitted_summary(instance: WorkflowInstance, except_stage: int = None,
     return out
 
 
+from .gridlayout import grid_cells, is_grid, row_title, strip_row  # noqa: E402
+
+
 def _stage_layout(stage: WorkflowStage) -> dict:
     """field name → (form order, place in form, form code, form title, label)
     for the forms a stage carries, in the stage's own order — so a summary
@@ -825,14 +828,24 @@ def _stage_layout(stage: WorkflowStage) -> dict:
                                                        d.get("label") or "", d.get("label")))
             continue
         fields = sorted(item.section.fields, key=lambda f: f.sort_order or 0)
+        sec = item.section
+        # «جدول ردیفی»: each row its own little group («… — کارکرد 2»), so the
+        # summary lays the rows side by side as a table, as the form does
+        cells = (grid_cells(sec, [f.field_name for f in fields if f.is_active])
+                 if is_grid(sec) else {})
         for k, f in enumerate(fields):
             if not f.is_active:
                 continue
             d = f.render_dict()
             if d is None:
                 continue
-            where.setdefault(d["field_name"], (n, k, item.section.code, item.section.title,
-                                               d.get("label")))
+            if f.field_name in cells:
+                _col, row = cells[f.field_name]
+                where.setdefault(d["field_name"], (
+                    n, (row + 1) * 1000 + k, f"{sec.code}#r{row}",
+                    f"{sec.title} — {row_title(sec, row)}", strip_row(d.get("label"), sec, row)))
+                continue
+            where.setdefault(d["field_name"], (n, k, sec.code, sec.title, d.get("label")))
     return where
 
 
@@ -853,7 +866,10 @@ def _placed(name, where, home, labels) -> dict:
 
 
 def chart_inputs(cfg: dict) -> list:
-    """The field names a chart reads: its points and its catalogue pickers."""
+    """The field names a chart reads: its points, its catalogue pickers and
+    the fields its «منحنی از فرمول» uses (the efficiency curve's [fc_a] and
+    [fc_b] — without them a summary could not tell the curve holds)."""
+    import re as _re
     names = []
     for sr in (cfg or {}).get("series") or []:
         cat = sr.get("catalogue")
@@ -861,7 +877,16 @@ def chart_inputs(cfg: dict) -> list:
             names += [cat.get("type"), cat.get("stages")]
         else:
             names += list(sr.get("x") or []) + list(sr.get("y") or [])
-    return [n for n in names if isinstance(n, str) and n]
+        curve = sr.get("curve")
+        if isinstance(curve, dict):
+            for text in (curve.get("y"), curve.get("require")):
+                names += [m.strip() for m in _re.findall(r"\[([^\]]+)\]", str(text or ""))
+                          if m.strip() != "x"]
+    out = []
+    for n in names:
+        if isinstance(n, str) and n and n not in out:
+            out.append(n)
+    return out
 
 
 def stage_charts(stage: WorkflowStage, values: dict) -> list:
@@ -2582,3 +2607,95 @@ def previous_values_for(well_id, before_record_id=None) -> dict:
         } if newest is not None else None),
         "has_history": bool(history),
     }
+
+
+def renumber_stages(workflow, wanted: list) -> int:
+    """Renumber the stages of one process into the order of ``wanted`` (stage
+    ids, step zero first). Returns how many stages moved.
+
+    A stage number is not a label — the engine routes on it, every stage entry
+    carries a copy, attachments, approval requests and warehouse movements are
+    filed under it, «در صورت رد» and «پس از ثبت … باز شود» point at it. So the
+    move takes all of that with it. Done in two passes through negative
+    numbers, because (workflow_id, stage_number) and (instance_id,
+    stage_number) are unique and a one-pass renumbering collides with itself.
+    """
+    from ..models import WorkflowAttachment
+    stages = {s.id: s for s in workflow.stages}
+    moves = {sid: index for index, sid in enumerate(wanted)
+             if sid in stages and stages[sid].stage_number != index}
+    if not moves:
+        return 0
+    old_of = {sid: stages[sid].stage_number for sid in moves}
+    instances = [i.id for i in WorkflowInstance.query.filter_by(workflow_id=workflow.id).all()]
+
+    # pass one: park everything that moves out of the way
+    for offset, sid in enumerate(moves):
+        stages[sid].stage_number = -(1000 + offset)
+    db.session.flush()
+    for offset, sid in enumerate(moves):
+        park = -(1000 + offset)
+        WorkflowStageEntry.query.filter(
+            WorkflowStageEntry.stage_id == sid,
+            WorkflowStageEntry.instance_id.in_(instances)).update(
+                {"stage_number": park}, synchronize_session=False)
+        WorkflowAttachment.query.filter(
+            WorkflowAttachment.instance_id.in_(instances),
+            WorkflowAttachment.stage_number == old_of[sid]).update(
+                {"stage_number": park}, synchronize_session=False)
+    db.session.flush()
+
+    # pass two: put them where they belong
+    for sid, number in moves.items():
+        stages[sid].stage_number = number
+        WorkflowStageEntry.query.filter(
+            WorkflowStageEntry.stage_id == sid,
+            WorkflowStageEntry.instance_id.in_(instances)).update(
+                {"stage_number": number}, synchronize_session=False)
+    for offset, sid in enumerate(moves):
+        WorkflowAttachment.query.filter(
+            WorkflowAttachment.instance_id.in_(instances),
+            WorkflowAttachment.stage_number == -(1000 + offset)).update(
+                {"stage_number": moves[sid]}, synchronize_session=False)
+    db.session.flush()
+
+    remap = {old_of[sid]: moves[sid] for sid in moves}
+    for stage in workflow.stages:
+        if stage.reject_to_stage in remap:
+            stage.reject_to_stage = remap[stage.reject_to_stage]
+        if stage.waits_for_list:
+            stage.waits_for = ",".join(str(remap.get(n, n)) for n in stage.waits_for_list)
+        # a decision action that sends the process back names a stage too
+        acts = stage.actions
+        if any(a.get("target_stage") in remap for a in acts):
+            import json as _json
+            raw = _json.loads(stage.actions_json or "[]")
+            for a in raw if isinstance(raw, list) else []:
+                if a.get("target_stage") in remap:
+                    a["target_stage"] = remap[a["target_stage"]]
+            stage.actions_json = _json.dumps(raw, ensure_ascii=False)
+    for instance in WorkflowInstance.query.filter_by(workflow_id=workflow.id).all():
+        if instance.current_stage in remap:
+            instance.current_stage = remap[instance.current_stage]
+        if instance.entry_stage in remap:
+            instance.entry_stage = remap[instance.entry_stage]
+    # approval requests and the warehouse ledger keep a stage number as well
+    if instances:
+        try:
+            from ..models.workflow import WorkflowApprovalRequest
+            for req in WorkflowApprovalRequest.query.filter(
+                    WorkflowApprovalRequest.instance_id.in_(instances)).all():
+                if req.stage_number in remap:
+                    req.stage_number = remap[req.stage_number]
+        except ImportError:
+            pass
+        try:
+            from ..warehouse.models import WhMovement, WhPartAction
+            for model in (WhMovement, WhPartAction):
+                for row in model.query.filter(model.instance_id.in_(instances)).all():
+                    if row.stage_number in remap:
+                        row.stage_number = remap[row.stage_number]
+        except Exception:  # noqa: BLE001 — a missing warehouse file must not stop a reorder
+            log.exception("Could not renumber warehouse rows")
+    db.session.flush()
+    return len(moves)

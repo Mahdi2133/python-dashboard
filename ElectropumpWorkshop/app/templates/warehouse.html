@@ -15,6 +15,7 @@
   <button class="tab" data-tab="moves">🔁 گردش</button>
   <button class="tab" data-tab="new">➕ ثبت ورود / خروج</button>
   <button class="tab" data-tab="items">🗂 اقلام و وضعیت‌ها</button>
+  <button class="tab" data-tab="count">📋 انبارگردانی و شناسنامه‌ی تجهیزات</button>
 </div>
 
 <div class="card wh-filters">
@@ -56,7 +57,9 @@
   <div class="table-wrapper">
     <div class="table-toolbar"><h2>موجودی (ورود − خروج)</h2>
       <a class="btn-ghost" id="wh-x-stock" href="#">⬇ اکسل</a></div>
-    <div class="table-scroll"><table><thead><tr><th>انبار</th><th>کالا</th><th>وضعیت</th><th>ورود</th><th>خروج</th>
+    <div class="hint">الکتروموتور به کیلووات، پمپ به تیپ/طبقه، الکتروپمپ با برچسب کامل و قطعه‌های وابسته به تیپ پمپ
+      (پروانه، بوش، طبقه) به تفکیک تیپ شمرده می‌شوند.</div>
+    <div class="table-scroll"><table><thead><tr><th>انبار</th><th>کالا</th><th>تیپ</th><th>وضعیت</th><th>ورود</th><th>خروج</th>
       <th>موجودی</th><th>واحد</th></tr></thead><tbody id="wh-stock"></tbody></table></div>
   </div>
 </div>
@@ -66,7 +69,7 @@
     <div class="table-toolbar"><h2>گردش انبار <span class="record-count-badge" id="wh-mcount">۰</span></h2>
       <a class="btn-ghost" id="wh-x-moves" href="#">⬇ اکسل</a></div>
     <div class="table-scroll"><table><thead><tr><th>تاریخ</th><th>انبار</th><th>ورود/خروج</th><th>علت</th><th>کالا</th>
-      <th>مشخصات</th><th>پلاک</th><th>وضعیت</th><th>مقدار</th><th>چاه</th><th>مرحله</th><th>کاربر</th><th></th></tr></thead>
+      <th>مشخصات</th><th>تیپ</th><th>پلاک</th><th>وضعیت</th><th>مقدار</th><th>چاه</th><th>مرحله</th><th>کاربر</th><th></th></tr></thead>
       <tbody id="wh-moves"></tbody></table></div>
   </div>
 </div>
@@ -101,8 +104,44 @@
     <button type="button" class="btn-primary wh-manage" id="it-add">➕ کالای جدید</button>
   </div>
   <div class="table-wrapper"><div class="table-scroll"><table><thead><tr><th>کد</th><th>نام کالا</th><th>نوع</th><th>گروه</th>
-    <th>واحد</th><th>فعال</th><th>منبع</th><th></th></tr></thead><tbody id="it-body"></tbody></table></div></div>
+    <th>واحد</th><th>تعداد در هر تجهیز</th><th>به تفکیک تیپ</th><th>فعال</th><th>منبع</th><th></th></tr></thead><tbody id="it-body"></tbody></table></div></div>
+  <div class="hint mt-1">«تعداد در هر تجهیز» (به تعداد طبقات / عدد ثابت) و «به تفکیک تیپ» در فرم‌ساز ← فرم قطعات ← فهرست قطعات
+    ویرایش می‌شود.</div>
   <div class="card mt-2"><div class="section-title">وضعیت‌های کالا</div><div id="cond-list"></div></div>
+</div>
+
+<div class="tab-panel hidden" data-panel="count">
+  <div class="charts-grid">
+    <div class="chart-card">
+      <h3>📋 انبارگردانی (موجودی اول دوره)</h3>
+      <p class="hint">موجودی‌ای که همه‌ی ورود و خروج‌های فرایند از آن شروع می‌شوند. موجودی فعلی «نمونه» است تا فایل
+        انبارگردانی واقعی را وارد کنید — ورود فایل، موجودی اول دوره‌ی قبلی (از جمله نمونه) را جایگزین می‌کند.
+        ستون‌ها: انبار، کد کالا یا نام کالا، تیپ (kW / تیپ/طبقه / تیپ پمپ)، وضعیت، تعداد.</p>
+      <div class="toolbar-actions">
+        <a class="btn-ghost" href="/api/warehouse/opening.xlsx">⬇ موجودی فعلی (قالب انبارگردانی)</a>
+        <label class="btn-ghost wh-manage" style="cursor:pointer">⬆ ورود فایل انبارگردانی<input type="file" id="op-import" accept=".xlsx,.xlsm" hidden></label>
+      </div>
+      <div id="op-result" class="mt-1"></div>
+    </div>
+    <div class="chart-card">
+      <h3>🏷 شناسنامه‌ی تجهیزات (پلاک / کد)</h3>
+      <p class="hint">پلاک و کد الکتروموتورها و پمپ‌ها که در فرم‌های کشیدن، مونتاژ و دمونتاژ جستجو و انتخاب می‌شوند.
+        فعلاً از سوابق قطعات کارگاه ساخته شده (نمونه)؛ فایل اصلی را با همین ستون‌ها وارد کنید: کد تجهیز / پلاک، نوع تجهیز،
+        تیپ، شرح، سازنده، شماره اموال، وضعیت / محل.</p>
+      <div class="toolbar-actions">
+        <a class="btn-ghost" href="/api/warehouse/register.xlsx">⬇ خروجی اکسل شناسنامه</a>
+        <label class="btn-ghost wh-manage" style="cursor:pointer">⬆ ورود شناسنامه از اکسل<input type="file" id="rg-import" accept=".xlsx,.xlsm" hidden></label>
+      </div>
+      <div class="field-group cols-3 mt-1">
+        <div class="field span-2"><input type="search" id="rg-q" placeholder="جستجوی پلاک، کد یا تیپ"></div>
+        <div class="field"><select id="rg-kind"><option value="">همه</option><option value="موتور">الکتروموتور</option>
+          <option value="پمپ">پمپ</option></select></div>
+      </div>
+      <div class="hint" id="rg-count"></div>
+      <div class="table-scroll" style="max-height:360px"><table><thead><tr><th>کد / پلاک</th><th>نوع</th><th>تیپ</th><th>شرح</th>
+        <th>وضعیت / محل</th></tr></thead><tbody id="rg-body"></tbody></table></div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 {% block scripts %}

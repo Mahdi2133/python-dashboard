@@ -76,6 +76,80 @@ def summary():
     return ok(wh.summary(_args()))
 
 
+@bp.get("/stock-summary")
+@permission_required_any(*FORM_READERS, "warehouse.view")
+def stock_summary():
+    """The stock a form shows beside its rows (Kahani, Mahdi): equipment by
+    type and condition, parts by type and condition."""
+    return ok(wh.stock_summary())
+
+
+# ── the stock count («انبارگردانی») and the equipment register ───────────────
+def _xlsx_file(data, name):
+    return send_file(io.BytesIO(data), as_attachment=True, download_name=name,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@bp.get("/opening.xlsx")
+@permission_required("warehouse.view")
+def opening_export():
+    return _xlsx_file(wh.opening_xlsx(), "warehouse_stock_count.xlsx")
+
+
+@bp.post("/opening/import")
+@permission_required("warehouse.manage")
+def opening_import():
+    f = request.files.get("file")
+    if f is None:
+        return fail("فایلی انتخاب نشده است.", 422)
+    try:
+        res = wh.import_opening(f.read(), current_user())
+    except ValueError as exc:
+        db.session.rollback()
+        return fail(str(exc), 422)
+    record_audit("import", "warehouse", None,
+                 summary=f"انبارگردانی: {res['rows']} ردیف موجودی اول دوره", commit=True)
+    return ok(res, message="موجودی اول دوره (انبارگردانی) جایگزین شد.")
+
+
+@bp.get("/register")
+@permission_required_any(*FORM_READERS, "warehouse.view")
+def register():
+    from ..warehouse.models import WhEquipment
+    q = WhEquipment.query
+    if request.args.get("kind"):
+        q = q.filter(WhEquipment.kind.contains(request.args["kind"]))
+    if request.args.get("q"):
+        text = request.args["q"].strip()
+        q = q.filter(db.or_(WhEquipment.code.contains(text), WhEquipment.name.contains(text),
+                            WhEquipment.type_label.contains(text)))
+    total = q.count()
+    rows = q.order_by(WhEquipment.code).limit(min(2000, request.args.get("limit", 200, type=int))).all()
+    return ok({"total": total, "rows": [e.to_dict() for e in rows]})
+
+
+@bp.get("/register.xlsx")
+@permission_required("warehouse.view")
+def register_export():
+    return _xlsx_file(wh.register_xlsx(), "equipment_register.xlsx")
+
+
+@bp.post("/register/import")
+@permission_required("warehouse.manage")
+def register_import():
+    f = request.files.get("file")
+    if f is None:
+        return fail("فایلی انتخاب نشده است.", 422)
+    try:
+        res = wh.import_register(f.read())
+    except ValueError as exc:
+        db.session.rollback()
+        return fail(str(exc), 422)
+    record_audit("import", "warehouse", None,
+                 summary=f"شناسنامه تجهیزات: {res['added']} جدید، {res['updated']} به‌روز", commit=True)
+    return ok(res, message="شناسنامه تجهیزات وارد شد.")
+
+
 # ── items and conditions ─────────────────────────────────────────────────────
 @bp.get("/items")
 @permission_required("warehouse.view")
@@ -105,8 +179,24 @@ def save_item():
     item.unit = (p.get("unit") or "").strip() or "عدد"
     item.is_active = bool(p.get("is_active", True))
     item.note = (p.get("note") or "").strip() or None
+    if "qty_rule" in p:
+        item.qty_rule = _qty_rule(p.get("qty_rule"))
+    if "per_type" in p:
+        item.per_type = bool(p.get("per_type"))
     db.session.commit()
     return ok(item.to_dict(), message="ذخیره شد.")
+
+
+def _qty_rule(value):
+    """'' (typed), 'stages', or a positive number kept as text («1»)."""
+    text = str(value or "").strip()
+    if text in ("", "stages"):
+        return text or None
+    try:
+        n = float(text.replace("٫", "."))
+    except ValueError:
+        return None
+    return f"{n:g}" if n > 0 else None
 
 
 @bp.post("/items/bulk")
@@ -148,6 +238,10 @@ def save_items_bulk():
             item.kind = "equipment" if p.get("kind") == "equipment" else "part"
         if "is_active" in p:
             item.is_active = bool(p.get("is_active"))
+        if "qty_rule" in p:
+            item.qty_rule = _qty_rule(p.get("qty_rule"))
+        if "per_type" in p:
+            item.per_type = bool(p.get("per_type"))
         item.unit = item.unit or "عدد"
         db.session.flush()
         saved.append(item)
@@ -270,18 +364,18 @@ def export(what):
     conds = {c.code: c.label for c in WhCondition.query.all()}
     if what == "movements":
         rows = wh.movements(args, limit=100000)
-        out = _xlsx("گردش انبار", ["تاریخ", "انبار", "ورود/خروج", "علت", "کالا", "مشخصات", "پلاک",
+        out = _xlsx("گردش انبار", ["تاریخ", "انبار", "ورود/خروج", "علت", "کالا", "مشخصات", "تیپ", "پلاک",
                                     "وضعیت", "مقدار", "واحد", "چاه", "فرایند", "مرحله", "کاربر",
                                     "توضیحات"],
                     [[r["jdate"], r["warehouse_label"], r["direction_label"], r["reason_label"],
-                      r["item_name"], r["spec"], r["serial"], conds.get(r["condition"], r["condition"]),
+                      r["item_name"], r["spec"], r["variant"], r["serial"], conds.get(r["condition"], r["condition"]),
                       r["qty"], r["unit"], r["well_name"], r["workflow_name"], r["stage_title"],
                       r["user_name"], r["note"]] for r in rows])
     elif what == "stock":
         rows = wh.stock(args)
-        out = _xlsx("موجودی انبار", ["انبار", "کالا", "وضعیت", "ورود", "خروج", "موجودی", "واحد"],
-                    [[r["warehouse_label"], r["item_name"], r["condition_label"], r["in"], r["out"],
-                      r["balance"], r["unit"]] for r in rows])
+        out = _xlsx("موجودی انبار", ["انبار", "کالا", "تیپ", "وضعیت", "ورود", "خروج", "موجودی", "واحد"],
+                    [[r["warehouse_label"], r["item_name"], r["variant"], r["condition_label"], r["in"],
+                      r["out"], r["balance"], r["unit"]] for r in rows])
     elif what == "parts":
         from ..warehouse.models import WhPartAction
         q = WhPartAction.query.order_by(WhPartAction.date_num, WhPartAction.id)

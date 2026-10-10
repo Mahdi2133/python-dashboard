@@ -25,7 +25,7 @@ from ..services.auth import (current_user, login_required,
                              permission_required_any)
 from ..services.jalali import to_jalali_str
 from ..services.lookups import normalize_text
-from ..services.workflow import (WorkflowError, active_workflow,
+from ..services.workflow import (WorkflowError, active_workflow, renumber_stages,
                                  active_workflows, clone_workflow,
                                  applicable_stages, awaiting_approval,
                                  cancel_instance, current_stage_of,
@@ -484,67 +484,14 @@ def reorder_stages():
         return fail("فهرست مرحله‌ها با فرایند نمی‌خواند؛ صفحه را تازه کنید.",
                     422)
 
-    moves = {sid: index for index, sid in enumerate(wanted)
-             if stages[sid].stage_number != index}
-    if not moves:
+    moved = renumber_stages(workflow, wanted)
+    if not moved:
         return ok({"moved": 0}, message="ترتیب همین بود.")
-    old_of = {sid: stages[sid].stage_number for sid in moves}
-
-    instances = [i.id for i in
-                 WorkflowInstance.query.filter_by(workflow_id=workflow.id).all()]
-
-    # ── pass one: park everything that moves out of the way ────────────────
-    for offset, sid in enumerate(moves):
-        stages[sid].stage_number = -(1000 + offset)
-    db.session.flush()
-    for offset, sid in enumerate(moves):
-        park = -(1000 + offset)
-        WorkflowStageEntry.query.filter(
-            WorkflowStageEntry.stage_id == sid,
-            WorkflowStageEntry.instance_id.in_(instances)).update(
-                {"stage_number": park}, synchronize_session=False)
-        WorkflowAttachment.query.filter(
-            WorkflowAttachment.instance_id.in_(instances),
-            WorkflowAttachment.stage_number == old_of[sid]).update(
-                {"stage_number": park}, synchronize_session=False)
-    db.session.flush()
-
-    # ── pass two: put them where they belong ───────────────────────────────
-    for sid, number in moves.items():
-        stages[sid].stage_number = number
-        WorkflowStageEntry.query.filter(
-            WorkflowStageEntry.stage_id == sid,
-            WorkflowStageEntry.instance_id.in_(instances)).update(
-                {"stage_number": number}, synchronize_session=False)
-    for offset, sid in enumerate(moves):
-        WorkflowAttachment.query.filter(
-            WorkflowAttachment.instance_id.in_(instances),
-            WorkflowAttachment.stage_number == -(1000 + offset)).update(
-                {"stage_number": moves[sid]}, synchronize_session=False)
-    db.session.flush()
-
-    # «در صورت رد» stores a number, so it has to follow the move too — and so
-    # does «پس از ثبت … باز شود».
-    remap = {old_of[sid]: moves[sid] for sid in moves}
-    for stage in workflow.stages:
-        if stage.reject_to_stage in remap:
-            stage.reject_to_stage = remap[stage.reject_to_stage]
-        if stage.waits_for_list:
-            stage.waits_for = ",".join(str(remap.get(n, n)) for n in stage.waits_for_list)
-
-    # Wherever a process was sitting is now called something else.
-    for instance in WorkflowInstance.query.filter_by(
-            workflow_id=workflow.id).all():
-        if instance.current_stage in remap:
-            instance.current_stage = remap[instance.current_stage]
-        if instance.entry_stage in remap:
-            instance.entry_stage = remap[instance.entry_stage]
-
     record_audit("update", "workflow_definition", workflow.id,
                  summary=f"تغییر ترتیب مرحله‌های «{workflow.name}»")
     db.session.commit()
-    return ok({"moved": len(moves)},
-              message=f"ترتیب {len(moves)} مرحله عوض شد.")
+    return ok({"moved": moved},
+              message=f"ترتیب {moved} مرحله عوض شد.")
 
 
 def _wait_loop(workflow) -> list:
@@ -626,6 +573,8 @@ def update_stage(stage_id):
             return fail("مهلت مرحله نمی‌تواند منفی باشد.", 422)
     if "route_by_center" in payload:
         stage.route_by_center = payload["route_by_center"] in (True, "true", "1", 1)
+    if "show_refdata" in payload:
+        stage.show_refdata = payload["show_refdata"] in (True, "true", "1", 1)
     # The متولی list. One stage can belong to all eight مراکز آبرسانی, so this
     # is a list; ``assignee_id`` follows its first entry, which is the name
     # every single-owner screen still shows.
@@ -1450,6 +1399,88 @@ def inbox():
               approval_results=approval["approval_results"],
               running=WorkflowInstance.query.filter_by(
                   status=INSTANCE_OPEN).count())
+
+
+BOARD_STATES = {"todo": "در انتظار شما", "waiting": "منتظر مرحله‌های قبل",
+                "approval": "در انتظار تأیید", "done": "انجام شد",
+                "returned": "برگشت خورده"}
+
+
+@bp.get("/board")
+@permission_required("workflow.act")
+def board():
+    """«وضعیت چاه‌ها»: every well that reaches a stage of mine, by office.
+
+    For each stage this person owns (the admin: every stage), the runs that
+    visit it — open ones, and those finished within ``days`` — with where the
+    well stands at that stage: waiting for me, waiting on an earlier stage,
+    with its approver, sent back, or done. Grouped by the well's مرکز so
+    several offices running their wells at once stay apart, and the counts
+    say how many have gone and how many remain."""
+    import datetime as _dt
+    from ..models.workflow import (ENTRY_AWAITING, ENTRY_DONE, ENTRY_REJECTED,
+                                   INSTANCE_COMPLETED)
+    user = current_user()
+    manager = user.role == "admin" or user.can("workflow.manage")
+    days = max(1, min(3650, request.args.get("days", 60, type=int)))
+    since = _dt.datetime.now() - _dt.timedelta(days=days)
+    only_stage = request.args.get("stage_id", type=int)
+    q = WorkflowInstance.query.filter(WorkflowInstance.status.in_(
+        [INSTANCE_OPEN, INSTANCE_COMPLETED]))
+    stages_seen, offices = {}, {}
+    for instance in q.order_by(WorkflowInstance.created_at.desc()).all():
+        if instance.status != INSTANCE_OPEN and (instance.completed_at or instance.updated_at
+                                                  or since) < since:
+            continue
+        for stage in applicable_stages(instance):
+            if only_stage and stage.id != only_stage:
+                continue
+            mine = user.id in owners_of(instance, stage) or stage.approver_id == user.id
+            if not (mine or manager):
+                continue
+            entry = next((e for e in instance.entries
+                          if e.stage_number == stage.stage_number), None)
+            status = entry.status if entry else ENTRY_PENDING
+            if status in ENTRY_DONE:
+                state = "done"
+            elif status == ENTRY_AWAITING:
+                state = "approval"
+            elif status == ENTRY_REJECTED:
+                state = "returned"
+            elif instance.status != INSTANCE_OPEN:
+                continue                     # finished without this stage
+            elif stage_open(instance, stage):
+                state = "todo"
+            else:
+                state = "waiting"
+            stages_seen[stage.id] = {"id": stage.id, "stage_number": stage.stage_number,
+                                     "title": stage.title,
+                                     "workflow": stage.workflow.name if stage.workflow else None}
+            well = instance.well
+            office = (well.center.label if well is not None and well.center else "بدون مرکز")
+            box = offices.setdefault(office, {"office": office, "counts": dict.fromkeys(BOARD_STATES, 0),
+                                              "wells": []})
+            box["counts"][state] += 1
+            box["wells"].append({
+                "instance_id": instance.id, "well": instance.to_dict(with_entries=False)["well"],
+                "well_pm_code": well.pm_code if well is not None else None,
+                "stage_id": stage.id, "stage_number": stage.stage_number,
+                "stage_title": stage.title, "state": state, "state_label": BOARD_STATES[state],
+                "operation_label": instance.operation_label,
+                "created_at_j": to_jalali_str(instance.created_at),
+                "done_at_j": (to_jalali_str(entry.submitted_at)
+                              if entry is not None and entry.submitted_at else None),
+                "can_open": state in ("todo", "returned", "approval") and instance.status == INSTANCE_OPEN})
+    order = {"todo": 0, "returned": 1, "approval": 2, "waiting": 3, "done": 4}
+    out = sorted(offices.values(), key=lambda o: (-(o["counts"]["todo"] + o["counts"]["returned"]),
+                                                  o["office"]))
+    for o in out:
+        o["wells"].sort(key=lambda w: (order[w["state"]], w["stage_number"], w["well"] or ""))
+        o["remaining"] = sum(o["counts"][k] for k in ("todo", "returned", "approval", "waiting"))
+        o["done"] = o["counts"]["done"]
+    totals = {k: sum(o["counts"][k] for o in out) for k in BOARD_STATES}
+    return ok({"offices": out, "totals": totals, "states": BOARD_STATES, "days": days,
+               "stages": sorted(stages_seen.values(), key=lambda s: (s["workflow"] or "", s["stage_number"]))})
 
 
 @bp.get("/instances/<int:instance_id>")

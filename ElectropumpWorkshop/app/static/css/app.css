@@ -1586,3 +1586,82 @@ tr.clickable { cursor:pointer; }
 .whp-none { padding:8px 10px; }
 .whp-table tr.whp-empty td { text-align:center; padding:12px; }
 .whp-table input.whp-n { min-width:64px; text-align:center; }
+
+/* ── کارتابل: offices and the wells board ──────────────────────────────── */
+.wf-office { border:1px solid var(--border); border-radius:10px; margin:8px 0; background:#fff; }
+.wf-office > summary { display:flex; justify-content:space-between; align-items:center; gap:8px;
+  padding:8px 10px; cursor:pointer; font-weight:800; color:var(--primary); background:#f4f8fb;
+  border-radius:10px; list-style:none; }
+.wf-office > summary::-webkit-details-marker { display:none; }
+.wf-office[open] > summary { border-bottom:1px solid var(--border); border-radius:10px 10px 0 0; }
+.wf-office-n { font-size:12px; font-weight:600; color:var(--text-muted); }
+.wf-office .wf-group, .wf-office .wf-item { margin-inline:6px; }
+.wf-board > summary { cursor:pointer; font-weight:800; color:var(--primary); padding:2px 0; }
+.wb-tools { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin:10px 0; }
+.wb-field { display:flex; flex-direction:column; gap:3px; min-width:150px; }
+.wb-field label { font-size:12px; color:var(--text-muted); }
+.wb-legend { display:flex; flex-wrap:wrap; gap:4px; margin-inline-start:auto; }
+.wb-legend .wb-chip { cursor:default; }
+.wb-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:10px; }
+.wb-office { border:1px solid var(--border); border-radius:10px; padding:10px; background:#fff; }
+.wb-head { display:flex; justify-content:space-between; align-items:center; gap:6px; flex-wrap:wrap; }
+.wb-counts { display:flex; gap:6px; font-size:12px; }
+.wb-n-left { color:#b45309; font-weight:700; }
+.wb-n-done { color:#15803d; font-weight:700; }
+.wb-bar { height:6px; background:#fde7c7; border-radius:4px; margin:8px 0 6px; overflow:hidden; }
+.wb-bar > span { display:block; height:100%; background:#22c55e; }
+.wb-sub { font-size:11.5px; color:var(--text-muted); margin:6px 0 3px; }
+.wb-chips { display:flex; flex-wrap:wrap; gap:4px; }
+.wb-chip { border:1px solid transparent; border-radius:14px; padding:2px 9px; font-size:12px; cursor:pointer;
+  background:#eef2f5; color:#334155; font-family:inherit; }
+.wb-chip small { opacity:.7; }
+.wb-todo { background:#fff4e5; border-color:#f59e0b; color:#92400e; font-weight:700; }
+.wb-returned { background:#fee2e2; border-color:#ef4444; color:#991b1b; font-weight:700; }
+.wb-approval { background:#ede9fe; border-color:#8b5cf6; color:#5b21b6; }
+.wb-waiting { background:#f1f5f9; border-color:#cbd5e1; color:#475569; }
+.wb-done { background:#dcfce7; border-color:#22c55e; color:#166534; }
+
+/* ── «جدول ردیفی»: کارکرد 1 … 5 in one table ─────────────────────────────── */
+.grid-scroll { overflow-x:auto; margin-top:6px; }
+.fe-grid { border-collapse:separate; border-spacing:0; width:100%; min-width:420px; font-size:13px; }
+.fe-grid th, .fe-grid td { border-bottom:1px solid var(--border); padding:4px 5px; vertical-align:middle; }
+.fe-grid thead th { background:#f4f8fb; color:var(--primary); font-weight:700; font-size:12.5px;
+  text-align:center; white-space:nowrap; position:sticky; top:0; }
+.fe-grid th.g-row { background:#f8fafc; color:#475569; font-weight:700; white-space:nowrap; text-align:start;
+  width:1%; }
+.fe-grid td .field.grid-cell { margin:0; padding:0; min-width:90px; }
+.fe-grid td .field.grid-cell input, .fe-grid td .field.grid-cell select { width:100%; min-width:80px; padding:6px 7px; }
+.fe-grid td .field.grid-cell .calc-output, .fe-grid td .field.grid-cell output { min-width:70px; }
+.fe-grid td.g-none { background:#fafafa; }
+.fe-grid .btn-group { flex-wrap:nowrap; }
+.grid-calc { margin-top:10px; }
+.grid-calc-title { font-size:12.5px; font-weight:700; color:var(--text-muted); }
+.form-section.calc-collapsed:not(.calc-open) .grid-calc { display:none; }
+
+/* ── a dropdown with a search box ─────────────────────────────────────────── */
+.ss-wrap { display:flex; flex-direction:column; gap:4px; width:100%; }
+.ss-wrap .ss-q { padding:5px 9px; font-size:12.5px; border:1px dashed var(--border); border-radius:8px;
+  background:#fbfdff; }
+.ss-wrap.ss-open select { box-shadow:0 6px 18px rgba(15,23,42,.12); border-color:var(--primary); }
+.ss-wrap select[size] { padding:2px; }
+.ss-wrap select[size] option { padding:4px 8px; }
+.fe-grid .calc-formula { display:none; }
+
+/* ── stock beside the warehouse rows ──────────────────────────────────────── */
+.wh-stock { margin:4px 0 8px; border:1px dashed var(--border); border-radius:8px; padding:4px 8px; background:#fbfdff; }
+.wh-stock > summary { cursor:pointer; font-size:12.5px; color:var(--primary); font-weight:700; }
+.wh-stock-body { padding:6px 2px 2px; line-height:2; }
+.wh-chip { display:inline-block; border:1px solid var(--border); border-radius:12px; padding:0 8px; margin:1px;
+  background:#fff; font-size:12px; direction:ltr; }
+.wh-chip small { direction:rtl; color:var(--text-muted); }
+.wh-avail, .wh-reg-note { font-size:11px; margin-top:2px; }
+.err-text { color:var(--danger) !important; font-weight:700; }
+tr.wh-short td { background:#fff1f2; }
+.whp-alarm { background:#fff1f2; border:1px solid #fecaca; color:#991b1b; border-radius:8px; padding:6px 10px;
+  margin:6px 0; font-size:12.5px; font-weight:700; }
+tr.whp-short td { background:#fff1f2; }
+tr.whp-short td.whp-stock { color:#b91c1c; font-weight:700; }
+tr.whp-mismatch td { background:#fffbeb; }
+.whp-type { color:var(--primary); font-weight:700; font-size:12px; }
+td.whp-stock { white-space:nowrap; font-size:11.5px; }
+.whp-filter { width:100%; }

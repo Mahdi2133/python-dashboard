@@ -199,6 +199,8 @@ def create_section():
         show_on_entry=payload.get("show_on_entry", True) in (True, "true", "1", 1),
         collapse_formulas=payload.get("collapse_formulas") in (True, "true", "1", 1),
         repeat_group=(normalize_text(payload.get("repeat_group")) or None),
+        layout=("grid" if payload.get("layout") == "grid" else None),
+        grid_label=(normalize_text(payload.get("grid_label")) or None),
     )
     db.session.add(section)
     db.session.flush()
@@ -214,9 +216,11 @@ def update_section(section_id):
     if section is None:
         return fail("بخش یافت نشد.", 404)
     payload = body()
-    for attr in ("title", "icon", "description", "visible_when", "repeat_group"):
+    for attr in ("title", "icon", "description", "visible_when", "repeat_group", "grid_label"):
         if attr in payload:
             setattr(section, attr, normalize_text(payload[attr]) or None)
+    if "layout" in payload:
+        section.layout = "grid" if payload["layout"] == "grid" else None
     for attr in ("columns", "sort_order"):
         if attr in payload:
             setattr(section, attr, int(payload[attr] or 0))
@@ -346,6 +350,7 @@ def _warehouse_settings(field, payload):
         "default_condition": raw.get("default_condition") or None,
         "spec": bool(raw.get("spec", True)), "serial": bool(raw.get("serial", True)),
     }
+    keep = lambda k, d=None: raw.get(k, before.get(k, d))  # noqa: E731
     if cfg["mode"] == "rows":
         # «ردیف‌های ثابت»: rows the form starts with (item code, a spec that
         # may be a formula, quantity); «قفل» leaves only condition and plate open
@@ -359,11 +364,19 @@ def _warehouse_settings(field, payload):
                 qty = 1
             preset.append({"item_code": str(row["item_code"]).strip(),
                            "spec": str(row.get("spec") or "").strip(),
+                           "serial": str(row.get("serial") or "").strip() or None,
                            "qty": qty if qty > 0 else 1,
                            "condition": str(row.get("condition") or "").strip() or None})
         if preset:
             cfg["preset"] = preset
             cfg["preset_lock"] = bool(raw.get("preset_lock", before.get("preset_lock")))
+        # «ستون وضعیت» shown or not; plaques searched in the equipment
+        # register; rows joined into one electropump (its item code)
+        cfg["condition"] = bool(keep("condition", True))
+        cfg["serial_source"] = "register" if keep("serial_source") == "register" else None
+        cfg["join_into"] = str(keep("join_into") or "").strip() or None
+        if normalize_text(keep("preset_hint")):
+            cfg["preset_hint"] = normalize_text(keep("preset_hint"))
     if cfg["mode"] == "parts":
         # «فرم قطعات»: the equipment whose parts are listed, the counted
         # columns, and the fields of the same form that name the equipment
@@ -377,7 +390,18 @@ def _warehouse_settings(field, payload):
             "equipment_field": pick("equipment_field"), "failure_field": pick("failure_field"),
             "cause_field": pick("cause_field"), "action_field": pick("action_field"),
             "related_action": pick("related_action"),
+            # the whole list at once; the stock checked; the pump's stage count
+            # and type for «× طبقات» and per-type parts; the equipment leaving
+            # the equipment warehouse when it is taken apart
+            "list_all": bool(keep("list_all", False)), "check_stock": bool(keep("check_stock", False)),
+            "stages_field": pick("stages_field"), "type_field": pick("type_field"),
+            "equipment_out": bool(keep("equipment_out", False)), "equipment_item": pick("equipment_item"),
         })
+        labels = keep("labels") or {}
+        if isinstance(labels, dict):
+            labels = {k: normalize_text(v) for k, v in labels.items() if k in known and normalize_text(v)}
+            if labels:
+                cfg["labels"] = labels
         if not cfg["equipment_type"]:
             return "برای «فرم قطعات» تجهیز (الکتروموتور یا پمپ) را انتخاب کنید."
         if not cfg["columns"]:

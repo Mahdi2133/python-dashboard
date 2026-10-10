@@ -233,6 +233,27 @@
     }
   };
 
+  /* The stock beside the rows (Kahani, Mahdi): equipment by type and
+     condition, parts by type and condition — read once per form. */
+  var Stock = {
+    data: null, _p: null,
+    load: function () {
+      if (Stock.data) return Promise.resolve(Stock.data);
+      if (!Stock._p) {
+        Stock._p = window.App.api.get('/api/warehouse/stock-summary').then(function (res) {
+          Stock.data = res.data; return res.data;
+        }).catch(function () { Stock._p = null; return null; });
+      }
+      return Stock._p;
+    },
+    part: function (itemId, variant) {
+      var d = Stock.data && Stock.data.parts[String(itemId)];
+      if (!d) return { new: 0, reusable: 0 };
+      var by = d[variant || ''] || {};
+      return { new: by['new'] || 0, reusable: by['reusable'] || 0 };
+    }
+  };
+
   /* One chart from its config and a reader of the form's values. Used by the
      live form and by the read-only summaries (the approver sees the same
      chart the sender drew). Series kinds:
@@ -515,6 +536,11 @@
             + A.esc(field.lookup_category || 'wells') + '"' + attrs + '>'
             + '<div class="autocomplete-list"></div></div>';
         default:
+          /* «پلاک از شناسنامه‌ی تجهیزات»: a code field searched in the register */
+          if (/^equipment/.test(field.lookup_category || '')) {
+            attrs += ' data-equip="' + A.esc(String(field.lookup_category).split(':')[1] || 'all') + '" autocomplete="off"'
+              + (field.placeholder ? '' : ' placeholder="جستجوی کد / پلاک در شناسنامه‌ی تجهیزات"');
+          }
           return '<input type="text"' + attrs + '>';
       }
     }
@@ -932,12 +958,32 @@
     var whValues = {};
     function whCfg(field) { return field.wh_config || {}; }
     /* «فرم قطعات»: every part of one equipment kind, counted — the workshop's paper form */
-    var WHP_COLS = [['installed_new', 'نصب — نو'], ['installed_repair', 'نصب — کهنه (قابل استفاده مجدد)'],
+    var WHP_COLS = [['total', 'تعداد کل'], ['installed_new', 'نصب — نو'], ['installed_repair', 'نصب — تعمیری'],
                     ['collected_new', 'جمع‌آوری — نو'], ['collected_old', 'جمع‌آوری — کهنه'],
                     ['reusable', 'قابل استفاده مجدد'], ['scrap', 'اسقاط']];
     function whpCols(cfg) {
-      var pick = (cfg.columns || []).length ? cfg.columns : WHP_COLS.map(function (c) { return c[0]; });
-      return WHP_COLS.filter(function (c) { return pick.indexOf(c[0]) !== -1; });
+      var pick = (cfg.columns || []).length ? cfg.columns
+        : WHP_COLS.map(function (c) { return c[0]; }).filter(function (k) { return k !== 'total'; });
+      var names = cfg.labels || {};
+      return WHP_COLS.filter(function (c) { return pick.indexOf(c[0]) !== -1; })
+        .map(function (c) { return [c[0], names[c[0]] || c[1]]; });
+    }
+    /* «تعداد در هر تجهیز»: as many as the pump has stages, a fixed count, or typed */
+    function whpRuleQty(cfg, it) {
+      if (!it || !it.qty_rule) return null;
+      if (it.qty_rule === 'stages') {
+        var st = cfg.stages_field
+          ? Number(String(currentValueOf(cfg.stages_field)).split('|').pop().replace(/[^\d.]/g, '')) : NaN;
+        return isNaN(st) || !st ? null : st;
+      }
+      var n = Number(it.qty_rule);
+      return isNaN(n) ? null : n;
+    }
+    /* the pump type a per-type part is counted under («384») */
+    function whpVariant(cfg, it) {
+      if (!it || !it.per_type || !cfg.type_field) return '';
+      var t = String(currentValueOf(cfg.type_field) || '').split('|')[0].split('/')[0].trim();
+      return t ? Catalogue.normType(t) : '';
     }
     /* «فرم قطعات»: search a part, add it, type its counts — only the parts
        actually touched are on the form, with their totals underneath,
@@ -948,12 +994,17 @@
         + '<div class="wh-head hint">🧩 فرم قطعات ' + A.esc(cfg.equipment_type || '') + ' — '
         + (cfg.direction === 'out' ? 'خروج از ' : 'ورود به ') + (cfg.warehouse === 'parts' ? 'انبار قطعات' : 'انبار تجهیزات')
         + '</div>'
-        + (field.read_only ? '' : '<div class="whp-pick"><input type="search" class="whp-search" autocomplete="off"'
-          + ' placeholder="🔎 جستجوی قطعه (نام یا کد انباری) و انتخاب — مثلاً «پیچ دو سر رزوه»">'
-          + '<div class="whp-suggest hidden"></div></div>')
+        + (field.read_only ? '' : cfg.list_all
+          ? '<div class="whp-pick"><input type="search" class="whp-filter" autocomplete="off"'
+            + ' placeholder="🔎 جستجو در فهرست قطعات (نام یا کد انباری)"></div>'
+          : '<div class="whp-pick"><input type="search" class="whp-search" autocomplete="off"'
+            + ' placeholder="🔎 جستجوی قطعه (نام یا کد انباری) و انتخاب — مثلاً «پیچ دو سر رزوه»">'
+            + '<div class="whp-suggest hidden"></div></div>')
+        + (cfg.check_stock && !field.read_only ? '<div class="whp-alarm hidden" data-whp-alarm="' + name + '"></div>' : '')
         + '<div class="wh-table-wrap"><table class="wh-table whp-table"><thead><tr><th>#</th><th>کد انباری</th><th>شرح قطعه</th>'
         + whpCols(cfg).map(function (c) { return '<th>' + A.esc(c[1]) + '</th>'; }).join('')
-        + '<th>توضیحات</th>' + (field.read_only ? '' : '<th></th>') + '</tr></thead><tbody></tbody><tfoot></tfoot></table></div></div>';
+        + (cfg.check_stock && !field.read_only ? '<th>موجودی انبار</th>' : '')
+        + '<th>توضیحات</th>' + ((field.read_only || cfg.list_all) ? '' : '<th></th>') + '</tr></thead><tbody></tbody><tfoot></tfoot></table></div></div>';
     }
     function whpItems(cfg) {
       var d = Warehouse.data || { items: [] };
@@ -961,34 +1012,127 @@
         return it.kind === 'part' && (!cfg.equipment_type || it.category === cfg.equipment_type);
       });
     }
-    function whpCode(it) { return (it.note || '').replace('کد انباری', '').trim() || it.code || ''; }
+    function whpCode(it) {
+      var note = String(it.note || '');
+      return (note.indexOf('کد انباری') !== -1 ? note.replace('کد انباری', '').trim() : '') || it.code || '';
+    }
     function whpRowHtml(field, it, r, k) {
-      var cols = whpCols(whCfg(field)), ro = field.read_only ? ' disabled' : '';
+      var cfg = whCfg(field), cols = whpCols(cfg), ro = field.read_only ? ' disabled' : '';
       r = r || {};
       var code = it ? whpCode(it) : (r.code || '');
       var label = it ? it.name : (r.item_name || '');
-      return '<tr data-item="' + (it ? it.id : (r.item_id || '')) + '" data-name="' + A.esc(label) + '" data-code="' + A.esc(code) + '">'
-        + '<td class="whp-k">' + (k + 1) + '</td><td dir="ltr" class="mono">' + A.esc(code) + '</td><td class="whp-name">' + A.esc(label) + '</td>'
+      var rule = it && !field.read_only ? whpRuleQty(cfg, it) : null;
+      /* a rule's count follows the form (the stage count may come later):
+         the total stays «auto» while it is empty or still the rule's count */
+      var noTotal = r.total === undefined || r.total === null || r.total === '';
+      var auto = !!(it && it.qty_rule && !field.read_only) && (noTotal || (rule !== null && Number(r.total) === rule));
+      var tag = it && it.qty_rule ? (it.qty_rule === 'stages' ? ' <span class="badge muted" title="تعداد = تعداد طبقات پمپ">× طبقات</span>'
+                                    : ' <span class="badge muted" title="تعداد ثابت در هر تجهیز">× ' + A.esc(it.qty_rule) + '</span>') : '';
+      return '<tr data-item="' + (it ? it.id : (r.item_id || '')) + '" data-name="' + A.esc(label) + '" data-code="' + A.esc(code) + '"'
+        + (it && it.per_type ? ' data-per-type="1"' : '') + (it && it.qty_rule ? ' data-rule="' + A.esc(it.qty_rule) + '"' : '') + '>'
+        + '<td class="whp-k">' + (k + 1) + '</td><td dir="ltr" class="mono">' + A.esc(code) + '</td><td class="whp-name">' + A.esc(label)
+        + '<span class="whp-type"></span>' + tag + '</td>'
         + cols.map(function (c) {
-          var v = r[c[0]]; v = v === undefined || v === null || v === 0 ? '' : v;
-          return '<td><input type="text" inputmode="numeric" dir="ltr" class="whp-n" data-col="' + c[0] + '" value="' + A.esc(v) + '"' + ro + '></td>';
+          var v = r[c[0]];
+          if (c[0] === 'total' && auto) v = rule === null ? '' : rule;
+          v = v === undefined || v === null || v === 0 ? '' : v;
+          return '<td><input type="text" inputmode="numeric" dir="ltr" class="whp-n" data-col="' + c[0] + '" value="' + A.esc(v) + '"'
+            + (c[0] === 'total' && auto ? ' data-auto="1"' : '') + ro + '></td>';
         }).join('')
+        + (cfg.check_stock && !field.read_only ? '<td class="whp-stock hint"></td>' : '')
         + '<td><input type="text" class="whp-note" value="' + A.esc(r.note || '') + '"' + ro + '></td>'
-        + (field.read_only ? '' : '<td><button type="button" class="btn-sm btn-del whp-del" title="حذف این قطعه">✕</button></td>')
+        + ((field.read_only || cfg.list_all) ? '' : '<td><button type="button" class="btn-sm btn-del whp-del" title="حذف این قطعه">✕</button></td>')
         + '</tr>';
     }
+    /* the full list: every part of the equipment, the counts already given kept */
+    function whpListRows(field) {
+      var name = field.field_name, byId = {}, byName = {};
+      (whValues[name] || []).forEach(function (r) {
+        if (!r) return;
+        if (r.item_id) byId[String(r.item_id)] = r;
+        else if (r.item_name) byName[r.item_name] = r;
+      });
+      var items = whpItems(whCfg(field));
+      var seen = {};
+      var rows = items.map(function (it) {
+        seen[String(it.id)] = 1;
+        return { it: it, r: byId[String(it.id)] || byName[it.name] || {} };
+      });
+      // a part answered before but since taken off the list still shows
+      (whValues[name] || []).forEach(function (r) {
+        if (r && r.item_id && !seen[String(r.item_id)]) rows.push({ it: null, r: r });
+      });
+      return rows;
+    }
+    /* stock, rule counts, the pump type and the alarms of one parts table */
+    function whpRefresh(name) {
+      var field = fieldByName(name), wrap = qs('[data-whp="' + name + '"]');
+      if (!field || !wrap || field.read_only) return;
+      var cfg = whCfg(field), items = {};
+      whpItems(cfg).forEach(function (it) { items[String(it.id)] = it; });
+      var short = [], off = [];
+      wrap.querySelectorAll('tbody tr[data-item]').forEach(function (tr) {
+        var it = items[tr.dataset.item];
+        var variant = whpVariant(cfg, it);
+        var typeTag = tr.querySelector('.whp-type');
+        if (typeTag) typeTag.textContent = tr.dataset.perType ? (variant ? ' — تیپ ' + variant : ' — تیپ پمپ انتخاب نشده') : '';
+        var tot = tr.querySelector('[data-col="total"]');
+        var rule = whpRuleQty(cfg, it);
+        if (tot && tot.dataset.auto && rule !== null) tot.value = rule;
+        if (tot && tot.dataset.auto && rule === null && tr.dataset.rule === 'stages') tot.value = '';
+        var get = function (c) { var el = tr.querySelector('[data-col="' + c + '"]'); return el ? whpNum(el.value) : 0; };
+        var total = get('total'), nw = get('installed_new'), rp = get('installed_repair');
+        var mismatch = !!tot && total > 0 && (nw || rp) && Math.abs(nw + rp - total) > 1e-9;
+        tr.classList.toggle('whp-mismatch', mismatch);
+        if (mismatch) off.push(tr.dataset.name);
+        var cell = tr.querySelector('.whp-stock');
+        if (!cell) return;
+        if (!Stock.data) { cell.textContent = '…'; return; }
+        var st = Stock.part(tr.dataset.item, variant);
+        cell.innerHTML = 'نو ' + st['new'] + ' · تعمیری ' + st.reusable;
+        var lack = (nw > st['new']) || (rp > st.reusable);
+        tr.classList.toggle('whp-short', lack);
+        if (lack) short.push(tr.dataset.name + (variant ? ' (تیپ ' + variant + ')' : ''));
+      });
+      whpTotals(name);
+      var alarm = qs('[data-whp-alarm="' + name + '"]');
+      if (alarm) {
+        alarm.innerHTML = (short.length ? '⚠ موجودی انبار قطعات کافی نیست: ' + short.map(A.esc).join('، ') : '')
+          + (off.length ? (short.length ? '<br>' : '') + '⚠ جمع «نو» و «تعمیری» با «تعداد کل» برابر نیست: ' + off.map(A.esc).join('، ') : '');
+        alarm.classList.toggle('hidden', !short.length && !off.length);
+      }
+      wrap.dataset.short = short.join('، ');
+      wrap.dataset.off = off.join('، ');
+    }
+    /* what the stage owner is warned about before sending */
+    self.stockAlerts = function () {
+      var out = [];
+      qsa('[data-whp]').forEach(function (w) {
+        if (w.closest('.hidden')) return;
+        var f = fieldByName(w.dataset.whp);
+        if (w.dataset.short) out.push('موجودی کافی نیست (' + (f ? f.label : '') + '): ' + w.dataset.short);
+        if (w.dataset.off) out.push('تعداد کل با جمع نو و تعمیری نمی‌خواند (' + (f ? f.label : '') + '): ' + w.dataset.off);
+      });
+      return out;
+    };
     function whpDraw(name) {
       var field = fieldByName(name), wrap = qs('[data-whp="' + name + '"]'), body = wrap && wrap.querySelector('tbody');
       if (!field || !body) return;
       var byId = {}, byName = {};
       whpItems(whCfg(field)).forEach(function (it) { byId[String(it.id)] = it; byName[it.name] = it; });
-      var rows = (whValues[name] || []).filter(function (r) { return r && (r.item_id || r.item_name); });
-      body.innerHTML = rows.map(function (r, k) {
-        return whpRowHtml(field, byId[String(r.item_id)] || byName[r.item_name] || null, r, k);
-      }).join('');
+      if (whCfg(field).list_all && !field.read_only) {
+        body.innerHTML = whpListRows(field).map(function (x, k) { return whpRowHtml(field, x.it, x.r, k); }).join('');
+      } else {
+        var rows = (whValues[name] || []).filter(function (r) { return r && (r.item_id || r.item_name); });
+        body.innerHTML = rows.map(function (r, k) {
+          return whpRowHtml(field, byId[String(r.item_id)] || byName[r.item_name] || null, r, k);
+        }).join('');
+      }
       wrap.dataset.drawn = '1';
       whpEmptyNote(name);
       whpTotals(name);
+      if (whCfg(field).check_stock) Stock.load().then(function () { whpRefresh(name); });
+      whpRefresh(name);
     }
     function whpEmptyNote(name) {
       var wrap = qs('[data-whp="' + name + '"]'), field = fieldByName(name);
@@ -1100,9 +1244,17 @@
         tr.title = over ? '«قابل استفاده + اسقاط» از تعداد جمع‌آوری‌شده بیشتر است' : '';
       });
       var n = qsa('[data-whp="' + name + '"] tbody tr[data-item]').length;
-      box.querySelector('tfoot').innerHTML = '<tr><td colspan="3"><b>جمع (' + n + ' قطعه)</b></td>' + cols.map(function (c) {
-        return '<td><b>' + (sums[c[0]] || 0) + '</b></td>';
-      }).join('') + '<td></td>' + (field.read_only ? '' : '<td></td>') + '</tr>';
+      var cfgT = whCfg(field);
+      var used = qsa('[data-whp="' + name + '"] tbody tr[data-item]').filter(function (tr) {
+        return Array.prototype.some.call(tr.querySelectorAll('.whp-n'), function (i) {
+          return i.dataset.col !== 'total' && whpNum(i.value);
+        });
+      }).length;
+      box.querySelector('tfoot').innerHTML = '<tr><td colspan="3"><b>جمع (' + (cfgT.list_all ? used + ' قطعه‌ی مصرف‌شده از ' + n : n + ' قطعه') + ')</b></td>'
+        + cols.map(function (c) {
+          return '<td><b>' + (sums[c[0]] || 0) + '</b></td>';
+        }).join('') + (cfgT.check_stock && !field.read_only ? '<td></td>' : '') + '<td></td>'
+        + ((field.read_only || cfgT.list_all) ? '' : '<td></td>') + '</tr>';
     }
     function whpRead(name) {
       var cols = whpCols(whCfg(fieldByName(name)));
@@ -1112,14 +1264,50 @@
         var any = !!row.note;
         cols.forEach(function (c) {
           var inp = tr.querySelector('[data-col="' + c[0] + '"]'), n = whpNum(inp && inp.value);
-          if (n) { row[c[0]] = n; any = true; }
+          if (n) { row[c[0]] = n; if (c[0] !== 'total') any = true; }
         });
         return any ? row : null;
       }).filter(Boolean);
     }
     root.addEventListener('input', function (e) {
       var t = e.target.closest('[data-whp] .whp-n');
-      if (t) whpTotals(t.closest('[data-whp]').dataset.whp);
+      if (t) {
+        var tr = t.closest('tr');
+        if (t.dataset.col === 'total') delete t.dataset.auto;   // typed by hand: the rule no longer fills it
+        /* «نو» and «تعمیری» make up «تعداد کل»: typing one fills the other
+           while the other has not been typed itself */
+        var tot = tr.querySelector('[data-col="total"]');
+        if (tot && (t.dataset.col === 'installed_new' || t.dataset.col === 'installed_repair')) {
+          var other = tr.querySelector('[data-col="' + (t.dataset.col === 'installed_new' ? 'installed_repair' : 'installed_new') + '"]');
+          if (other && (!other.value || other.dataset.filled)) {
+            var rest = whpNum(tot.value) - whpNum(t.value);
+            other.value = whpNum(tot.value) && rest >= 0 ? (rest || '') : other.value;
+            other.dataset.filled = '1';
+          }
+          delete t.dataset.filled;
+        }
+        whpTotals(t.closest('[data-whp]').dataset.whp);
+        whpRefresh(t.closest('[data-whp]').dataset.whp);
+      }
+      var flt = e.target.closest('[data-whp] .whp-filter');
+      if (flt) {
+        var q = String(flt.value || '').trim().replace(/ي/g, 'ی').replace(/ك/g, 'ک');
+        flt.closest('[data-whp]').querySelectorAll('tbody tr[data-item]').forEach(function (tr) {
+          var txt = (tr.dataset.name + ' ' + tr.dataset.code).replace(/ي/g, 'ی').replace(/ك/g, 'ک');
+          tr.classList.toggle('hidden', !!q && txt.indexOf(q) === -1);
+        });
+      }
+    });
+    /* the pump's type or stage count changed: rule counts and per-type stock follow */
+    root.addEventListener('change', function (e) {
+      if (!e.target || !e.target.name) return;
+      self.eachField(function (f) {
+        var cfg = whCfg(f);
+        if (f.field_type === 'wh_lines' && cfg.mode === 'parts'
+            && (cfg.stages_field === e.target.name || cfg.type_field === e.target.name)) {
+          setTimeout(function () { whpRefresh(f.field_name); }, 30);
+        }
+      });
     });
 
     function renderWhLines(field) {
@@ -1127,15 +1315,21 @@
       var name = A.esc(field.field_name), cfg = whCfg(field);
       var dir = cfg.direction === 'out' ? 'خروج از ' : 'ورود به ';
       var wh = cfg.warehouse === 'parts' ? 'انبار قطعات' : 'انبار تجهیزات';
+      var noCond = cfg.condition === false;
       return '<div class="wh-lines" data-wh="' + name + '">'
-        + '<div class="wh-head hint">' + (cfg.direction === 'out' ? '📤 ' : '📥 ') + dir + wh + '</div>'
+        + '<div class="wh-head hint">' + (cfg.direction === 'out' ? '📤 ' : '📥 ') + dir + wh
+        + (cfg.join_into ? ' — به‌صورت یک الکتروپمپ متصل‌شده' : '') + '</div>'
+        + (field.read_only ? '' : '<details class="wh-stock" data-wh-stock="' + name + '"><summary>📦 موجودی فعلی '
+           + wh + ' (به تفکیک تیپ)</summary><div class="wh-stock-body hint">…</div></details>')
         + '<div class="wh-table-wrap"><table class="wh-table"><thead><tr><th>کالا</th>'
         + (cfg.spec === false ? '' : '<th>تیپ / مشخصات</th>')
-        + (cfg.serial === false ? '' : '<th>پلاک / سریال</th>')
-        + '<th>وضعیت</th><th>تعداد</th><th></th></tr></thead><tbody></tbody></table></div>'
+        + (cfg.serial === false ? '' : '<th>پلاک / سریال' + (cfg.serial_source === 'register' ? ' <span class="hint">(از شناسنامه‌ی تجهیزات)</span>' : '') + '</th>')
+        + (noCond ? '' : '<th>وضعیت</th>') + '<th>تعداد</th><th></th></tr></thead><tbody></tbody></table></div>'
         + (field.read_only || cfg.preset_lock ? '' : '<button type="button" class="btn-ghost btn-sm" data-wh-add="' + name + '">➕ افزودن ردیف</button>')
         + ((cfg.preset || []).length && cfg.preset_lock && !field.read_only
-            ? '<div class="hint">کالا و مشخصات همان تجهیزی است که از چاه کشیده شد؛ وضعیت و پلاک را مشخص کنید.</div>' : '')
+            ? '<div class="hint">' + A.esc(cfg.preset_hint || (noCond
+                ? 'کالا و تیپ از فرایند خوانده می‌شود؛ پلاک / سریال را از شناسنامه‌ی تجهیزات جستجو و انتخاب کنید.'
+                : 'کالا و مشخصات همان تجهیزی است که از چاه کشیده شد؛ وضعیت و پلاک را مشخص کنید.')) + '</div>' : '')
         + '</div>';
     }
     /* «ردیف‌های ثابت»: rows the form starts with — the motor and the pump
@@ -1160,8 +1354,9 @@
           if (hit) used.push(k);
           return hit;
         })[0] || {};
+        var pSerial = p.serial ? whPresetSpec({ spec: p.serial }) : '';
         return { item_id: item ? item.id : null, item_name: item ? item.name : (p.item_code || ''),
-                 spec: whPresetSpec(p) || mine.spec || '', serial: mine.serial || '',
+                 spec: whPresetSpec(p) || mine.spec || '', serial: (cfg.preset_lock && pSerial) || mine.serial || pSerial || '',
                  condition: mine.condition || p.condition || '', qty: cfg.preset_lock ? (p.qty || 1) : (mine.qty || p.qty || 1),
                  _preset: i };
       });
@@ -1174,9 +1369,15 @@
         if (field.field_type !== 'wh_lines' || field.read_only || !(cfg.preset || []).length) return;
         qsa('[data-wh="' + field.field_name + '"] tr.wh-row[data-preset]').forEach(function (tr) {
           var p = cfg.preset[+tr.dataset.preset], inp = tr.querySelector('.wh-spec');
-          if (!p || !inp || !p.spec) return;
-          var v = whPresetSpec(p);
-          if (cfg.preset_lock ? inp.value !== v : (!inp.value && v)) inp.value = v;
+          if (p && inp && p.spec) {
+            var v = whPresetSpec(p);
+            if (cfg.preset_lock ? inp.value !== v : (!inp.value && v)) inp.value = v;
+          }
+          var ser = tr.querySelector('.wh-serial');
+          if (p && ser && p.serial) {
+            var sv = whPresetSpec({ spec: p.serial });
+            if (cfg.preset_lock ? ser.value !== sv : (!ser.value && sv)) ser.value = sv;
+          }
         });
       });
     }
@@ -1213,14 +1414,120 @@
         return '<option value="' + A.esc(c.code) + '"' + ((row.condition || cfg.default_condition) === c.code ? ' selected' : '')
           + '>' + A.esc(c.label) + '</option>';
       }).join('');
+      var item = items.filter(function (it) { return String(it.id) === String(row.item_id || ''); })[0] || null;
+      var reg = cfg.serial_source === 'register' && !ro ? ' list="' + whRegisterList(item) + '" placeholder="جستجوی پلاک / کد"' : '';
+      var lockSerial = fixed && (cfg.preset || [])[row._preset] && cfg.preset[row._preset].serial ? ' readonly' : ro;
+      var stockList = cfg.direction === 'out' && !ro && cfg.spec !== false ? ' list="' + whStockList(item) + '"' : '';
       return '<tr class="wh-row' + (fixed ? ' wh-fixed' : '') + '"' + (row._preset !== undefined ? ' data-preset="' + row._preset + '"' : '')
         + '><td><select class="wh-item"' + lockItem + '>' + opts + '</select></td>'
-        + (cfg.spec === false ? '' : '<td><input type="text" class="wh-spec" dir="ltr" placeholder="384/10+73.5" value="' + A.esc(row.spec || '') + '"' + lockText + '></td>')
-        + (cfg.serial === false ? '' : '<td><input type="text" class="wh-serial" dir="ltr" value="' + A.esc(row.serial || '') + '"' + ro + '></td>')
-        + '<td><select class="wh-cond"' + ro + '>' + conds + '</select></td>'
+        + (cfg.spec === false ? '' : '<td><input type="text" class="wh-spec" dir="ltr" placeholder="' + whSpecHint(item) + '" value="' + A.esc(row.spec || '') + '"' + lockText + stockList + '>'
+           + '<div class="wh-avail hint"></div></td>')
+        + (cfg.serial === false ? '' : '<td><input type="text" class="wh-serial" dir="ltr" value="' + A.esc(row.serial || '') + '"' + lockSerial + reg + '>'
+           + '<div class="wh-reg-note hint"></div></td>')
+        + (cfg.condition === false ? '' : '<td><select class="wh-cond"' + ro + '>' + conds + '</select></td>')
         + '<td><input type="text" inputmode="decimal" dir="ltr" class="wh-qty" value="' + A.esc(row.qty == null ? 1 : row.qty) + '"' + lockText + '></td>'
         + '<td>' + (ro || fixed ? '' : '<button type="button" class="btn-sm btn-del wh-del" title="حذف ردیف">✕</button>') + '</td></tr>';
     }
+    /* «پلاک از شناسنامه‌ی تجهیزات»: one list per kind (motor, pump, all),
+       added to the page once, searched as the plaque is typed */
+    /* an example of the type this row's equipment is written with */
+    function whSpecHint(item) {
+      var name = String(item ? item.name || '' : '');
+      if (name.indexOf('الکتروپمپ') !== -1) return '384/10+73.5';
+      var kind = whRegisterKind(item);
+      return kind === 'motor' ? '73.5 kW' : kind === 'pump' ? '384/10' : '384/10+73.5';
+    }
+    function whRegisterKind(item) {
+      var cat = String(item ? (item.category || item.name) : '');
+      return cat.indexOf('موتور') !== -1 ? 'motor' : cat.indexOf('پمپ شناور') !== -1 || cat === 'پمپ' ? 'pump' : 'all';
+    }
+    function whRegisterList(item) {
+      var kind = whRegisterKind(item), id = 'wh-reg-' + kind;
+      if (!document.getElementById(id) && Warehouse.data) {
+        var dl = document.createElement('datalist');
+        dl.id = id;
+        dl.innerHTML = (Warehouse.data.equipment || []).filter(function (e) {
+          return kind === 'all' || (kind === 'motor' ? String(e.kind || '').indexOf('موتور') !== -1
+                                                      : String(e.kind || '').indexOf('موتور') === -1);
+        }).map(function (e) {
+          return '<option value="' + A.esc(e.code) + '">' + A.esc((e.name || e.kind || '') + (e.type ? ' — تیپ ' + e.type : '')
+            + (e.place ? ' — ' + e.place : '')) + '</option>';
+        }).join('');
+        document.body.appendChild(dl);
+      }
+      return id;
+    }
+    /* the types in stock of one item («384/10+73.5 — ۲ دستگاه»), for rows that take stock out */
+    function whStockList(item) {
+      var id = 'wh-stock-' + (item ? item.id : 'x');
+      if (!item || !Stock.data) return id;
+      var dl = document.getElementById(id);
+      if (!dl) { dl = document.createElement('datalist'); dl.id = id; document.body.appendChild(dl); }
+      var by = {};
+      (Stock.data.equipment || []).forEach(function (r) {
+        if (String(r.item_id) !== String(item.id) || !r.variant || r.balance <= 0) return;
+        by[r.variant] = (by[r.variant] || 0) + r.balance;
+      });
+      dl.innerHTML = Object.keys(by).map(function (v) {
+        return '<option value="' + A.esc(v) + '">موجود: ' + by[v] + '</option>';
+      }).join('');
+      return id;
+    }
+    function whStockOf(itemId, variant) {
+      var n = 0;
+      ((Stock.data || {}).equipment || []).forEach(function (r) {
+        if (String(r.item_id) === String(itemId) && (r.variant || '') === (variant || '')) n += r.balance;
+      });
+      return n;
+    }
+    function whVariantOf(spec) {
+      var t = String(spec || '').trim();
+      if (!t) return '';
+      var ep = epumpParse(t);
+      if (ep[0]) return epumpLabel(ep[0], ep[1], ep[2]) || '';
+      var m = /\d+(?:\.\d+)?/.exec(t.replace(/[۰-۹]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d); }).replace('٫', '.'));
+      return m ? String(Number(m[0])) : t;
+    }
+    /* the stock box over a rows table, and each row's «موجود» note */
+    function whStockRefresh(name) {
+      var field = fieldByName(name), box = qs('[data-wh-stock="' + name + '"] .wh-stock-body');
+      if (!field || !Stock.data) return;
+      var cfg = whCfg(field), items = whItems(cfg), by = {};
+      (Stock.data.equipment || []).forEach(function (r) {
+        if (!items.some(function (it) { return String(it.id) === String(r.item_id); })) return;
+        var key = r.item_name;
+        (by[key] = by[key] || []).push(r);
+      });
+      if (box) {
+        var keys = Object.keys(by);
+        box.innerHTML = keys.length ? keys.map(function (k) {
+          return '<div><b>' + A.esc(k) + ':</b> ' + by[k].filter(function (r) { return r.balance > 0; }).map(function (r) {
+            return '<span class="wh-chip">' + A.esc(r.variant || '—') + ' × ' + r.balance
+              + (r.condition_label ? ' <small>' + A.esc(r.condition_label) + '</small>' : '') + '</span>';
+          }).join(' ') + '</div>';
+        }).join('') : 'موجودی ثبت‌شده‌ای نیست.';
+      }
+      qsa('[data-wh="' + name + '"] tr.wh-row').forEach(function (tr) {
+        var sel = tr.querySelector('.wh-item'), spec = tr.querySelector('.wh-spec'), note = tr.querySelector('.wh-avail');
+        if (!sel || !spec || !note) return;
+        var v = whVariantOf(spec.value);
+        if (!sel.value || !v) { note.textContent = ''; tr.classList.remove('wh-short'); return; }
+        var n = whStockOf(sel.value, v);
+        note.textContent = 'موجودی این تیپ: ' + n;
+        var lack = cfg.direction === 'out' && n < whpNum(tr.querySelector('.wh-qty') ? tr.querySelector('.wh-qty').value : 1);
+        tr.classList.toggle('wh-short', lack);
+        note.classList.toggle('err-text', lack);
+      });
+    }
+    root.addEventListener('input', function (e) {
+      var w = e.target.closest && e.target.closest('[data-wh]');
+      if (w && (e.target.classList.contains('wh-spec') || e.target.classList.contains('wh-qty'))) whStockRefresh(w.dataset.wh);
+      if (w && e.target.classList.contains('wh-serial') && Warehouse.data) {
+        var hit = (Warehouse.data.equipment || []).filter(function (x) { return x.code === e.target.value.trim(); })[0];
+        var nt = e.target.parentNode.querySelector('.wh-reg-note');
+        if (nt) nt.textContent = hit ? (hit.name || '') + (hit.type ? ' — تیپ ' + hit.type : '') : '';
+      }
+    });
     function whDraw(name) {
       var field = fieldByName(name), box = qs('[data-wh="' + name + '"] tbody');
       if (!field || !box) return;
@@ -1228,6 +1535,18 @@
       if ((whCfg(field).preset || []).length && !field.read_only) rows = whPresetRows(field, rows);
       if (!rows.length && !field.read_only) rows = [{}];
       box.innerHTML = rows.map(function (r) { return whRowHtml(field, r); }).join('');
+      if (!field.read_only) {
+        Stock.load().then(function () {
+          if (whCfg(field).direction === 'out') {
+            qsa('[data-wh="' + name + '"] tr.wh-row').forEach(function (tr) {
+              var sel = tr.querySelector('.wh-item'), sp = tr.querySelector('.wh-spec');
+              if (sel && sp) sp.setAttribute('list', whStockList(whItems(whCfg(field)).filter(function (it) {
+                return String(it.id) === sel.value; })[0] || null));
+            });
+          }
+          whStockRefresh(name);
+        });
+      }
     }
     function whRead(name) {
       return qsa('[data-wh="' + name + '"] tr.wh-row').map(function (tr) {
@@ -1236,6 +1555,7 @@
         return { item_id: sel.value ? Number(sel.value) : null,
                  item_name: sel.value ? opt.text.replace(/\s*\([^)]*\)$/, '') : (opt && opt.dataset.name) || '',
                  spec: get('.wh-spec'), serial: get('.wh-serial'), condition: get('.wh-cond'),
+                 variant: whVariantOf(get('.wh-spec')),
                  qty: get('.wh-qty') || '1' };
       }).filter(function (r) { return r.item_id || r.item_name; });
     }
@@ -1256,9 +1576,12 @@
     });
 
     var renderCols = 3;                  // columns of the section being drawn
-    function renderField(field) {
+    function fieldBody(field) {
       var body;
-      if (field.field_type === 'radio') body = renderChoice(field, false);
+      /* «طبقات از کاتالوگ»: whatever the field's type, it is picked as a
+         catalogue model («384/10») from one list, which sets the type too */
+      if (field.stages_of && !field.read_only) body = renderInput(field);
+      else if (field.field_type === 'radio') body = renderChoice(field, false);
       else if (field.field_type === 'checkbox' && optionsFor(field).length) {
         body = renderChoice(field, true);
       } else if (field.field_type === 'checkbox') {
@@ -1288,6 +1611,11 @@
                                  : String(field.read_only_value)) + '"'
             + ' readonly disabled>';
       }
+      return body;
+    }
+
+    function renderField(field) {
+      var body = fieldBody(field);
       var span = field.col_span > 1 ? ' span-' + Math.min(field.col_span, 2) : '';
       /* Long option lists and free text need the whole row; squeezing 20
          buttons into a 180px column is what made the form look ragged. */
@@ -1327,6 +1655,145 @@
       });
     }
 
+    /* ── «جدول ردیفی»: numbered fields as the rows of one table ──────────
+       fc_q1 … fc_q5 are one column («آبدهی») over the rows کارکرد 1 … 5; a
+       quantity is a column when it appears in two rows or more. The typed
+       columns make the table; the calculated ones a second, folded table of
+       results. Everything else in the section is drawn above as usual. */
+    var GRID_ROW = /^(.*?)(\d+)$/;
+    function gridRowTitle(section, n) { return (section.grid_label || 'کارکرد {n}').replace('{n}', n); }
+    function gridStrip(label, section, n) {
+      var t = gridRowTitle(section, n), text = String(label || '');
+      if (t && text.indexOf(t) !== -1) text = text.replace(t, '');
+      text = text.replace(/^[\s—–\-:|،]+|[\s—–\-:|،]+$/g, '');
+      return text || String(label || '');
+    }
+    function gridPlan(section) {
+      var seen = {}, order = [];
+      section.fields.forEach(function (f) {
+        var m = GRID_ROW.exec(f.field_name || '');
+        if (!m) return;
+        if (!seen[m[1]]) { seen[m[1]] = {}; order.push(m[1]); }
+        seen[m[1]][m[2]] = f;
+      });
+      var cols = order.filter(function (b) { return Object.keys(seen[b]).length >= 2; });
+      var rows = {};
+      cols.forEach(function (b) { Object.keys(seen[b]).forEach(function (n) { rows[n] = 1; }); });
+      var inCells = {};
+      cols.forEach(function (b) { Object.keys(seen[b]).forEach(function (n) { inCells[seen[b][n].field_name] = 1; }); });
+      return { cols: cols, cells: seen, inCells: inCells,
+               rows: Object.keys(rows).map(Number).sort(function (a, b) { return a - b; }) };
+    }
+    function gridCell(field) {
+      if (!field) return '<td class="g-none"></td>';
+      return '<td><div class="field grid-cell' + (field.field_type === 'formula' ? ' calc-field' : '')
+        + (field.read_only ? ' read-only' : '') + '" data-wrap="' + A.esc(field.field_name) + '" title="'
+        + A.esc(field.label || '') + '">' + fieldBody(field) + '<span class="err hidden"></span></div></td>';
+    }
+    function gridTable(section, plan, cols, cls) {
+      if (!cols.length) return '';
+      var first = function (b) {
+        var n = plan.rows.filter(function (r) { return plan.cells[b][r]; })[0];
+        return { f: plan.cells[b][n], n: n };
+      };
+      return '<div class="grid-scroll ' + cls + '"><table class="fe-grid"><thead><tr><th class="g-row"></th>'
+        + cols.map(function (b) {
+          var x = first(b);
+          return '<th>' + A.esc(gridStrip(x.f.label, section, x.n)) + '</th>';
+        }).join('') + '</tr></thead><tbody>'
+        + plan.rows.map(function (n) {
+          return '<tr><th class="g-row">' + A.esc(gridRowTitle(section, n)) + '</th>'
+            + cols.map(function (b) { return gridCell(plan.cells[b][n]); }).join('') + '</tr>';
+        }).join('') + '</tbody></table></div>';
+    }
+    function renderGridBody(section) {
+      var plan = gridPlan(section);
+      var plain = section.fields.filter(function (f) { return !plan.inCells[f.field_name]; });
+      var isCalc = function (b) {
+        return plan.rows.every(function (n) { var f = plan.cells[b][n]; return !f || f.field_type === 'formula'; });
+      };
+      var typed = plan.cols.filter(function (b) { return !isCalc(b); });
+      var calc = plan.cols.filter(isCalc);
+      return (plain.length ? '<div class="field-group cols-' + renderCols + '">' + plain.map(renderField).join('') + '</div>' : '')
+        + gridTable(section, plan, typed, 'grid-input')
+        + (calc.length ? '<div class="grid-calc"><div class="grid-calc-title">ƒ نتایج محاسبه‌ی هر ردیف</div>'
+          + gridTable(section, plan, calc, '') + '</div>' : '');
+    }
+
+    /* ── a dropdown with a search box ────────────────────────────────────
+       A long list (more than eight options, or a catalogue model list) gets
+       a «🔍 جستجو» box: typing narrows the list and opens it, Enter takes
+       the first match, and picking one closes it again. The <select> stays
+       the field itself, so everything that reads or sets it is unchanged. */
+    var SEARCH_MIN = 8;
+    function ssNorm(t) {
+      return String(t || '').toLowerCase().replace(/[يى]/g, 'ی').replace(/ك/g, 'ک')
+        .replace(/[۰-۹]/g, function (d) { return String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); })
+        .replace(/[\s\u200c]+/g, '');
+    }
+    function enhanceSelects(scope) {
+      Array.prototype.forEach.call((scope || root).querySelectorAll('.field > select, .field select.stages-pick'), function (sel) {
+        if (sel.dataset.ss || sel.disabled) return;
+        if (!sel.classList.contains('stages-pick') && sel.options.length <= SEARCH_MIN) return;
+        sel.dataset.ss = '1';
+        var box = document.createElement('div');
+        box.className = 'ss-wrap';
+        sel.parentNode.insertBefore(box, sel);
+        var q = document.createElement('input');
+        q.type = 'search';
+        q.className = 'ss-q';
+        q.placeholder = '🔍 جستجو در فهرست…';
+        q.setAttribute('autocomplete', 'off');
+        box.appendChild(q);
+        box.appendChild(sel);
+        var reset = function () {
+          q.value = '';
+          Array.prototype.forEach.call(sel.querySelectorAll('option, optgroup'), function (o) { o.hidden = false; });
+          sel.removeAttribute('size');
+          box.classList.remove('ss-open');
+        };
+        var filter = function () {
+          var nq = ssNorm(q.value), shown = 0;
+          Array.prototype.forEach.call(sel.options, function (o) {
+            var ok = !o.value ? !nq : (!nq || ssNorm(o.textContent + ' ' + o.value).indexOf(nq) !== -1);
+            o.hidden = !ok;
+            if (ok && o.value) shown++;
+          });
+          Array.prototype.forEach.call(sel.querySelectorAll('optgroup'), function (g) {
+            g.hidden = !Array.prototype.some.call(g.children, function (o) { return !o.hidden; });
+          });
+          if (nq) {
+            sel.size = Math.max(2, Math.min(8, shown || 1));
+            box.classList.add('ss-open');
+          } else {
+            sel.removeAttribute('size');
+            box.classList.remove('ss-open');
+          }
+        };
+        q.addEventListener('input', filter);
+        q.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Enter') {
+            ev.preventDefault();
+            var first = Array.prototype.find.call(sel.options, function (o) { return o.value && !o.hidden; });
+            if (first) {
+              sel.value = first.value;
+              reset();
+              sel.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          } else if (ev.key === 'ArrowDown' && sel.size > 1) {
+            ev.preventDefault();
+            sel.focus();
+          } else if (ev.key === 'Escape') {
+            reset();
+          }
+        });
+        sel.addEventListener('change', function () { if (q.value) reset(); });
+        sel.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' && sel.size > 1) { ev.preventDefault(); reset(); } });
+        sel.addEventListener('blur', function () { if (sel.size > 1) setTimeout(reset, 150); });
+      });
+    }
+    self.enhanceSelects = enhanceSelects;
+
     self.render = function () {
       root.innerHTML = (schema.sections || []).map(function (section) {
         if (!section.fields || !section.fields.length) return '';
@@ -1335,7 +1802,8 @@
         }).length : 0;
         renderCols = section.columns || 3;
         var group = section.repeat_group ? A.esc(section.repeat_group) : '';
-        return '<div class="form-section' + (section.full_width ? ' full-width' : '') + (calcs ? ' calc-collapsed' : '')
+        return '<div class="form-section' + (section.full_width || section.layout === 'grid' ? ' full-width' : '')
+          + (section.layout === 'grid' ? ' grid-section' : '') + (calcs ? ' calc-collapsed' : '')
           + '" data-section="' + A.esc(section.code || '') + '"' + (group ? ' data-repeat="' + group + '"' : '') + '>'
           + '<div class="section-title">'
           + (section.icon ? '<span>' + A.esc(section.icon) + '</span>' : '')
@@ -1345,13 +1813,23 @@
             + calcs + ')</button>' : '')
           + (group ? '<button type="button" class="btn-sm btn-del repeat-del hidden" title="حذف این بخش و مقادیر آن">✕ حذف</button>' : '')
           + '</div>'
-          + '<div class="field-group cols-' + renderCols + '">'
-          + section.fields.map(renderField).join('')
-          + '</div></div>';
+          + (section.layout === 'grid' ? renderGridBody(section)
+             : '<div class="field-group cols-' + renderCols + '">'
+               + section.fields.map(renderField).join('') + '</div>')
+          + '</div>';
       }).join('');
       renderCols = 3;
       setupRepeats();
       wireStages();
+      enhanceSelects();
+      if (qsa('[data-equip]').length) {
+        Warehouse.load().then(function () {
+          qsa('[data-equip]').forEach(function (inp) {
+            var kind = inp.dataset.equip;
+            inp.setAttribute('list', whRegisterList({ category: kind === 'motor' ? 'الکتروموتور' : kind === 'pump' ? 'پمپ شناور' : '' }));
+          });
+        });
+      }
 
       qsa('.jdate').forEach(function (input) { J.attach(input); });
       qsa('.calc-toggle').forEach(function (btn) {

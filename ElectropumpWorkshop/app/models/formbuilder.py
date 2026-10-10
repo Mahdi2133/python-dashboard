@@ -77,6 +77,11 @@ class FormSection(db.Model):
     # «گروه تکرارشونده»: sections sharing this key are the points of one test
     # (نقطه ۱ … ۵) — the first is shown, the others open with «➕» as needed.
     repeat_group = db.Column(db.String(40))
+    # «چیدمان»: '' — fields in columns; 'grid' — «جدول ردیفی»: fields whose
+    # names end in a number (fc_q1 … fc_q5) are the rows of one table, a
+    # column per quantity, the row named by ``grid_label`` («کارکرد {n}»).
+    layout = db.Column(db.String(20))
+    grid_label = db.Column(db.String(80))
 
     fields = db.relationship("FormField", back_populates="section",
                              cascade="all, delete-orphan", order_by="FormField.sort_order")
@@ -91,6 +96,8 @@ class FormSection(db.Model):
             "show_on_entry": self.show_on_entry is not False,
             "collapse_formulas": bool(self.collapse_formulas),
             "repeat_group": self.repeat_group or None,
+            "layout": self.layout or "",
+            "grid_label": self.grid_label or None,
         }
         if include_fields:
             fields = [f for f in self.fields if f.is_active or not active_only]

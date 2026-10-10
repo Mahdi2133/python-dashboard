@@ -15,7 +15,11 @@ REASONS = {
     "install": "خروج برای نصب",
     "scrap": "اسقاط",
     "manual": "اصلاح موجودی",
+    "opening": "موجودی اول دوره (انبارگردانی)",
 }
+# How many of a part one equipment takes: as many as the pump has stages
+# («پروانه»، «بوش»، «طبقه»), a fixed number («شافت»، «سوپاپ» = 1), or typed.
+QTY_RULES = {"": "دستی", "stages": "به تعداد طبقات پمپ"}
 
 
 class WhItem(db.Model):
@@ -32,11 +36,18 @@ class WhItem(db.Model):
     sort_order = db.Column(db.Integer, nullable=False, default=0)
     source = db.Column(db.String(40), default="پیشنهادی")             # پیشنهادی | ورود از اکسل
     note = db.Column(db.Text)
+    # «تعداد در هر تجهیز»: '' typed by hand, 'stages' = the pump's stage
+    # count, or a number («1» for the shaft and the valve)
+    qty_rule = db.Column(db.String(20))
+    # «موجودی به تفکیک تیپ پمپ»: a part made for one pump type (impeller,
+    # bush, stage) is stocked per type — 35 of 374, 65 of 6608
+    per_type = db.Column(db.Boolean, nullable=False, default=False)
 
     def to_dict(self):
         return {"id": self.id, "code": self.code, "name": self.name, "kind": self.kind,
                 "category": self.category, "unit": self.unit, "is_active": self.is_active,
-                "sort_order": self.sort_order, "source": self.source, "note": self.note}
+                "sort_order": self.sort_order, "source": self.source, "note": self.note,
+                "qty_rule": self.qty_rule or "", "per_type": bool(self.per_type)}
 
 
 class WhCondition(db.Model):
@@ -74,6 +85,9 @@ class WhMovement(db.Model):
     unit = db.Column(db.String(20))
     condition = db.Column(db.String(20), index=True)
     spec = db.Column(db.String(80))                           # «384/10+73.5», «37 kW»
+    # the type the stock is counted by: «73.5» (motor kW), «384/10» (pump),
+    # «384/10+73.5» (electropump), «384» (a part made for that pump type)
+    variant = db.Column(db.String(60), index=True)
     serial = db.Column(db.String(80))                         # plaque / serial
     note = db.Column(db.Text)
     # where it came from
@@ -97,7 +111,7 @@ class WhMovement(db.Model):
                 "reason": self.reason, "reason_label": REASONS.get(self.reason, self.reason),
                 "item_id": self.item_id, "item_name": self.item_name, "item_kind": self.item_kind,
                 "qty": self.qty, "unit": self.unit, "condition": self.condition,
-                "spec": self.spec, "serial": self.serial, "note": self.note,
+                "spec": self.spec, "variant": self.variant, "serial": self.serial, "note": self.note,
                 "instance_id": self.instance_id, "workflow_name": self.workflow_name,
                 "stage_number": self.stage_number, "stage_title": self.stage_title,
                 "well_id": self.well_id, "well_name": self.well_name,
@@ -118,11 +132,15 @@ class WhEquipment(db.Model):
     last_facility_code = db.Column(db.String(40))
     property_no = db.Column(db.String(60))             # شماره اموال
     maker = db.Column(db.String(80))
+    type_label = db.Column(db.String(40))              # «37» kW / «6608/15»
+    status = db.Column(db.String(60))                  # در انبار، در کارگاه، در چاه …
+    is_sample = db.Column(db.Boolean, nullable=False, default=False)
 
     def to_dict(self):
         return {"id": self.id, "code": self.code, "name": self.name, "kind": self.kind,
                 "last_date": self.last_date, "last_facility": self.last_facility,
-                "property_no": self.property_no, "maker": self.maker}
+                "property_no": self.property_no, "maker": self.maker,
+                "type_label": self.type_label, "status": self.status}
 
 
 PART_ACTIONS = {"installed": "نصب شد", "collected": "جمع آوری شد"}

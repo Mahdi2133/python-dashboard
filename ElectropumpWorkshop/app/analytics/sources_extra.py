@@ -106,6 +106,34 @@ def load_parts(scope):
     return rows
 
 
+# ── موجودی انبار به تفکیک تیپ ───────────────────────────────────────────────
+def stock_fields():
+    h, q = "کالا", "موجودی"
+    return [
+        _fdef("_warehouse", "انبار", "single", h), _fdef("_item", "کالا", "single", h),
+        _fdef("_kind", "نوع کالا", "single", h), _fdef("_category", "گروه", "single", h),
+        _fdef("_variant", "تیپ (kW / تیپ/طبقه / تیپ پمپ)", "single", h),
+        _fdef("_condition", "وضعیت", "single", h), _fdef("_unit", "واحد", "single", h),
+        _fdef("_in", "ورود", "decimal", q), _fdef("_out", "خروج", "decimal", q),
+        _fdef("_balance", "موجودی", "decimal", q),
+    ]
+
+
+def load_stock(scope):
+    from ..warehouse.models import WhItem
+    from ..warehouse.service import stock
+    items = {i.id: i for i in WhItem.query.all()}
+    rows = []
+    for n, r in enumerate(stock()):
+        it = items.get(r["item_id"])
+        rows.append({"_id": n + 1, "_warehouse": r["warehouse_label"], "_item": r["item_name"],
+                     "_kind": "تجهیز" if (it and it.kind == "equipment") else "قطعه",
+                     "_category": it.category if it else None, "_variant": r["variant"] or None,
+                     "_condition": r["condition_label"], "_unit": r["unit"], "_in": r["in"],
+                     "_out": r["out"], "_balance": r["balance"], "_center_id": None})
+    return rows
+
+
 # ── گردش انبار ──────────────────────────────────────────────────────────────
 def moves_fields():
     h, q = "گردش", "مقادیر"
@@ -114,6 +142,7 @@ def moves_fields():
         _fdef("_direction", "ورود/خروج", "single", h), _fdef("_reason", "علت", "single", h),
         _fdef("_item", "کالا", "single", h), _fdef("_kind", "نوع کالا", "single", h),
         _fdef("_condition", "وضعیت", "single", h), _fdef("_spec", "تیپ / مشخصات", "text", h),
+        _fdef("_variant", "تیپ (شمارش موجودی)", "single", h),
         _fdef("_serial", "پلاک / کد تجهیز", "text", h), _fdef("_well", "چاه", "single", h),
         _fdef("_workflow", "فرایند", "single", h), _fdef("_stage", "مرحله", "single", h),
         _fdef("_user", "کاربر", "single", h),
@@ -137,7 +166,7 @@ def load_moves(scope):
                      "_direction": DIRECTIONS.get(m.direction), "_reason": REASONS.get(m.reason, m.reason),
                      "_item": m.item_name, "_kind": "تجهیز" if m.item_kind == "equipment" else "قطعه",
                      "_condition": conds.get(m.condition, m.condition), "_spec": m.spec,
-                     "_serial": m.serial, "_well": m.well_name, "_workflow": m.workflow_name,
+                     "_variant": m.variant, "_serial": m.serial, "_well": m.well_name, "_workflow": m.workflow_name,
                      "_stage": m.stage_title or "ثبت دستی", "_user": m.user_name, "_qty": q,
                      "_in": q if m.direction == "in" else 0, "_out": q if m.direction == "out" else 0,
                      "_net": q if m.direction == "in" else -q, "_center_id": center_id})
@@ -317,6 +346,11 @@ def register(SOURCES, Source):
         "wh_moves", "گردش انبار تجهیزات و قطعات",
         "هر ردیف یک ورود یا خروج انبار؛ علت، وضعیت، چاه، مرحله‌ی فرایند و کاربر.",
         ("warehouse.view", "workflow.view", "report.manage"), "گردش", moves_fields, load_moves)
+    SOURCES["wh_stock"] = Source(
+        "wh_stock", "موجودی انبار (به تفکیک تیپ)",
+        "هر ردیف موجودی یک کالا در یک تیپ و وضعیت: الکتروموتور به kW، پمپ به تیپ/طبقه، الکتروپمپ با برچسب کامل، "
+        "قطعه‌های وابسته به تیپ پمپ به تفکیک تیپ — از انبارگردانی و همه‌ی ورود و خروج‌ها.",
+        ("warehouse.view", "workflow.view", "report.manage"), "موجودی", stock_fields, load_stock)
     SOURCES["ft_tests"] = Source(
         "ft_tests", "دبی‌سنجی چاه‌ها", "هر ردیف یک آزمایش دبی‌سنجی (بانک دبی‌سنجی).",
         ("refdata.view", "report.manage"), "آزمایش", flow_fields, load_flow)

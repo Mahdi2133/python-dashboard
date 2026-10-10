@@ -428,6 +428,12 @@ def ensure_database(app) -> dict:
     except Exception:  # noqa: BLE001 — a reference relink must never stop the app starting
         db.session.rollback()
         log.exception("Applying the R14 changes failed")
+    try:
+        from .upgrade_r15 import apply_r15
+        status["workshop_r15"] = apply_r15()
+    except Exception:  # noqa: BLE001 — a form change must never stop the app starting
+        db.session.rollback()
+        log.exception("Applying the R15 changes failed")
 
     with db.engine.connect() as conn:
         status["journal_mode"] = conn.execute(text("PRAGMA journal_mode")).scalar()

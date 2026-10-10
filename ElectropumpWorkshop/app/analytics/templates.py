@@ -416,6 +416,26 @@ TEMPLATES_V3 = [
 ]
 
 
+SEED_KEY_V4 = "report_templates_v4"
+TEMPLATES_V4 = [
+    {"key": "wh_stock_by_type", "name": "موجودی انبار تجهیزات و قطعات (به تفکیک تیپ)", "category": PARTS,
+     "description": "موجودی هر کالا به تفکیک تیپ و وضعیت: الکتروموتور (kW)، پمپ (تیپ/طبقه)، الکتروپمپ مونتاژشده "
+                    "و قطعه‌ها — برای کارگاه مکانیک، کشیدن و نصب و مدیرعامل.",
+     "definition": {"source": "wh_stock", "groups": [{"field": "_item"}, {"field": "_variant"}],
+                    "measures": [m("bal", "_balance", "sum", "موجودی"), m("in", "_in", "sum", "ورود"),
+                                 m("out", "_out", "sum", "خروج")],
+                    "kpis": [kpi("k_bal", "جمع موجودی", value={"agg": "sum", "field": "_balance"})],
+                    "charts": [chart("c1", "bar", "موجودی هر کالا", "_item", measures=["bal"])],
+                    "tables": [{"id": "t1", "title": "کالا و تیپ", "kind": "grouped"}],
+                    "fields": [{"key": k} for k in ("_warehouse", "_item", "_variant", "_condition",
+                                                    "_in", "_out", "_balance", "_unit")],
+                    "interactive_filters": [{"id": "f_wh", "field": "_warehouse", "kind": "select", "label": "انبار"},
+                                            {"id": "f_item", "field": "_item", "kind": "select", "label": "کالا"},
+                                            {"id": "f_cond", "field": "_condition", "kind": "select", "label": "وضعیت"}],
+                    "drill": {"enabled": True, "path": ["_item", "_variant"]}}},
+]
+
+
 def seed_templates(force=False) -> dict:
     """Create the starting reports once. Returns what was done."""
     from ..models import AppMeta
@@ -430,6 +450,8 @@ def seed_templates(force=False) -> dict:
         todo += TEMPLATES_V2
     if force or not AppMeta.get(SEED_KEY_V3):
         todo += TEMPLATES_V3
+    if force or not AppMeta.get(SEED_KEY_V4):
+        todo += TEMPLATES_V4
     if not todo:
         return {"skipped": True}
     done, skipped = [], []
@@ -469,6 +491,7 @@ def seed_templates(force=False) -> dict:
     AppMeta.set(SEED_KEY, "1")
     AppMeta.set(SEED_KEY_V2, "1")
     AppMeta.set(SEED_KEY_V3, "1")
+    AppMeta.set(SEED_KEY_V4, "1")
     db.session.commit()
     if skipped:
         log.info("Report templates not seeded (fields missing): %s", skipped)

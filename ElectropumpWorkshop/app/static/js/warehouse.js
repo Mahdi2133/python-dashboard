@@ -33,6 +33,7 @@
     var tab = current();
     if (tab === 'report') loadReport(f);
     else if (tab === 'stock') loadStock(f);
+    else if (tab === 'count') loadRegister();
     else if (tab === 'moves') loadMoves(f);
     else if (tab === 'items') loadItems();
   }
@@ -107,10 +108,11 @@
   async function loadStock(f) {
     var rows = (await A.api.get('/api/warehouse/stock' + (f ? '?' + f : ''))).data.rows;
     A.qs('#wh-stock').innerHTML = rows.length ? rows.map(function (r) {
-      return '<tr><td>' + A.esc(r.warehouse_label) + '</td><td>' + A.esc(r.item_name) + '</td><td>' + A.esc(r.condition_label)
+      return '<tr><td>' + A.esc(r.warehouse_label) + '</td><td>' + A.esc(r.item_name) + '</td><td dir="ltr">' + A.esc(r.variant || '—')
+        + '</td><td>' + A.esc(r.condition_label)
         + '</td><td>' + q(r.in) + '</td><td>' + q(r.out) + '</td><td><b' + (r.balance < 0 ? ' style="color:var(--danger)"' : '') + '>'
         + q(r.balance) + '</b></td><td>' + A.esc(r.unit || '') + '</td></tr>';
-    }).join('') : '<tr><td colspan="7" class="table-empty">موجودی‌ای ثبت نشده است.</td></tr>';
+    }).join('') : '<tr><td colspan="8" class="table-empty">موجودی‌ای ثبت نشده است.</td></tr>';
   }
 
   async function loadMoves(f) {
@@ -120,12 +122,13 @@
     A.qs('#wh-moves').innerHTML = rows.length ? rows.map(function (r) {
       return '<tr><td>' + A.esc(r.jdate) + '</td><td>' + A.esc(r.warehouse_label) + '</td><td>'
         + (r.direction === 'in' ? '📥 ' : '📤 ') + A.esc(r.direction_label) + '</td><td>' + A.esc(r.reason_label) + '</td>'
-        + '<td>' + A.esc(r.item_name) + '</td><td dir="ltr">' + A.esc(r.spec || '') + '</td><td dir="ltr">' + A.esc(r.serial || '') + '</td>'
+        + '<td>' + A.esc(r.item_name) + '</td><td dir="ltr">' + A.esc(r.spec || '') + '</td><td dir="ltr">' + A.esc(r.variant || '') + '</td>'
+        + '<td dir="ltr">' + A.esc(r.serial || '') + '</td>'
         + '<td>' + A.esc(conds[r.condition] || r.condition || '—') + '</td><td>' + q(r.qty) + '</td>'
         + '<td>' + A.esc(r.well_name || '') + '</td><td>' + A.esc(r.stage_title || 'ثبت دستی') + '</td>'
         + '<td>' + A.esc(r.user_name || '') + '</td><td>'
         + (MANAGE && !r.instance_id ? '<button type="button" class="btn-sm btn-del" data-del="' + r.id + '">✕</button>' : '') + '</td></tr>';
-    }).join('') : '<tr><td colspan="13" class="table-empty">گردشی ثبت نشده است.</td></tr>';
+    }).join('') : '<tr><td colspan="14" class="table-empty">گردشی ثبت نشده است.</td></tr>';
   }
 
   async function loadItems() {
@@ -133,7 +136,10 @@
     A.qs('#it-body').innerHTML = items.map(function (i) {
       return '<tr' + (i.is_active ? '' : ' class="inactive"') + '><td dir="ltr">' + A.esc(i.code || '') + '</td><td>' + A.esc(i.name) + '</td>'
         + '<td>' + (i.kind === 'equipment' ? 'تجهیز' : 'قطعه') + '</td><td>' + A.esc(i.category || '') + '</td>'
-        + '<td>' + A.esc(i.unit || '') + '</td><td>' + (i.is_active ? '✓' : '—') + '</td><td>' + A.esc(i.source || '') + '</td>'
+        + '<td>' + A.esc(i.unit || '') + '</td>'
+        + '<td>' + (i.qty_rule === 'stages' ? 'به تعداد طبقات' : i.qty_rule ? A.esc(i.qty_rule) + ' عدد' : 'دستی') + '</td>'
+        + '<td>' + (i.per_type ? '✓ تیپ پمپ' : '—') + '</td>'
+        + '<td>' + (i.is_active ? '✓' : '—') + '</td><td>' + A.esc(i.source || '') + '</td>'
         + '<td>' + (MANAGE ? '<button type="button" class="btn-sm btn-ghost" data-edit="' + i.id + '">✎</button>' : '') + '</td></tr>';
     }).join('');
     A.qs('#cond-list').innerHTML = (cat.conditions || []).map(function (c) {
@@ -216,6 +222,41 @@
       } catch (err) { A.toast(err.message, 'error'); }
       this.value = '';
     });
+    var upload = function (sel, url, done) {
+      var inp = A.qs(sel);
+      if (!inp) return;
+      inp.addEventListener('change', async function () {
+        if (!this.files[0]) return;
+        var form = new FormData(); form.append('file', this.files[0]);
+        try { done(await A.api.upload(url, form)); }
+        catch (err) { A.toast(err.message, 'error'); }
+        this.value = '';
+      });
+    };
+    upload('#op-import', '/api/warehouse/opening/import', function (res) {
+      A.qs('#op-result').innerHTML = '<div class="alert info">' + A.esc(res.message) + ' ' + fa(res.data.rows) + ' ردیف.'
+        + (res.data.unknown_count ? '<br>⚠ ' + fa(res.data.unknown_count) + ' کالا در فهرست اقلام پیدا نشد: '
+          + res.data.unknown.map(A.esc).join('، ') : '') + '</div>';
+    });
+    upload('#rg-import', '/api/warehouse/register/import', function (res) {
+      A.toast('شناسنامه: ' + fa(res.data.added) + ' جدید، ' + fa(res.data.updated) + ' به‌روز', 'success');
+      loadRegister();
+    });
+    A.qs('#rg-q').addEventListener('input', A.debounce(loadRegister, 350));
+    A.qs('#rg-kind').addEventListener('change', loadRegister);
     refresh();
   });
+
+  async function loadRegister() {
+    var q = '?limit=300&q=' + encodeURIComponent(A.qs('#rg-q').value.trim()) + '&kind=' + encodeURIComponent(A.qs('#rg-kind').value);
+    try {
+      var d = (await A.api.get('/api/warehouse/register' + q)).data;
+      A.qs('#rg-count').textContent = fa(d.total) + ' تجهیز' + (d.total > d.rows.length ? ' (نمایش ' + fa(d.rows.length) + ')' : '');
+      A.qs('#rg-body').innerHTML = d.rows.map(function (e) {
+        return '<tr><td dir="ltr">' + A.esc(e.code) + '</td><td>' + A.esc(e.kind || '') + '</td><td dir="ltr">' + A.esc(e.type_label || '—')
+          + '</td><td>' + A.esc(e.name || '') + '</td><td>' + A.esc(e.status || e.last_facility || '') + '</td></tr>';
+      }).join('') || '<tr><td colspan="5" class="table-empty">تجهیزی پیدا نشد.</td></tr>';
+    } catch (err) { A.qs('#rg-body').innerHTML = '<tr><td colspan="5">' + A.esc(err.message) + '</td></tr>'; }
+  }
+  window.whLoadRegister = loadRegister;
 })();

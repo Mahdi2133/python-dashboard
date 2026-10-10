@@ -225,6 +225,9 @@ class WorkflowStage(db.Model):
     # job. Turn this on and the work goes only to the owner whose مرکز is the
     # well's.
     route_by_center = db.Column(db.Boolean, nullable=False, default=False)
+    # Whether the کارتابل of this stage shows «اطلاعات چاه از بانک‌های
+    # اطلاعاتی» (flow tests, production, videometry) beside the form.
+    show_refdata = db.Column(db.Boolean, nullable=False, default=True)
 
     # ── the referral: where this stage's work goes when it is done ──────────
     referral_mode = db.Column(db.String(10), nullable=False, default=REFER_NEXT)
@@ -376,6 +379,7 @@ class WorkflowStage(db.Model):
             "can_start": self.can_start,
             "start_kind": self.start_kind or self.applies_to,
             "route_by_center": self.route_by_center,
+            "show_refdata": self.show_refdata is not False,
             "owner_ids": self.owner_ids,
             "owner_names": [u.full_name for u in self.all_owners],
             "referral_mode": self.referral_mode,
@@ -567,6 +571,10 @@ class WorkflowInstance(db.Model):
             "well_id": self.well_id,
             "well": self.well.name if self.well else self.well_name_raw,
             "well_pm_code": self.well.pm_code if self.well else None,
+            # the office (مرکز) the well belongs to — the کارتابل groups by it
+            "well_center_id": self.well.center_id if self.well else None,
+            "well_center": (self.well.center.label if self.well and self.well.center
+                            else None),
             "current_stage": self.current_stage,
             "entry_stage": self.entry_stage,
             "parent_id": self.parent_id,

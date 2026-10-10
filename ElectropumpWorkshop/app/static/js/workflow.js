@@ -422,6 +422,10 @@
       + '<label class="owner-route"><input type="checkbox" class="wf-by-center"'
       + (s.route_by_center ? ' checked' : '') + '> فقط متولی مرکزِ همان چاه'
       + '</label>'
+      + '<label class="owner-route"><input type="checkbox" class="wf-show-ref"'
+      + (s.show_refdata !== false ? ' checked' : '') + '> نمایش «اطلاعات چاه از بانک‌های اطلاعاتی» '
+      + '(دبی‌سنجی، روند تولید، ویدئومتری) در کارتابل این مرحله'
+      + '</label>'
       + '<span class="hint">با چند متولی، فرایندی که یکی از آن‌ها شروع کند فقط در کارتابل '
       + '<b>همان شروع‌کننده</b> می‌آید و بقیه آن را نمی‌بینند؛ فرایندی که کس دیگری (مثلاً مدیر) '
       + 'شروع کند، به همه‌ی آن‌ها می‌رسد. گزینهٔ بالا کار را به متولی‌ای می‌دهد که مرکزش با '
@@ -1425,6 +1429,8 @@
       if (startKind) body.start_kind = startKind.value;
       var byCenter = card.querySelector('.wf-by-center');
       if (byCenter) body.route_by_center = byCenter.checked;
+      var showRef = card.querySelector('.wf-show-ref');
+      if (showRef) body.show_refdata = showRef.checked;
       var mode = card.querySelector('.wf-refer-mode');
       if (mode) {
         body.referral_mode = mode.value;

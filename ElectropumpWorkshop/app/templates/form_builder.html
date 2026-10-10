@@ -198,6 +198,19 @@
           <div class="field fb-wh-parts"><label>فیلد «خرابی مشاهده شده»</label><input type="text" id="fb-wh-fail" dir="ltr"></div>
           <div class="field fb-wh-parts"><label>فیلد «علت خرابی»</label><input type="text" id="fb-wh-cause" dir="ltr"></div>
           <div class="field fb-wh-parts"><label>فیلد «اقدام انجام شده»</label><input type="text" id="fb-wh-act" dir="ltr"></div>
+          <div class="field fb-wh-parts"><label>فیلد «تعداد طبقات پمپ»</label><input type="text" id="fb-wh-stagesf" dir="ltr" placeholder="pump_stages">
+            <span class="hint">برای قطعه‌هایی که «× طبقات» دارند (پروانه، بوش، طبقه).</span></div>
+          <div class="field fb-wh-parts"><label>فیلد «تیپ پمپ»</label><input type="text" id="fb-wh-typef" dir="ltr" placeholder="pump_curr">
+            <span class="hint">موجودی قطعه‌های «به تفکیک تیپ» با همین تیپ.</span></div>
+          <div class="field fb-wh-parts span-2"><label>رفتار فرم قطعات</label>
+            <label class="small"><input type="checkbox" id="fb-wh-listall" style="width:auto"> همه‌ی قطعه‌های این تجهیز یکجا در جدول (نه جستجو و افزودن)</label>
+            <label class="small"><input type="checkbox" id="fb-wh-stock" style="width:auto"> نمایش موجودی انبار و هشدار کمبود</label>
+            <label class="small"><input type="checkbox" id="fb-wh-eqout" style="width:auto"> با ثبت، همین تجهیز (کد بالا) از انبار تجهیزات خارج شود (دمونتاژ)</label></div>
+          <div class="field fb-wh-rows span-2"><label>ستون‌ها و اتصال</label>
+            <label class="small"><input type="checkbox" id="fb-wh-cond" style="width:auto"> ستون «وضعیت» نمایش داده شود</label>
+            <label class="small"><input type="checkbox" id="fb-wh-reg" style="width:auto"> پلاک / سریال از «شناسنامه‌ی تجهیزات» جستجو و انتخاب شود</label>
+            <label class="small">ردیف‌ها یک کالای متصل شوند (کد کالا، مثلاً EQ-03):
+              <input type="text" id="fb-wh-join" dir="ltr" style="width:100px"></label></div>
           <div class="field fb-wh-rows span-full"><label>ردیف‌های ثابت <span class="hint">(اختیاری — مثلاً الکتروموتور و پمپ کشیده‌شده)</span></label>
             <div id="fb-wh-preset"></div>
             <div class="toolbar-actions">
@@ -267,6 +280,14 @@
       <div class="field"><label>فیلدهای محاسباتی</label>
         <select id="sb-collapse"><option value="0">نمایش داده شوند</option>
           <option value="1">پنهان باشند (با دکمه‌ی «نمایش محاسبات»)</option></select></div>
+      <div class="field"><label>چیدمان</label>
+        <select id="sb-layout"><option value="">ستونی (عادی)</option>
+          <option value="grid">جدول ردیفی (کارکرد ۱ تا ۵ در یک جدول)</option></select>
+        <span class="hint">در «جدول ردیفی» فیلدهایی که نامشان به شماره ختم می‌شود (fc_q1 … fc_q5) ردیف‌های یک جدول‌اند
+          و هر کمیت یک ستون؛ فیلدهای محاسباتی در جدول جداگانه‌ی «نتایج» می‌آیند.</span></div>
+      <div class="field"><label>عنوان ردیف <span class="hint">(جدول ردیفی)</span></label>
+        <input type="text" id="sb-grid-label" placeholder="کارکرد {n}">
+        <span class="hint">{n} شماره‌ی ردیف است؛ خالی = «کارکرد {n}».</span></div>
       <div class="field"><label>گروه تکرارشونده <span class="hint">(اختیاری)</span></label>
         <input type="text" id="sb-repeat" placeholder="مثلاً: نقاط آزمایش">
         <span class="hint">بخش‌هایی با یک نام گروه (مثل نقطه ۱ تا ۵) یکی‌یکی باز می‌شوند: اولی نمایش داده
