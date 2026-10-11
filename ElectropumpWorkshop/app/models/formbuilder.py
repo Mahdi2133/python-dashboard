@@ -82,6 +82,9 @@ class FormSection(db.Model):
     # column per quantity, the row named by ``grid_label`` («کارکرد {n}»).
     layout = db.Column(db.String(20))
     grid_label = db.Column(db.String(80))
+    # «ورود از اکسل»: a «جدول ردیفی» filled from a workbook (the test bench's
+    # head/flow table) — a template to download, and the file read back in.
+    grid_import = db.Column(db.Boolean, nullable=False, default=False)
 
     fields = db.relationship("FormField", back_populates="section",
                              cascade="all, delete-orphan", order_by="FormField.sort_order")
@@ -98,6 +101,7 @@ class FormSection(db.Model):
             "repeat_group": self.repeat_group or None,
             "layout": self.layout or "",
             "grid_label": self.grid_label or None,
+            "grid_import": bool(self.grid_import),
         }
         if include_fields:
             fields = [f for f in self.fields if f.is_active or not active_only]

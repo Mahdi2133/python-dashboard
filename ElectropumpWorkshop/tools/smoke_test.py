@@ -3602,6 +3602,176 @@ def main():
         from app.services.upgrade_r15 import KEY as _K15
         check("تغییرات R15 یک‌بار اجرا و ثبت شد", _AM15.get(_K15) == "done")
 
+    print("\n— R16: WAL بانک‌ها، آزمایش پمپاژ ← نصب، ورود از اکسل، جایگزینی یا افزودن —")
+    import shutil as _sh16
+    import sqlite3 as _sq16
+    import tempfile as _tf16
+    from app.services.bootstrap import set_aside_foreign_wal as _safw16
+    _d16 = _tf16.mkdtemp()
+    _a16, _b16 = os.path.join(_d16, "other.db"), os.path.join(_d16, "warehouse.db")
+    _ca16 = _sq16.connect(_a16)
+    _ca16.execute("PRAGMA journal_mode=WAL")
+    _ca16.execute("PRAGMA wal_autocheckpoint=0")
+    _ca16.execute("CREATE TABLE x (i INTEGER)")
+    for _i16 in range(40):
+        _ca16.execute("INSERT INTO x VALUES (?)", (_i16,))
+    _ca16.commit()
+    _cb16 = _sq16.connect(_b16)
+    _cb16.execute("CREATE TABLE y (j INTEGER)")
+    _cb16.execute("INSERT INTO y VALUES (7)")
+    _cb16.commit()
+    _cb16.close()
+    _sh16.copy(_a16 + "-wal", _b16 + "-wal")
+    _sh16.copy(_a16 + "-shm", _b16 + "-shm")
+    _moved16 = _safw16(_b16)
+    _ca16.close()
+    _y16 = _sq16.connect(_b16).execute("SELECT j FROM y").fetchone()
+    check("WAL جامانده‌ی دیتابیس دیگر کنار warehouse.db کنار گذاشته می‌شود (لیست قطعات خراب نمی‌شود)",
+          len(_moved16) == 2 and not os.path.exists(_b16 + "-wal") and _y16 == (7,), f"{_moved16} {_y16}")
+    with app.app_context():
+        from app.refdata import BIND_FILES as _BF16
+    check("نگهبان WAL برای همه‌ی بانک‌های refdata (از جمله انبار)", "warehouse" in _BF16)
+
+    # a grid read from a test bench workbook
+    g16 = (c.post("/api/form-builder/sections", json={"code": "t_r16_grid", "title": "نقاط آزمون", "layout": "grid",
+                                                      "grid_label": "نقطه {n}", "grid_import": True,
+                                                      "show_on_entry": False}).get_json() or {}).get("data") or {}
+    check("بخش جدول ردیفی با «ورود از اکسل»", g16.get("grid_import") is True, str(g16)[:150])
+    for n16 in (1, 2, 3):
+        c.post("/api/form-builder/fields", json={"field_name": f"t16_h{n16}", "label": f"نقطه {n16} — هد (m)",
+                                                 "field_type": "number", "section_id": g16.get("id")})
+        c.post("/api/form-builder/fields", json={"field_name": f"t16_q{n16}", "label": f"نقطه {n16} — دبی (l/s)",
+                                                 "field_type": "number", "section_id": g16.get("id")})
+        c.post("/api/form-builder/fields", json={"field_name": f"t16_p{n16}", "label": f"نقطه {n16} — توان",
+                                                 "field_type": "formula", "formula": f"[t16_h{n16}] * [t16_q{n16}]",
+                                                 "section_id": g16.get("id")})
+    tp16 = c.get("/api/form-builder/sections/t_r16_grid/grid-template.xlsx")
+    from openpyxl import Workbook as _WB16, load_workbook as _LW16
+    _tw16 = _LW16(io.BytesIO(tp16.data)).active
+    check("قالب اکسل جدول: ستون‌های ورودی و ردیف‌ها", tp16.status_code == 200
+          and [x.value for x in _tw16[1]] == ["نقطه", "هد (m)", "دبی (l/s)"] and _tw16.max_row == 4,
+          str([x.value for x in _tw16[1]]))
+    _bw16 = _WB16()
+    _bs16 = _bw16.active
+    _bs16.append(["آزمایش دستگاه"])
+    _bs16.append(["#", "Head (m)", "Q (l/s)"])
+    _bs16.append(["نقطه 1", 240, 18])
+    _bs16.append(["نقطه 3", 200, "۲۶٫۵"])
+    _bx16 = io.BytesIO()
+    _bw16.save(_bx16)
+    gi16 = c.post("/api/form-builder/sections/t_r16_grid/grid-import",
+                  data={"file": (io.BytesIO(_bx16.getvalue()), "bench.xlsx")}, content_type="multipart/form-data")
+    _gv16 = ((gi16.get_json() or {}).get("data") or {}).get("values") or {}
+    check("ورود از اکسل: نام دیگر ستون‌ها (Head/Q) و شماره‌ی ردیف از ستون اول",
+          gi16.status_code == 200 and _gv16 == {"t16_h1": 240.0, "t16_q1": 18.0, "t16_h3": 200.0, "t16_q3": 26.5},
+          str(gi16.get_json())[:250])
+    check("بخش غیرجدولی ورود از اکسل ندارد",
+          c.get("/api/form-builder/sections/t_r15_wh/grid-template.xlsx").status_code == 404)
+
+    # equipment one by one: the pumping test marks it, the install takes only a marked one
+    with app.app_context():
+        from app.extensions import db as _db16
+        from app.warehouse import service as _wh16
+        from app.warehouse.models import WhItem as _WI16, WhMovement as _WM16, WhUnitMark as _WU16
+        _ep16 = _WI16.query.filter_by(code="EQ-03").first()
+        for _s16, _v16 in (("EM/T16 + MP/T16", "384/10+73.5"), ("EM/U16 + MP/U16", "293/12+45.5")):
+            _db16.session.add(_WM16(jdate="1405/07/20", date_num=14050720, warehouse="equipment", direction="in",
+                                    reason="assembled", item_id=_ep16.id, item_name=_ep16.name, qty=1,
+                                    condition="assembled", spec=_v16, variant=_v16, serial=_s16))
+        _db16.session.commit()
+        _u16 = {u["serial"]: u for u in _wh16.equipment_units(item_id=_ep16.id)}
+        check("الکتروپمپ‌های انبار تک‌به‌تک (پلاک، تیپ، آزمایش‌نشده)",
+              "EM/T16 + MP/T16" in _u16 and _u16["EM/T16 + MP/T16"]["tested"] is False
+              and _u16["EM/T16 + MP/T16"]["variant"] == "384/10+73.5", str(list(_u16))[:200])
+        _ep16_id = _ep16.id
+    ms16 = (c.post("/api/form-builder/sections", json={"code": "t_r16_wh", "title": "آزمایش و نصب آزمون",
+                                                      "show_on_entry": False}).get_json() or {}).get("data") or {}
+    c.post("/api/form-builder/fields", json={
+        "field_name": "t16_unit", "label": "الکتروپمپ آزمایش‌شده", "field_type": "wh_lines", "section_id": ms16.get("id"),
+        "wh_config": {"mode": "mark", "mark": "tested", "item_code": "EQ-03", "warehouse": "equipment"}})
+    c.post("/api/form-builder/fields", json={
+        "field_name": "t16_out", "label": "الکتروپمپ نصبی", "field_type": "wh_lines", "section_id": ms16.get("id"),
+        "wh_config": {"mode": "rows", "warehouse": "equipment", "direction": "out", "reason": "install",
+                      "units": True, "require_mark": "tested", "condition": False}})
+    with app.app_context():
+        from types import SimpleNamespace as _NS16
+        _inst16 = _NS16(id=990016, well=None, well_name_raw="چاه آزمون", workflow=None, well_id=None)
+        _stg16 = _NS16(stage_number=7, title="آزمایش آزمون")
+        _row16 = lambda s: [{"item_id": _ep16_id, "item_name": "الکتروپمپ کامل (مونتاژشده)", "serial": s, "qty": 1}]  # noqa: E731
+        _p_untested16 = _wh16.check_stage(_inst16, _stg16, {"t16_out": _row16("EM/T16 + MP/T16")})
+        _p_none16 = _wh16.check_stage(_inst16, _stg16, {"t16_unit": []})
+        _wh16.post_stage(_inst16, _stg16, {"t16_unit": _row16("EM/T16  +  MP/T16")})
+        _db16.session.commit()
+        _p_tested16 = _wh16.check_stage(_inst16, _stg16, {"t16_out": _row16("EM/T16 + MP/T16")})
+        _p_other16 = _wh16.check_stage(_inst16, _stg16, {"t16_out": _row16("EM/U16 + MP/U16")})
+        _p_gone16 = _wh16.check_stage(_inst16, _stg16, {"t16_out": _row16("EM/X + MP/X")})
+        _tested16 = {u["serial"]: u["tested"] for u in _wh16.equipment_units(item_id=_ep16_id)}
+    check("نصبِ الکتروپمپ آزمایش‌نشده رد می‌شود", len(_p_untested16) == 1 and "آزمایش پمپاژ" in _p_untested16[0],
+          str(_p_untested16))
+    check("آزمایش پمپاژ بدون انتخاب الکتروپمپ ثبت نمی‌شود", len(_p_none16) == 1, str(_p_none16))
+    check("ثبت آزمایش تیک «آزمایش پمپاژ انجام شده» را روی همان پلاک می‌زند (فاصله‌ها یکسان‌سازی)",
+          _tested16.get("EM/T16 + MP/T16") is True and _tested16.get("EM/U16 + MP/U16") is False, str(_tested16))
+    check("الکتروپمپ آزمایش‌شده برای نصب برداشته می‌شود؛ دیگری نه؛ ناموجود نه",
+          _p_tested16 == [] and len(_p_other16) == 1 and "موجود نیست" in (_p_gone16 or [""])[0],
+          f"{_p_tested16} {_p_other16} {_p_gone16}")
+    un16 = kahani.get("/api/warehouse/units?item_code=EQ-03")
+    check("فهرست الکتروپمپ‌ها با وضعیت آزمایش برای فرم‌ها", un16.status_code == 200
+          and any(u["serial"] == "EM/T16 + MP/T16" and u["tested"] for u in (un16.get_json() or {})["data"]["units"]))
+
+    # replace or append
+    _ow16 = _WB16()
+    _ow16.active.append(["انبار", "کد کالا", "نام کالا", "تیپ", "وضعیت", "تعداد", "پلاک / سریال", "آزمایش پمپاژ انجام شده"])
+    _ow16.active.append(["انبار تجهیزات", "EQ-03", None, "384/12+92", "مونتاژشده", 1, "EM/O16 + MP/O16", "بله"])
+    _ox16 = io.BytesIO()
+    _ow16.save(_ox16)
+    oa16 = c.post("/api/warehouse/opening/import", data={"file": (io.BytesIO(_ox16.getvalue()), "c.xlsx"), "mode": "append"},
+                  content_type="multipart/form-data")
+    with app.app_context():
+        _n_open16 = _WM16.query.filter_by(reason="opening").count()
+        _o_unit16 = {u["serial"]: u["tested"] for u in _wh16.equipment_units()}
+    check("انبارگردانی «افزودن»: ردیف‌های قبلی می‌مانند؛ پلاک و آزمایش پمپاژ از فایل",
+          oa16.status_code == 200 and (oa16.get_json() or {})["data"]["mode"] == "append" and _n_open16 >= 3
+          and _o_unit16.get("EM/O16 + MP/O16") is True, f"{_n_open16} {oa16.get_json()}")
+    _rw16 = _WB16()
+    _rw16.active.append(["کد تجهیز / پلاک", "نوع تجهیز", "تیپ", "شرح"])
+    _rw16.active.append(["EM/R16", "الکتروموتور", "55", "موتور جایگزینی"])
+    _rx16 = io.BytesIO()
+    _rw16.save(_rx16)
+    rr16 = c.post("/api/warehouse/register/import", data={"file": (io.BytesIO(_rx16.getvalue()), "r.xlsx"), "mode": "replace"},
+                  content_type="multipart/form-data")
+    _rl16 = (c.get("/api/warehouse/register").get_json() or {}).get("data") or {}
+    check("شناسنامه «جایگزینی کامل»: فقط ردیف‌های فایل می‌ماند", rr16.status_code == 200 and _rl16.get("total") == 1
+          and _rl16["rows"][0]["code"] == "EM/R16", str(_rl16)[:150])
+    with app.app_context():
+        from app.refdata.models import VideoInspection as _VI16
+        _vm_before16 = _VI16.query.count()
+    _vw16 = _WB16()
+    _vw16.active.append(["هیچ ستونی"])
+    _vx16 = io.BytesIO()
+    _vw16.save(_vx16)
+    vr16 = c.post("/api/refdata/videometry/import", data={"files": (io.BytesIO(_vx16.getvalue()), "v.xlsx"), "mode": "replace"},
+                  content_type="multipart/form-data")
+    _vres16 = ((vr16.get_json() or {}).get("data") or {}).get("results") or []
+    with app.app_context():
+        _vm_after16 = _VI16.query.count()
+    check("«جایگزینی کامل» با فایل نخواندنی: بانک به حالت قبل برمی‌گردد (پشتیبان در backups)", vr16.status_code == 200
+          and any(r.get("restored") for r in _vres16) and _vm_after16 == _vm_before16
+          and any(str(r.get("backup") or "").startswith("refdata_videometry_before_replace_") for r in _vres16),
+          f"{_vm_before16}→{_vm_after16} {str(_vres16)[:200]}")
+    with app.app_context():
+        from app.refdata.models import FrRecord as _FR16
+        _fr_before16 = _FR16.query.count()
+    fr16 = c.post("/api/refdata/flowrec/import", data={"files": (io.BytesIO(_x14.getvalue()), "سوابق.xlsx"), "mode": "replace"},
+                  content_type="multipart/form-data")
+    with app.app_context():
+        _fr_after16 = _FR16.query.count()
+    check("«جایگزینی کامل» سوابق سنجش دبی: فقط ردیف‌های فایل می‌ماند (همان فایل دوباره خوانده می‌شود)",
+          fr16.status_code == 200 and _fr_after16 == 2, f"{_fr_before16}→{_fr_after16} {str(fr16.get_json())[:200]}")
+    with app.app_context():
+        from app.models import AppMeta as _AM16
+        from app.services.upgrade_r16 import KEY as _K16
+        check("تغییرات R16 یک‌بار اجرا و ثبت شد", _AM16.get(_K16) == "done")
+
     print("\n— ترتیب تب‌ها —")
     check("صفحه اصلی، ثبت اطلاعات است",
           b"page-mode" in c.get("/", follow_redirects=True).data)

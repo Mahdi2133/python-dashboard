@@ -27,6 +27,19 @@ def catalogue():
     return ok(wh.catalogue())
 
 
+@bp.get("/units")
+@permission_required_any(*FORM_READERS, "warehouse.view")
+def units():
+    """Equipment in stock one by one (plaque/serial), with what is known of it
+    — the pumping test of an assembled electropump."""
+    item_id = request.args.get("item_id", type=int)
+    code = (request.args.get("item_code") or "").strip()
+    if not item_id and code:
+        item = WhItem.query.filter_by(code=code).first()
+        item_id = item.id if item else -1
+    return ok({"units": wh.equipment_units(item_id=item_id)})
+
+
 def _args():
     return {k: request.args.get(k) for k in ("warehouse", "direction", "condition", "reason",
                                               "item_id", "well", "date_from", "date_to")}
@@ -103,13 +116,22 @@ def opening_import():
     if f is None:
         return fail("فایلی انتخاب نشده است.", 422)
     try:
-        res = wh.import_opening(f.read(), current_user())
+        res = wh.import_opening(f.read(), current_user(), mode=_import_mode("replace"))
     except ValueError as exc:
         db.session.rollback()
         return fail(str(exc), 422)
+    added = res["mode"] == "append"
     record_audit("import", "warehouse", None,
-                 summary=f"انبارگردانی: {res['rows']} ردیف موجودی اول دوره", commit=True)
-    return ok(res, message="موجودی اول دوره (انبارگردانی) جایگزین شد.")
+                 summary=f"انبارگردانی ({'افزودن' if added else 'جایگزینی'}): {res['rows']} ردیف موجودی اول دوره",
+                 commit=True)
+    return ok(res, message=("ردیف‌های فایل به موجودی اول دوره اضافه شد." if added
+                            else "موجودی اول دوره (انبارگردانی) جایگزین شد."))
+
+
+def _import_mode(default: str) -> str:
+    """«جایگزینی» or «افزودن», as the person chose when sending the file."""
+    mode = (request.form.get("mode") or request.args.get("mode") or default).strip()
+    return mode if mode in ("replace", "append") else default
 
 
 @bp.get("/register")
@@ -141,13 +163,15 @@ def register_import():
     if f is None:
         return fail("فایلی انتخاب نشده است.", 422)
     try:
-        res = wh.import_register(f.read())
+        res = wh.import_register(f.read(), mode=_import_mode("append"))
     except ValueError as exc:
         db.session.rollback()
         return fail(str(exc), 422)
     record_audit("import", "warehouse", None,
-                 summary=f"شناسنامه تجهیزات: {res['added']} جدید، {res['updated']} به‌روز", commit=True)
-    return ok(res, message="شناسنامه تجهیزات وارد شد.")
+                 summary=(f"شناسنامه تجهیزات ({'جایگزینی' if res['mode'] == 'replace' else 'افزودن'}): "
+                          f"{res['added']} جدید، {res['updated']} به‌روز"), commit=True)
+    return ok(res, message=("شناسنامه تجهیزات با فایل جایگزین شد." if res["mode"] == "replace"
+                            else "شناسنامه تجهیزات وارد شد (کدهای تازه اضافه و موجودها به‌روز شدند)."))
 
 
 # ── items and conditions ─────────────────────────────────────────────────────
@@ -273,12 +297,13 @@ def items_import():
             res = import_partsbook(data)
             res.update({"added": res["items_added"], "updated": res["items_updated"]})
         else:
-            res = wh.import_items(data)
+            res = wh.import_items(data, mode=_import_mode("append"))
     except ValueError as exc:
         db.session.rollback()
         return fail(str(exc), 422)
     record_audit("import", "warehouse", None,
-                 summary=f"ورود اقلام انبار: {res['added']} جدید، {res['updated']} به‌روز", commit=True)
+                 summary=f"ورود اقلام انبار: {res['added']} جدید، {res['updated']} به‌روز"
+                         + (f"، {res.get('removed')} غیرفعال" if res.get("removed") else ""), commit=True)
     return ok(res, message="اقلام انبار وارد شد.")
 
 

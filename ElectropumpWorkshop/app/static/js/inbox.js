@@ -142,10 +142,13 @@
         return '<option value="' + st.id + '">' + J.toFaDigits(st.stage_number) + ' — ' + A.esc(st.title) + '</option>';
       }).join('');
     }
-    if (sel) sel.closest('.wb-field').classList.toggle('hidden', board.stages.length < 2 && !sel.value);
+    if (sel) sel.classList.toggle('hidden', board.stages.length < 2 && !sel.value);
     renderBoard();
   }
 
+  /* One dropdown, not a wall of cards: the wells still to do (yours first,
+     then returned, waiting on approval or on earlier stages) and the wells
+     done, each with its office; picking one opens it here. */
   function renderBoard() {
     if (!board) return;
     var t = board.totals, remaining = t.todo + t.returned + t.approval + t.waiting;
@@ -153,34 +156,33 @@
       ? J.toFaDigits(board.offices.length) + ' اداره · باقی‌مانده ' + J.toFaDigits(remaining)
         + ' · انجام‌شده ' + J.toFaDigits(t.done) : '');
     var needle = ((A.qs('#wb-q') || {}).value || '').trim();
-    if (!board.offices.length) {
-      fill('#wb-body', '<div class="hint">در این بازه چاهی به مرحله‌های شما نرسیده است.</div>');
-      return;
-    }
-    fill('#wb-body', board.offices.map(function (o) {
-      var wells = o.wells.filter(function (w) { return !needle || (w.well || '').indexOf(needle) !== -1; });
-      if (needle && !wells.length) return '';
-      var total = o.remaining + o.done, pct = total ? Math.round(100 * o.done / total) : 0;
-      var chips = function (list) {
-        return list.map(function (w) {
-          return '<button type="button" class="wb-chip wb-' + w.state + '" data-wb-inst="' + w.instance_id
-            + '" data-wb-stage="' + w.stage_number + '" title="' + A.esc(w.state_label + ' — مرحله '
-            + w.stage_number + ': ' + w.stage_title + (w.done_at_j ? ' — ' + w.done_at_j : '')) + '">'
-            + A.esc(w.well || ('#' + w.instance_id))
-            + (board.stages.length > 1 ? ' <small>' + J.toFaDigits(w.stage_number) + '</small>' : '') + '</button>';
-        }).join('');
-      };
-      var left = wells.filter(function (w) { return w.state !== 'done'; });
-      var gone = wells.filter(function (w) { return w.state === 'done'; });
-      return '<div class="wb-office">'
-        + '<div class="wb-head"><b>🏢 ' + A.esc(o.office) + '</b>'
-        + '<span class="wb-counts"><span class="wb-n-left">باقی‌مانده ' + J.toFaDigits(o.remaining) + '</span>'
-        + '<span class="wb-n-done">انجام‌شده ' + J.toFaDigits(o.done) + '</span></span></div>'
-        + '<div class="wb-bar"><span style="width:' + pct + '%"></span></div>'
-        + (left.length ? '<div class="wb-sub">مانده</div><div class="wb-chips">' + chips(left) + '</div>' : '')
-        + (gone.length ? '<div class="wb-sub">رفته</div><div class="wb-chips">' + chips(gone) + '</div>' : '')
-        + '</div>';
-    }).join(''));
+    var pick = A.qs('#wb-pick');
+    if (!pick) return;
+    var left = [], gone = [];
+    var RANK = { todo: 0, returned: 1, approval: 2, waiting: 3 };
+    board.offices.forEach(function (o) {
+      o.wells.forEach(function (w) {
+        if (needle && (w.well || '').indexOf(needle) === -1 && (o.office || '').indexOf(needle) === -1) return;
+        (w.state === 'done' ? gone : left).push({ w: w, office: o.office });
+      });
+    });
+    left.sort(function (a, b) { return (RANK[a.w.state] || 9) - (RANK[b.w.state] || 9)
+      || String(a.office).localeCompare(String(b.office), 'fa') || String(a.w.well).localeCompare(String(b.w.well), 'fa'); });
+    gone.sort(function (a, b) { return String(a.office).localeCompare(String(b.office), 'fa')
+      || String(a.w.well).localeCompare(String(b.w.well), 'fa'); });
+    var MARK = { todo: '🟠', returned: '🔴', approval: '🟣', waiting: '⚪', done: '✅' };
+    var opt = function (x) {
+      var w = x.w;
+      return '<option value="' + w.instance_id + '|' + w.stage_number + '">'
+        + MARK[w.state] + ' ' + A.esc(x.office || '—') + ' — ' + A.esc(w.well || ('#' + w.instance_id))
+        + (board.stages.length > 1 ? ' — مرحله ' + J.toFaDigits(w.stage_number) : '')
+        + ' (' + A.esc(w.state_label) + (w.done_at_j ? ' ' + A.esc(w.done_at_j) : '') + ')</option>';
+    };
+    pick.innerHTML = (board.offices.length
+        ? '<option value="">— انتخاب چاه (' + J.toFaDigits(left.length) + ' باقی‌مانده، ' + J.toFaDigits(gone.length) + ' انجام‌شده) —</option>'
+        : '<option value="">در این بازه چاهی به مرحله‌های شما نرسیده است</option>')
+      + (left.length ? '<optgroup label="⏳ باقی‌مانده (' + J.toFaDigits(left.length) + ')">' + left.map(opt).join('') + '</optgroup>' : '')
+      + (gone.length ? '<optgroup label="✅ انجام‌شده (' + J.toFaDigits(gone.length) + ')">' + gone.map(opt).join('') + '</optgroup>' : '');
   }
 
   /* «ارجاع برای تأیید» in the list: requests waiting on me, and the answers
@@ -1041,6 +1043,9 @@
          could not be judged and «علت خرابی» would hide itself. */
       context: Object.assign({}, (current && current.detail && current.detail.payload) || {},
                              { operation_kind: operationLabel }),
+      /* the run this form belongs to: the electropump it assembled is the
+         one its pumping test is about, unless another is picked */
+      instanceId: current && current.detail ? current.detail.id : null,
       /* «مستند» fields upload straight into their slot of this process. */
       upload: async function (field, files) {
         var added = [];
@@ -1229,6 +1234,14 @@
     var button = A.qs('#wf-submit');
     /* «موجودی کافی نیست»: the stock alarm is a warning, not a block — the
        count may not be up to date — so the owner confirms knowingly */
+    /* what the warehouse will not let go: an electropump without its
+       pumping test does not leave for install — said here, before sending */
+    var blocked = form && form.blockers ? form.blockers() : [];
+    if (blocked.length && chosenAction().kind === 'forward') {
+      fill('#inbox-alert', '<div class="alert error">⛔ ' + blocked.map(A.esc).join('<br>⛔ ') + '</div>');
+      A.toast(blocked[0], 'error');
+      return;
+    }
     var alerts = form && form.stockAlerts ? form.stockAlerts() : [];
     if (alerts.length && !window.confirm('⚠ ' + alerts.join('\n⚠ ') + '\n\nبا وجود این هشدارها مرحله ثبت شود؟')) return;
     button.disabled = true;
@@ -1617,6 +1630,13 @@
       var el = A.qs(sel); if (el) el.addEventListener('change', loadBoard);
     });
     var wq = A.qs('#wb-q'); if (wq) wq.addEventListener('input', renderBoard);
+    var wp = A.qs('#wb-pick');
+    if (wp) wp.addEventListener('change', function () {
+      if (!wp.value) return;
+      var parts = wp.value.split('|');
+      openStage({ id: Number(parts[0]), stage_number: Number(parts[1]) });
+      var d = A.qs('#wf-detail'); if (d) d.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
     document.addEventListener('click', function (ev) {
       var chip = ev.target.closest('[data-wb-inst]');
       if (!chip) return;

@@ -183,7 +183,8 @@
         <div class="field-group cols-4">
           <div class="field"><label>شکل فرم</label><select id="fb-wh-mode">
             <option value="rows">ردیف‌های آزاد (کالا، تیپ، پلاک، وضعیت، تعداد)</option>
-            <option value="parts">فرم قطعات (همه‌ی قطعه‌های یک تجهیز، با شمارش)</option></select></div>
+            <option value="parts">فرم قطعات (همه‌ی قطعه‌های یک تجهیز، با شمارش)</option>
+            <option value="mark">تأیید روی تجهیز (یک تجهیز از موجودی، مثل «آزمایش پمپاژ انجام شده»)</option></select></div>
           <div class="field"><label>انبار</label><select id="fb-wh-wh">
             <option value="equipment">انبار تجهیزات</option><option value="parts">انبار قطعات</option></select></div>
           <div class="field"><label>ورود / خروج</label><select id="fb-wh-dir">
@@ -210,7 +211,17 @@
             <label class="small"><input type="checkbox" id="fb-wh-cond" style="width:auto"> ستون «وضعیت» نمایش داده شود</label>
             <label class="small"><input type="checkbox" id="fb-wh-reg" style="width:auto"> پلاک / سریال از «شناسنامه‌ی تجهیزات» جستجو و انتخاب شود</label>
             <label class="small">ردیف‌ها یک کالای متصل شوند (کد کالا، مثلاً EQ-03):
-              <input type="text" id="fb-wh-join" dir="ltr" style="width:100px"></label></div>
+              <input type="text" id="fb-wh-join" dir="ltr" style="width:100px"></label>
+            <label class="small"><input type="checkbox" id="fb-wh-units" style="width:auto"> برداشت تک‌به‌تک: پلاک از فهرست موجودی انبار انتخاب شود</label>
+            <label class="small">فقط تجهیزی قابل انتخاب باشد که:
+              <select id="fb-wh-reqmark" style="width:auto"><option value="">(بدون شرط)</option>
+                <option value="tested">آزمایش پمپاژ انجام شده</option></select></label></div>
+          <div class="field fb-wh-mark span-2"><label>تأیید روی تجهیز</label>
+            <label class="small">تأیید: <select id="fb-wh-mark" style="width:auto"><option value="tested">آزمایش پمپاژ انجام شده</option></select></label>
+            <label class="small">کالا (کد): <input type="text" id="fb-wh-mitem" dir="ltr" style="width:100px" placeholder="EQ-03"></label>
+            <label class="small">مدلِ انتخاب‌شده در این فیلد نوشته شود: <input type="text" id="fb-wh-mvar" dir="ltr" style="width:140px" placeholder="wt_unit_model"></label>
+            <label class="small"><input type="checkbox" id="fb-wh-mreq" style="width:auto"> انتخاب الزامی است</label>
+            <span class="hint">تأیید وقتی ثبت می‌شود که مرحله کامل شود (اگر مرحله تأییدکننده دارد، پس از تأیید او).</span></div>
           <div class="field fb-wh-rows span-full"><label>ردیف‌های ثابت <span class="hint">(اختیاری — مثلاً الکتروموتور و پمپ کشیده‌شده)</span></label>
             <div id="fb-wh-preset"></div>
             <div class="toolbar-actions">
@@ -287,6 +298,8 @@
           و هر کمیت یک ستون؛ فیلدهای محاسباتی در جدول جداگانه‌ی «نتایج» می‌آیند.</span></div>
       <div class="field"><label>عنوان ردیف <span class="hint">(جدول ردیفی)</span></label>
         <input type="text" id="sb-grid-label" placeholder="کارکرد {n}">
+        <label class="mini-check mt-1"><input type="checkbox" id="sb-grid-import"> 📥 ورود از اکسل
+          (دکمه‌های «قالب اکسل» و «بارگذاری از اکسل» روی همین جدول — مقادیر ردیف‌ها از فایل خوانده می‌شود)</label>
         <span class="hint">{n} شماره‌ی ردیف است؛ خالی = «کارکرد {n}».</span></div>
       <div class="field"><label>گروه تکرارشونده <span class="hint">(اختیاری)</span></label>
         <input type="text" id="sb-repeat" placeholder="مثلاً: نقاط آزمایش">

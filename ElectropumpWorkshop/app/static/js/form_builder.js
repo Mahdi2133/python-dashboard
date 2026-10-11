@@ -568,9 +568,10 @@
     }).join(' ');
   }
   function whModeSync() {
-    var parts = A.qs('#fb-wh-mode').value === 'parts';
+    var mode = A.qs('#fb-wh-mode').value, parts = mode === 'parts';
     A.qsa('.fb-wh-parts').forEach(function (el) { el.classList.toggle('hidden', !parts); });
-    A.qsa('.fb-wh-rows').forEach(function (el) { el.classList.toggle('hidden', parts); });
+    A.qsa('.fb-wh-rows').forEach(function (el) { el.classList.toggle('hidden', mode !== 'rows'); });
+    A.qsa('.fb-wh-mark').forEach(function (el) { el.classList.toggle('hidden', mode !== 'mark'); });
     if (parts) loadPartsList();
   }
 
@@ -734,7 +735,7 @@
     A.qs('#fb-wh-reason').innerHTML = Object.keys(L.reasons).map(function (k) {
       return '<option value="' + k + '">' + A.esc(L.reasons[k]) + '</option>';
     }).join('');
-    A.qs('#fb-wh-mode').value = cfg.mode === 'parts' ? 'parts' : 'rows';
+    A.qs('#fb-wh-mode').value = cfg.mode === 'parts' || cfg.mode === 'mark' ? cfg.mode : 'rows';
     A.qs('#fb-wh-wh').value = cfg.warehouse || 'equipment';
     A.qs('#fb-wh-dir').value = cfg.direction || 'in';
     A.qs('#fb-wh-reason').value = cfg.reason || 'manual';
@@ -753,6 +754,9 @@
     set('#fb-wh-listall', cfg.list_all); set('#fb-wh-stock', cfg.check_stock); set('#fb-wh-eqout', cfg.equipment_out);
     set('#fb-wh-cond', cfg.condition !== false); set('#fb-wh-reg', cfg.serial_source === 'register');
     set('#fb-wh-join', cfg.join_into);
+    set('#fb-wh-units', cfg.units); set('#fb-wh-reqmark', cfg.require_mark);
+    set('#fb-wh-mark', cfg.mark || 'tested'); set('#fb-wh-mitem', cfg.item_code); set('#fb-wh-mvar', cfg.variant_field);
+    set('#fb-wh-mreq', cfg.mode !== 'mark' || cfg.required !== false);
     drawWhPreset();
     whModeSync();
   }
@@ -775,7 +779,10 @@
              stages_field: val('#fb-wh-stagesf'), type_field: val('#fb-wh-typef'),
              list_all: chk('#fb-wh-listall'), check_stock: chk('#fb-wh-stock'), equipment_out: chk('#fb-wh-eqout'),
              condition: A.qs('#fb-wh-cond') ? A.qs('#fb-wh-cond').checked : true,
-             serial_source: chk('#fb-wh-reg') ? 'register' : null, join_into: val('#fb-wh-join') || null };
+             serial_source: chk('#fb-wh-reg') ? 'register' : null, join_into: val('#fb-wh-join') || null,
+             units: chk('#fb-wh-units'), require_mark: val('#fb-wh-reqmark') || null,
+             mark: val('#fb-wh-mark') || 'tested', item_code: val('#fb-wh-mitem') || null,
+             variant_field: val('#fb-wh-mvar') || null, required: chk('#fb-wh-mreq') };
   }
 
   function fillChart(field) {
@@ -1068,6 +1075,7 @@
     A.qs('#sb-repeat').value = section && section.repeat_group ? section.repeat_group : '';
     var lay = A.qs('#sb-layout'); if (lay) lay.value = section && section.layout === 'grid' ? 'grid' : '';
     var gl = A.qs('#sb-grid-label'); if (gl) gl.value = section && section.grid_label ? section.grid_label : '';
+    var gi = A.qs('#sb-grid-import'); if (gi) gi.checked = !!(section && section.grid_import);
     fillWhen(section && section.visible_when, 'sb');
     fillBring(section);
     A.qs('#sb-delete').classList.toggle('hidden', !section);
@@ -1085,6 +1093,7 @@
       repeat_group: A.qs('#sb-repeat').value.trim(),
       layout: A.qs('#sb-layout') ? A.qs('#sb-layout').value : '',
       grid_label: A.qs('#sb-grid-label') ? A.qs('#sb-grid-label').value.trim() : '',
+      grid_import: !!(A.qs('#sb-grid-import') && A.qs('#sb-grid-import').checked),
       visible_when: readWhen('sb')
     };
     if (!payload.code || !payload.title) {

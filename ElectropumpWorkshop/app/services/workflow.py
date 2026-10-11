@@ -1482,6 +1482,17 @@ def submit_stage(instance: WorkflowInstance, payload: dict, user,
             + " یا ".join(f"«{a['label']}»" for a in tied) + " را انتخاب کنید "
             "و توضیح آن را بنویسید.")
 
+    # The warehouse's own rules: an electropump whose pumping test is not
+    # done does not leave the equipment warehouse for install.
+    try:
+        from ..warehouse.service import check_stage
+        held = check_stage(instance, stage, payload or {})
+    except Exception:  # noqa: BLE001 — a reference file must not stop the process
+        log.exception("Warehouse check of stage %s failed", stage.stage_number)
+        held = []
+    if held:
+        raise WorkflowError(" ".join(held))
+
     # Sent back «with a photo, a video, any document»: nothing goes on until
     # something has been attached to this stage since the request.
     owed = docs_owed(instance, stage.stage_number)

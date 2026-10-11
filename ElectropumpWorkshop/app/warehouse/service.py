@@ -281,6 +281,9 @@ def post_stage(instance, stage, data: dict, user=None) -> int:
         if cfg.get("mode") == "parts":
             written += _post_parts(instance, stage, field, cfg, data, user, jdate, jy, jm, jd)
             continue
+        if cfg.get("mode") == "mark":
+            written += _post_marks(instance, stage, field, cfg, data, user, jdate)
+            continue
         rows = clean_lines(data.get(field.field_name))
         if cfg.get("join_into") and rows:
             rows = _join_rows(cfg, rows)
@@ -303,6 +306,120 @@ def post_stage(instance, stage, data: dict, user=None) -> int:
                 user_name=getattr(user, "full_name", None)))
             written += 1
     return written
+
+
+# ── one piece of equipment by its plaque: in stock, and what is known of it ─
+def unit_key(serial) -> str:
+    """A plaque/serial as compared: «EM/1 +  MP/2» and «EM/1 + MP/2» are one."""
+    return " ".join(str(serial or "").split())
+
+
+def equipment_units(item_id=None, exclude=None) -> list:
+    """Every piece of equipment in the equipment warehouse that has a
+    plaque/serial — an assembled electropump «EM/… + MP/…», a motor, a pump —
+    with its type and what has been established about it («آزمایش پمپاژ
+    انجام شده»). ``exclude`` = (instance, stage, field) leaves out what that
+    stage wrote itself, so sending it again does not count its own removal."""
+    from .models import WhUnitMark
+    q = WhMovement.query.filter(WhMovement.warehouse == "equipment",
+                                WhMovement.serial.isnot(None), WhMovement.serial != "")
+    if item_id:
+        q = q.filter(WhMovement.item_id == item_id)
+    units = {}
+    for m in q.order_by(WhMovement.id):
+        if exclude and (m.instance_id, m.stage_number, m.field_name) == tuple(exclude):
+            continue
+        key = (m.item_id, unit_key(m.serial))
+        u = units.get(key)
+        if u is None:
+            u = units[key] = {"item_id": m.item_id, "item_name": m.item_name, "serial": key[1],
+                              "balance": 0.0, "variant": None, "spec": None, "condition": None,
+                              "in_jdate": None, "instance_id": None, "well_name": None,
+                              "reason": None}
+        u["balance"] += (m.qty or 0) * (1 if m.direction == "in" else -1)
+        if m.direction == "in":
+            u.update(variant=m.variant or u["variant"], spec=m.spec or u["spec"],
+                     condition=m.condition, in_jdate=m.jdate, instance_id=m.instance_id,
+                     well_name=m.well_name, reason=m.reason)
+    marks = {}
+    for mk in WhUnitMark.query.order_by(WhUnitMark.id).all():
+        marks.setdefault(unit_key(mk.serial), []).append(mk)
+    out = []
+    for u in units.values():
+        if u["balance"] <= 1e-9:
+            continue
+        got = marks.get(u["serial"], [])
+        tested = [m for m in got if m.mark == "tested"]
+        u.update(marks=sorted({m.mark for m in got}), tested=bool(tested),
+                 tested_jdate=tested[-1].jdate if tested else None,
+                 tested_note=tested[-1].well_name or tested[-1].note if tested else None,
+                 reason_label=REASONS.get(u["reason"], u["reason"]))
+        out.append(u)
+    out.sort(key=lambda u: (u["item_name"] or "", u["variant"] or "", u["serial"]))
+    return out
+
+
+def _post_marks(instance, stage, field, cfg, data, user, jdate) -> int:
+    """«تأیید روی تجهیز»: the equipment picked on the form gets the mark
+    (``mark``, «tested» by default) — the pumping test of an electropump."""
+    from .models import WhUnitMark
+    WhUnitMark.query.filter_by(instance_id=instance.id, stage_number=stage.stage_number,
+                               field_name=field.field_name).delete()
+    n = 0
+    for r in clean_lines(data.get(field.field_name)):
+        if not r.get("serial"):
+            continue
+        db.session.add(WhUnitMark(
+            serial=unit_key(r["serial"]), item_id=r.get("item_id"), variant=r.get("variant"),
+            mark=cfg.get("mark") or "tested", jdate=jdate, source="process",
+            instance_id=instance.id, stage_number=stage.stage_number, stage_title=stage.title,
+            field_name=field.field_name,
+            well_name=(instance.well.name if instance.well else instance.well_name_raw),
+            user_name=getattr(user, "full_name", None)))
+        n += 1
+    return n
+
+
+def check_stage(instance, stage, data: dict) -> list:
+    """What stops a stage being sent, warehouse-wise: equipment taken out that
+    lacks the mark the field asks for (``require_mark``: an electropump whose
+    pumping test is not done cannot go out for install), equipment that is not
+    in stock, or a «تأیید روی تجهیز» field with nothing picked."""
+    from ..models import FormField
+    from .models import UNIT_MARKS
+    problems = []
+    fields = FormField.query.filter_by(field_type="wh_lines", is_active=True).all()
+    for field in fields:
+        if field.field_name not in (data or {}):
+            continue
+        cfg = parse_config(field.wh_config)
+        mode = cfg.get("mode")
+        need = cfg.get("require_mark") if mode not in ("parts", "mark") else None
+        if mode != "mark" and not need:
+            continue
+        rows = clean_lines(data.get(field.field_name))
+        here = {u["serial"]: u for u in equipment_units(
+            exclude=(instance.id, stage.stage_number, field.field_name))}
+        if mode == "mark":
+            if not rows and cfg.get("required", True):
+                problems.append(f"«{field.label}»: تجهیزی از فهرست انتخاب نشده است.")
+            for r in rows:
+                if r.get("serial") and unit_key(r["serial"]) not in here:
+                    problems.append(f"«{r['serial']}» در انبار تجهیزات موجود نیست.")
+            continue
+        label = UNIT_MARKS.get(need, need)
+        for r in rows:
+            name = r.get("item_name") or "تجهیز"
+            if not r.get("serial"):
+                problems.append(f"«{name}»: پلاک / شماره از فهرست موجودی انبار انتخاب نشده است.")
+                continue
+            u = here.get(unit_key(r["serial"]))
+            if u is None:
+                problems.append(f"«{name} — {r['serial']}» در انبار تجهیزات موجود نیست.")
+            elif need not in u["marks"]:
+                problems.append(f"«{name} {u.get('variant') or ''} — {u['serial']}»: «{label}» ثبت نشده است؛ "
+                                "تا آزمایش پمپاژ آن در کارگاه مکانیک انجام و تأیید نشود، برداشت برای نصب ممکن نیست.")
+    return problems
 
 
 def _post_parts(instance, stage, field, cfg, data, user, jdate, jy, jm, jd) -> int:
@@ -567,7 +684,9 @@ def stock_summary() -> dict:
 # ── the stock count («انبارگردانی»): the balance everything starts from ─────
 OPENING_COLUMNS = [("warehouse", "انبار"), ("code", "کد کالا"), ("name", "نام کالا"),
                    ("variant", "تیپ (kW / تیپ پمپ/طبقه / تیپ پمپ)"), ("condition", "وضعیت"),
-                   ("qty", "تعداد")]
+                   ("qty", "تعداد"), ("serial", "پلاک / سریال (هر تجهیز یک سطر)"),
+                   ("tested", "آزمایش پمپاژ انجام شده (بله / خیر)")]
+YES = {"بله", "اری", "آری", "yes", "y", "1", "true", "✓", "✔", "انجام شده", "انجام شد", "دارد"}
 
 
 def opening_xlsx() -> bytes:
@@ -583,22 +702,36 @@ def opening_xlsx() -> bytes:
     for c in ws[1]:
         c.font = Font(bold=True)
     items = {i.id: i for i in WhItem.query.all()}
+    # equipment with a plaque one row each (with its pumping test), the rest by type
+    counted = {}
+    for u in equipment_units():
+        it = items.get(u["item_id"])
+        ws.append([WAREHOUSES["equipment"], it.code if it else None, u["item_name"],
+                   u["variant"] or None, conds.get(u["condition"], u["condition"]), u["balance"],
+                   u["serial"], "بله" if u["tested"] else "خیر"])
+        key = (u["item_id"], u["variant"] or "", u["condition"] or "")
+        counted[key] = counted.get(key, 0) + u["balance"]
     for r in stock():
-        if abs(r["balance"]) < 1e-9:
+        rest = r["balance"] - (counted.get((r["item_id"], r["variant"] or "", r["condition"] or ""), 0)
+                               if r["warehouse"] == "equipment" else 0)
+        if abs(rest) < 1e-9:
             continue
         it = items.get(r["item_id"])
         ws.append([WAREHOUSES.get(r["warehouse"], r["warehouse"]), it.code if it else None,
                    r["item_name"], r["variant"] or None, conds.get(r["condition"], r["condition"]),
-                   r["balance"]])
+                   rest, None, None])
     ws.freeze_panes = "A2"
     out = io.BytesIO()
     wb.save(out)
     return out.getvalue()
 
 
-def import_opening(data: bytes, user=None) -> dict:
-    """Replace the starting balance with a stock count from Excel (the sample
-    count goes with it). Columns: انبار، کد کالا یا نام کالا، تیپ، وضعیت، تعداد."""
+def import_opening(data: bytes, user=None, mode: str = "replace") -> dict:
+    """The starting balance from a stock count in Excel. ``replace`` (the
+    default) takes the place of the count there was — the sample with it;
+    ``append`` adds the file's rows to it. Columns: انبار، کد کالا یا نام
+    کالا، تیپ، وضعیت، تعداد، پلاک / سریال، آزمایش پمپاژ انجام شده."""
+    from .models import WhUnitMark
     from openpyxl import load_workbook
     from ..refdata.textnorm import norm_label, norm_text, to_float, to_text
     wb = load_workbook(io.BytesIO(data), data_only=True, read_only=True)
@@ -614,6 +747,7 @@ def import_opening(data: bytes, user=None) -> dict:
         return next((c for c, h in enumerate(head) for n in names if h.startswith(n)), None)
     c_wh, c_code, c_name = col("انبار"), col("کد کالا", "کد"), col("نام کالا", "شرح")
     c_var, c_cond, c_qty = col("تیپ"), col("وضعیت"), col("تعداد", "موجودی", "مقدار")
+    c_serial, c_test = col("پلاک", "سریال", "شماره"), col("آزمایش")
     if c_qty is None:
         raise ValueError("ستون «تعداد» پیدا نشد.")
     conds = {norm_text(c.label): c.code for c in WhCondition.query.all()}
@@ -622,8 +756,11 @@ def import_opening(data: bytes, user=None) -> dict:
     by_name = {norm_text(i.name): i for i in WhItem.query.all()}
     from ..services.jalali import today_jalali
     jy, jm, jd = today_jalali()
-    added, unknown = 0, []
-    WhMovement.query.filter_by(reason="opening").delete()
+    added, unknown, marked = 0, [], 0
+    if mode != "append":
+        WhMovement.query.filter_by(reason="opening").delete()
+        WhUnitMark.query.filter_by(source="opening").delete()
+    jdate = f"{jy}/{jm:02d}/{jd:02d}"
     for r in rows[hdr + 1:]:
         def cell(c):
             return r[c] if c is not None and c < len(r) else None
@@ -641,19 +778,62 @@ def import_opening(data: bytes, user=None) -> dict:
         cond = conds.get(cond_text) or next((code for lab, code in conds.items()
                                              if cond_text and cond_text in lab), None)
         var = to_text(cell(c_var))
+        serial = unit_key(to_text(cell(c_serial))) or None
+        variant = variant_of(var) if item.kind == "equipment" else (_pump_type(var) if var else None)
         db.session.add(WhMovement(
-            jdate=f"{jy}/{jm:02d}/{jd:02d}", date_num=jy * 10000 + jm * 100 + jd, warehouse=wh,
+            jdate=jdate, date_num=jy * 10000 + jm * 100 + jd, warehouse=wh,
             direction="in", reason="opening", item_id=item.id, item_name=item.name,
             item_kind=item.kind, unit=item.unit, qty=qty, condition=cond or ("new" if wh == "parts" else None),
-            spec=var, variant=(variant_of(var) if item.kind == "equipment" else (_pump_type(var) if var else None)),
+            spec=var, variant=variant, serial=serial,
             note="انبارگردانی", user_id=getattr(user, "id", None),
             user_name=getattr(user, "full_name", None)))
         added += 1
+        if serial and norm_text(to_text(cell(c_test)) or "").lower() in YES:
+            db.session.add(WhUnitMark(serial=serial, item_id=item.id, variant=variant, mark="tested",
+                                      jdate=jdate, source="opening", note="انبارگردانی"))
+            marked += 1
     db.session.commit()
-    return {"rows": added, "unknown": unknown[:50], "unknown_count": len(unknown)}
+    return {"rows": added, "tested": marked, "mode": "append" if mode == "append" else "replace",
+            "unknown": unknown[:50], "unknown_count": len(unknown)}
 
 
 SAMPLE_NOTE = "انبارگردانی نمونه — با فایل انبارگردانی واقعی جایگزین کنید"
+
+
+# sample assembled electropumps, by plaque: the first one's pumping test is done
+SAMPLE_ELECTROPUMPS = [("384/10+73.5", "EM/S-1001 + MP/S-2001", True),
+                       ("293/12+45.5", "EM/S-1002 + MP/S-2002", False)]
+
+
+def _sample_unit(label, serial, tested) -> None:
+    """Give the sample electropump just added its plaque (and its test)."""
+    from .models import WhUnitMark
+    m = next((x for x in db.session.new if isinstance(x, WhMovement) and x.variant == label
+              and x.reason == "opening" and not x.serial), None)
+    if m is None:
+        return
+    m.serial = serial
+    if tested:
+        db.session.add(WhUnitMark(serial=serial, item_id=m.item_id, variant=label, mark="tested",
+                                  jdate=m.jdate, source="opening", note=SAMPLE_NOTE))
+
+
+def sample_units_upgrade() -> int:
+    """A sample count seeded before electropumps had plaques: give them one."""
+    from .models import WhUnitMark
+    n = 0
+    for label, serial, tested in SAMPLE_ELECTROPUMPS:
+        m = WhMovement.query.filter_by(reason="opening", variant=label, note=SAMPLE_NOTE).filter(
+            db.or_(WhMovement.serial.is_(None), WhMovement.serial == "")).first()
+        if m is None or WhMovement.query.filter_by(serial=serial).first():
+            continue
+        m.serial, m.qty = serial, 1
+        if tested and not WhUnitMark.query.filter_by(serial=serial, mark="tested").first():
+            db.session.add(WhUnitMark(serial=serial, item_id=m.item_id, variant=label, mark="tested",
+                                      jdate=m.jdate, source="opening", note=SAMPLE_NOTE))
+        n += 1
+    db.session.commit()
+    return n
 
 
 def seed_sample_opening() -> int:
@@ -682,8 +862,9 @@ def seed_sample_opening() -> int:
         add(items.get("EQ-01"), "equipment", kw, "repair", q)
     for model, q in pumps.items():
         add(items.get("EQ-02"), "equipment", model, "repair", q)
-    for label, q in (("384/10+73.5", 1), ("293/12+45.5", 1)):
-        add(items.get("EQ-03"), "equipment", label, "assembled", q)
+    for label, serial, tested in SAMPLE_ELECTROPUMPS:
+        add(items.get("EQ-03"), "equipment", label, "assembled", 1)
+        _sample_unit(label, serial, tested)
     types = ["233", "293", "345", "384", "6608", "6609"]
     for k, it in enumerate(WhItem.query.filter_by(kind="part", is_active=True).order_by(WhItem.id)):
         if it.per_type:
@@ -760,8 +941,10 @@ def register_xlsx() -> bytes:
     return out.getvalue()
 
 
-def import_register(data: bytes) -> dict:
-    """Upsert the equipment register from Excel by «کد تجهیز / پلاک»."""
+def import_register(data: bytes, mode: str = "append") -> dict:
+    """The equipment register from Excel by «کد تجهیز / پلاک». ``append``
+    adds new codes and updates the ones there are; ``replace`` empties the
+    register first (the sample with it) and keeps only the file's rows."""
     from openpyxl import load_workbook
     from ..refdata.textnorm import norm_label, norm_text, to_text
     from .models import WhEquipment
@@ -782,7 +965,12 @@ def import_register(data: bytes) -> dict:
             "name": col("name"), "maker": col("maker"), "property_no": col("property_no"),
             "status": col("status", "محل"), "last_facility": col("last_facility"),
             "last_date": col("last_date")}
-    added = updated = 0
+    added = updated = removed = 0
+    if mode == "replace":
+        if not any(to_text(r[cols["code"]]) for r in rows[hdr + 1:]
+                   if cols["code"] is not None and cols["code"] < len(r)):
+            raise ValueError("فایل هیچ کد تجهیزی ندارد؛ شناسنامه خالی نمی‌شود.")
+        removed = WhEquipment.query.delete()
     for r in rows[hdr + 1:]:
         def cell(k):
             c = cols.get(k)
@@ -809,7 +997,8 @@ def import_register(data: bytes) -> dict:
             e.type_label = register_type(e.name, e.kind)
         e.is_sample = False
     db.session.commit()
-    return {"added": added, "updated": updated}
+    return {"added": added, "updated": updated, "removed": removed,
+            "mode": "replace" if mode == "replace" else "append"}
 
 
 def summary(args) -> dict:
@@ -910,8 +1099,10 @@ def items_xlsx() -> bytes:
     return out.getvalue()
 
 
-def import_items(data: bytes) -> dict:
-    """Upsert items from a sheet: «کد کالا»/«نام کالا» columns at least."""
+def import_items(data: bytes, mode: str = "append") -> dict:
+    """Upsert items from a sheet: «کد کالا»/«نام کالا» columns at least.
+    ``replace``: the parts the file does not list are switched off (never
+    deleted — the ledger still names them); equipment items stay."""
     from openpyxl import load_workbook
     from ..refdata.textnorm import norm_label, norm_text, to_text
     wb = load_workbook(io.BytesIO(data), data_only=True, read_only=True)
@@ -930,7 +1121,8 @@ def import_items(data: bytes) -> dict:
     c_kind, c_cat, c_unit = col("نوع"), col("گروه", "دسته"), col("واحد")
     c_active, c_note = col("فعال"), col("توضیحات")
     c_rule, c_type = col("تعداد در هر"), col("موجودی به تفکیک")
-    added = updated = 0
+    added = updated = removed = 0
+    touched = set()
     top = (db.session.query(db.func.max(WhItem.sort_order)).scalar() or 0) + 1
     for n, r in enumerate(rows[hdr + 1:]):
         def cell(c):
@@ -964,5 +1156,13 @@ def import_items(data: bytes) -> dict:
         if c_type is not None:
             item.per_type = norm_text(cell(c_type) or "").startswith(("بله", "1", "yes", "دارد"))
         item.source = "ورود از اکسل"
+        db.session.flush()
+        touched.add(item.id)
+    if mode == "replace" and touched:
+        for item in WhItem.query.filter_by(kind="part", is_active=True).all():
+            if item.id not in touched:
+                item.is_active = False
+                removed += 1
     db.session.commit()
-    return {"added": added, "updated": updated}
+    return {"added": added, "updated": updated, "removed": removed,
+            "mode": "replace" if mode == "replace" else "append"}

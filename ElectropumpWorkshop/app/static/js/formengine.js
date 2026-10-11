@@ -233,6 +233,30 @@
     }
   };
 
+  /* Equipment in stock one by one (plaque/serial) with what is known of it —
+     an assembled electropump and whether its pumping test is done. Read
+     afresh for every form that picks one. */
+  var Units = {
+    data: null, _p: null,
+    load: function (fresh) {
+      if (fresh) { Units.data = null; Units._p = null; }
+      if (Units.data) return Promise.resolve(Units.data);
+      if (!Units._p) {
+        Units._p = window.App.api.get('/api/warehouse/units').then(function (res) {
+          Units.data = res.data.units || []; return Units.data;
+        }).catch(function () { Units._p = null; Units.data = []; return Units.data; });
+      }
+      return Units._p;
+    },
+    of: function (itemId) {
+      return (Units.data || []).filter(function (u) { return String(u.item_id) === String(itemId); });
+    },
+    find: function (serial) {
+      var key = String(serial || '').split(/\s+/).join(' ').trim();
+      return (Units.data || []).filter(function (u) { return u.serial === key; })[0] || null;
+    }
+  };
+
   /* The stock beside the rows (Kahani, Mahdi): equipment by type and
      condition, parts by type and condition — read once per form. */
   var Stock = {
@@ -1310,8 +1334,104 @@
       });
     });
 
+    /* «تأیید روی تجهیز» (mode «mark»): one piece of equipment picked from
+       the warehouse by its plaque — the electropump the pumping test is
+       about; sending the stage puts the mark («آزمایش پمپاژ انجام شده») on it. */
+    function whUnitLabel(u) {
+      return (u.variant || u.spec || u.item_name || '') + ' — ' + u.serial
+        + (u.well_name ? ' — مونتاژ برای ' + u.well_name : (u.reason_label ? ' — ' + u.reason_label : ''))
+        + (u.in_jdate ? ' (' + u.in_jdate + ')' : '');
+    }
+    function renderWhMark(field) {
+      var name = A.esc(field.field_name), cfg = whCfg(field);
+      if (field.read_only) {
+        var saved = (whValues[field.field_name] || field.read_only_rows || [])[0];
+        return '<div class="wh-lines wh-mark" data-whm="' + name + '"><div class="whm-info">'
+          + (saved ? A.esc((saved.variant || saved.spec || '') + ' — ' + (saved.serial || '')) : '—') + '</div></div>';
+      }
+      return '<div class="wh-lines wh-mark" data-whm="' + name + '">'
+        + '<div class="wh-head hint">🔖 ' + A.esc(cfg.pick_hint || 'تجهیز موردنظر را از موجودی انبار تجهیزات انتخاب کنید') + '</div>'
+        + '<select class="whm-pick"><option value="">… در حال خواندن موجودی انبار</option></select>'
+        + '<div class="whm-info hint"></div></div>';
+    }
+    function whMarkItem(cfg) { return whItemByCode(cfg.item_code || 'EQ-03'); }
+    function whMarkDraw(name) {
+      var field = fieldByName(name), sel = qs('[data-whm="' + name + '"] .whm-pick');
+      if (!field || !sel) return;
+      var cfg = whCfg(field), item = whMarkItem(cfg);
+      var units = item ? Units.of(item.id) : [];
+      var saved = (whValues[name] || [])[0] || {};
+      var want = saved.serial || '';
+      if (!want && options.instanceId) {
+        var mine = units.filter(function (u) { return String(u.instance_id) === String(options.instanceId); })[0];
+        if (mine) want = mine.serial;
+      }
+      var opts = '<option value="">— انتخاب ' + A.esc(item ? item.name : 'تجهیز') + ' —</option>' + units.map(function (u) {
+        return '<option value="' + A.esc(u.serial) + '">' + A.esc(whUnitLabel(u))
+          + (u.tested ? ' ✓ آزمایش‌شده' : '') + '</option>';
+      }).join('');
+      if (want && !units.some(function (u) { return u.serial === want; })) {
+        opts += '<option value="' + A.esc(want) + '">' + A.esc((saved.variant || '') + ' — ' + want) + '</option>';
+      }
+      sel.innerHTML = opts;
+      sel.value = want;
+      whMarkSync(name, true);
+    }
+    function whMarkUnit(name) {
+      var sel = qs('[data-whm="' + name + '"] .whm-pick');
+      if (!sel || !sel.value) return null;
+      var u = Units.find(sel.value);
+      if (u) return u;
+      var saved = (whValues[name] || [])[0] || {};
+      return saved.serial === sel.value ? { serial: saved.serial, variant: saved.variant || saved.spec,
+                                            item_id: saved.item_id, item_name: saved.item_name } : null;
+    }
+    function whMarkSync(name, quiet) {
+      var field = fieldByName(name), cfg = field ? whCfg(field) : {}, u = whMarkUnit(name);
+      var info = qs('[data-whm="' + name + '"] .whm-info');
+      var item = whMarkItem(cfg), count = item ? Units.of(item.id).length : 0;
+      if (info) {
+        info.innerHTML = u
+          ? 'مدل: <b dir="ltr">' + A.esc(u.variant || '—') + '</b> · پلاک: <b dir="ltr">' + A.esc(u.serial) + '</b>'
+            + (u.tested ? ' · <span class="ok-text">آزمایش پمپاژ قبلاً ثبت شده (' + A.esc(u.tested_jdate || '') + ')</span>' : '')
+          : (count ? 'یکی از ' + count + ' مورد موجود را انتخاب کنید.'
+                   : '<span class="err-text">⚠ ' + A.esc(cfg.empty_hint || 'موردی در انبار تجهیزات نیست.') + '</span>');
+      }
+      if (cfg.variant_field) {
+        var target = qs('#fld-' + cfg.variant_field);
+        var v = u ? (u.variant || '') : '';
+        if (target && target.value !== v) {
+          target.value = v;
+          if (!quiet || v) {
+            target.dispatchEvent(new Event('input', { bubbles: true }));
+            target.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }
+      }
+    }
+    function whMarkRead(name) {
+      var u = whMarkUnit(name);
+      return u ? [{ item_id: u.item_id, item_name: u.item_name, serial: u.serial, spec: u.variant,
+                    variant: u.variant, qty: 1 }] : [];
+    }
+    root.addEventListener('change', function (e) {
+      var w = e.target.closest && e.target.closest('[data-whm]');
+      if (w && e.target.classList.contains('whm-pick')) whMarkSync(w.dataset.whm);
+      var r = e.target.closest && e.target.closest('[data-wh]');
+      if (r && e.target.classList.contains('wh-unit')) {
+        var opt = e.target.options[e.target.selectedIndex], spec = e.target.closest('tr').querySelector('.wh-spec');
+        if (spec && opt && opt.dataset.variant) spec.value = opt.dataset.variant;
+        whStockRefresh(r.dataset.wh);
+      }
+      if (r && e.target.classList.contains('wh-item')) {
+        var fd = fieldByName(r.dataset.wh);
+        if (fd && whCfg(fd).units) { whValues[r.dataset.wh] = whRead(r.dataset.wh); whDraw(r.dataset.wh); }
+      }
+    });
+
     function renderWhLines(field) {
       if (whCfg(field).mode === 'parts') return renderWhParts(field);
+      if (whCfg(field).mode === 'mark') return renderWhMark(field);
       var name = A.esc(field.field_name), cfg = whCfg(field);
       var dir = cfg.direction === 'out' ? 'خروج از ' : 'ورود به ';
       var wh = cfg.warehouse === 'parts' ? 'انبار قطعات' : 'انبار تجهیزات';
@@ -1321,6 +1441,7 @@
         + (cfg.join_into ? ' — به‌صورت یک الکتروپمپ متصل‌شده' : '') + '</div>'
         + (field.read_only ? '' : '<details class="wh-stock" data-wh-stock="' + name + '"><summary>📦 موجودی فعلی '
            + wh + ' (به تفکیک تیپ)</summary><div class="wh-stock-body hint">…</div></details>')
+        + (cfg.require_mark && !field.read_only ? '<div class="whp-alarm hidden" data-wh-alarm="' + name + '"></div>' : '')
         + '<div class="wh-table-wrap"><table class="wh-table"><thead><tr><th>کالا</th>'
         + (cfg.spec === false ? '' : '<th>تیپ / مشخصات</th>')
         + (cfg.serial === false ? '' : '<th>پلاک / سریال' + (cfg.serial_source === 'register' ? ' <span class="hint">(از شناسنامه‌ی تجهیزات)</span>' : '') + '</th>')
@@ -1422,7 +1543,8 @@
         + '><td><select class="wh-item"' + lockItem + '>' + opts + '</select></td>'
         + (cfg.spec === false ? '' : '<td><input type="text" class="wh-spec" dir="ltr" placeholder="' + whSpecHint(item) + '" value="' + A.esc(row.spec || '') + '"' + lockText + stockList + '>'
            + '<div class="wh-avail hint"></div></td>')
-        + (cfg.serial === false ? '' : '<td><input type="text" class="wh-serial" dir="ltr" value="' + A.esc(row.serial || '') + '"' + lockSerial + reg + '>'
+        + (cfg.serial === false ? '' : '<td>' + (cfg.units && !ro ? whUnitSelect(cfg, item, row.serial)
+             : '<input type="text" class="wh-serial" dir="ltr" value="' + A.esc(row.serial || '') + '"' + lockSerial + reg + '>')
            + '<div class="wh-reg-note hint"></div></td>')
         + (cfg.condition === false ? '' : '<td><select class="wh-cond"' + ro + '>' + conds + '</select></td>')
         + '<td><input type="text" inputmode="decimal" dir="ltr" class="wh-qty" value="' + A.esc(row.qty == null ? 1 : row.qty) + '"' + lockText + '></td>'
@@ -1437,6 +1559,60 @@
       var kind = whRegisterKind(item);
       return kind === 'motor' ? '73.5 kW' : kind === 'pump' ? '384/10' : '384/10+73.5';
     }
+    /* «انتخاب از موجودی، تک‌به‌تک» (``units``): the equipment taken out is
+       one of those in stock, by plaque; with ``require_mark`` only the ones
+       carrying the mark can be picked — an electropump goes out for install
+       only once its pumping test is done. */
+    function whUnitOk(cfg, u) {
+      return !cfg.require_mark || (u.marks || []).indexOf(cfg.require_mark) !== -1;
+    }
+    function whUnitSelect(cfg, item, current) {
+      var units = item ? Units.of(item.id) : [];
+      var need = cfg.require_mark;
+      var html = '<select class="wh-serial wh-unit" dir="rtl"><option value="">— انتخاب از موجودی انبار —</option>'
+        + units.map(function (u) {
+          var ok = whUnitOk(cfg, u);
+          return '<option value="' + A.esc(u.serial) + '" data-variant="' + A.esc(u.variant || '') + '"'
+            + (ok ? '' : ' disabled') + (u.serial === current ? ' selected' : '') + '>'
+            + (need ? (ok ? '☑ ' : '☐ ') : '') + A.esc(whUnitLabel(u))
+            + (need ? (ok ? ' — آزمایش پمپاژ انجام شده' + (u.tested_jdate ? ' (' + u.tested_jdate + ')' : '')
+                          : ' — آزمایش پمپاژ انجام نشده') : '') + '</option>';
+        }).join('');
+      if (current && !units.some(function (u) { return u.serial === current; })) {
+        html += '<option value="' + A.esc(current) + '" selected>' + A.esc(current) + '</option>';
+      }
+      return html + '</select>';
+    }
+    function whUnitAlarm(name) {
+      var field = fieldByName(name), box = qs('[data-wh-alarm="' + name + '"]');
+      if (!field || !box) return;
+      var cfg = whCfg(field), items = whItems(cfg), msgs = [];
+      if (cfg.require_mark) {
+        var any = Units.data && Units.data.some(function (u) {
+          return items.some(function (it) { return String(it.id) === String(u.item_id); }) && whUnitOk(cfg, u);
+        });
+        if (!any) msgs.push(cfg.empty_hint || 'هیچ الکتروپمپی با آزمایش پمپاژ انجام‌شده در انبار تجهیزات نیست؛ '
+                            + 'تا آزمایش پمپاژ کارگاه مکانیک انجام و تأیید نشود، نصب ممکن نیست.');
+      }
+      box.innerHTML = msgs.map(function (m) { return '⛔ ' + A.esc(m); }).join('<br>');
+      box.classList.toggle('hidden', !msgs.length);
+    }
+    /* what keeps the stage from being sent (the server says the same) */
+    self.blockers = function () {
+      var out = [];
+      self.eachField(function (f) {
+        if (f.field_type !== 'wh_lines' || f.read_only) return;
+        var cfg = whCfg(f), wrap = qs('[data-wh="' + f.field_name + '"]');
+        if (!cfg.require_mark || !wrap || wrap.closest('.hidden')) return;
+        whRead(f.field_name).forEach(function (r) {
+          var u = r.serial ? Units.find(r.serial) : null;
+          if (!r.serial) out.push('«' + (r.item_name || f.label) + '»: پلاک / شماره از فهرست موجودی انتخاب نشده است.');
+          else if (!u) out.push('«' + r.serial + '» در انبار تجهیزات موجود نیست.');
+          else if (!whUnitOk(cfg, u)) out.push('«' + (u.variant || '') + ' — ' + u.serial + '»: آزمایش پمپاژ انجام نشده؛ نصب ممکن نیست.');
+        });
+      });
+      return out;
+    };
     function whRegisterKind(item) {
       var cat = String(item ? (item.category || item.name) : '');
       return cat.indexOf('موتور') !== -1 ? 'motor' : cat.indexOf('پمپ شناور') !== -1 || cat === 'پمپ' ? 'pump' : 'all';
@@ -1535,6 +1711,7 @@
       if ((whCfg(field).preset || []).length && !field.read_only) rows = whPresetRows(field, rows);
       if (!rows.length && !field.read_only) rows = [{}];
       box.innerHTML = rows.map(function (r) { return whRowHtml(field, r); }).join('');
+      if (whCfg(field).units && !field.read_only) whUnitAlarm(name);
       if (!field.read_only) {
         Stock.load().then(function () {
           if (whCfg(field).direction === 'out') {
@@ -1811,6 +1988,13 @@
           + (section.is_optional ? '<span class="badge muted">اختیاری</span>' : '')
           + (calcs ? '<button type="button" class="btn-sm btn-ghost calc-toggle">ƒ نمایش محاسبات ('
             + calcs + ')</button>' : '')
+          + (section.layout === 'grid' && section.grid_import && section.code
+            && section.fields.some(function (f) { return !f.read_only; })
+            ? '<span class="grid-io"><a class="btn-sm btn-ghost" href="/api/form-builder/sections/'
+              + encodeURIComponent(section.code) + '/grid-template.xlsx" title="قالب خالی همین جدول برای پر کردن">⬇ قالب اکسل</a>'
+              + '<label class="btn-sm btn-ghost" title="مقادیر جدول از فایل اکسل خوانده و در ردیف‌ها نوشته می‌شود">⬆ بارگذاری از اکسل'
+              + '<input type="file" class="grid-file" hidden accept=".xlsx,.xlsm" data-grid="' + A.esc(section.code) + '"></label></span>'
+            : '')
           + (group ? '<button type="button" class="btn-sm btn-del repeat-del hidden" title="حذف این بخش و مقادیر آن">✕ حذف</button>' : '')
           + '</div>'
           + (section.layout === 'grid' ? renderGridBody(section)
@@ -1840,6 +2024,23 @@
           if (open) drawCharts();
         });
       });
+      /* «بارگذاری از اکسل»: the test bench's table into the rows */
+      qsa('.grid-file').forEach(function (inp) {
+        inp.addEventListener('change', async function () {
+          if (!inp.files[0]) return;
+          var fdata = new FormData();
+          fdata.append('file', inp.files[0]);
+          try {
+            var res = await A.api.upload('/api/form-builder/sections/' + encodeURIComponent(inp.dataset.grid)
+                                         + '/grid-import', fdata);
+            self.setValues(res.data.values || {}, { flash: true });
+            A.toast(res.message + (res.data.missing && res.data.missing.length
+              ? ' — ستون پیدا نشد: ' + res.data.missing.join('، ') : ''),
+              Object.keys(res.data.values || {}).length ? 'success' : 'error');
+          } catch (err) { A.toast(err.message, 'error'); }
+          inp.value = '';
+        });
+      });
       qsa('[data-autocomplete]').forEach(setupAutocomplete);
       enableRadioClearing();
       root.addEventListener('change', onFieldChanged);
@@ -1854,11 +2055,20 @@
       var whNames = [];
       self.eachField(function (f) { if (f.field_type === 'wh_lines') whNames.push(f.field_name); });
       if (whNames.length) {
-        Warehouse.load().then(function () {
+        /* stock changes with every stage sent: read it again for this form */
+        Stock.data = null; Stock._p = null;
+        var needUnits = whNames.some(function (n) {
+          var c = whCfg(fieldByName(n));
+          return c.mode === 'mark' || c.units;
+        });
+        Promise.all([Warehouse.load(), needUnits ? Units.load(true) : null]).then(function () {
           whNames.forEach(function (n) {
             var f = fieldByName(n);
             if (f && f.read_only && !whValues[n] && Array.isArray(f.read_only_rows)) whValues[n] = f.read_only_rows;
-            if (f && whCfg(f).mode === 'parts') whpDraw(n); else whDraw(n);
+            var mode = f ? whCfg(f).mode : '';
+            if (mode === 'parts') whpDraw(n);
+            else if (mode === 'mark') { if (!f.read_only) whMarkDraw(n); }
+            else whDraw(n);
           });
         });
       }
@@ -2426,6 +2636,9 @@
           var pw = qs('[data-whp="' + name + '"]');
           return pw && pw.dataset.drawn ? whpRead(name) : (whValues[name] || []);
         }
+        if (whCfg(field).mode === 'mark') {
+          return qs('[data-whm="' + name + '"] .whm-pick') ? whMarkRead(name) : (whValues[name] || []);
+        }
         return qs('[data-wh="' + name + '"] tbody tr') ? whRead(name) : (whValues[name] || []);
       }
       if (field.field_type === 'radio') {
@@ -2517,7 +2730,12 @@
         var rows = value;
         if (typeof rows === 'string') { try { rows = JSON.parse(rows); } catch (e) { rows = []; } }
         whValues[name] = Array.isArray(rows) ? rows : [];
-        if (Warehouse.data) { if (whCfg(field).mode === 'parts') whpDraw(name); else whDraw(name); }
+        if (Warehouse.data) {
+          var md = whCfg(field).mode;
+          if (md === 'parts') whpDraw(name);
+          else if (md === 'mark') { if (Units.data && !field.read_only) whMarkDraw(name); }
+          else whDraw(name);
+        }
         return;
       }
       if (field.field_type === 'numbers') {

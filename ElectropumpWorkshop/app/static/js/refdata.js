@@ -203,7 +203,18 @@
   /* ── import ──────────────────────────────────────────────────────── */
   async function importFiles(input) {
     if (!input.files.length) return;
+    var card = input.closest('.chart-card, .card, section');
+    var title = card && card.querySelector('h3, h4, .card-title') ? card.querySelector('h3, h4, .card-title').textContent.trim() : '';
+    var mode = await A.chooseImportMode({
+      title: 'ورود به بانک' + (title ? ' «' + title + '»' : ''),
+      message: input.files.length + ' فایل انتخاب شده است. اطلاعات این بانک با فایل‌ها جایگزین شود یا به آن اضافه شود؟',
+      replaceText: 'همه‌ی ردیف‌های فعلی این بانک پاک و فقط اطلاعات فایل‌های انتخاب‌شده نگه داشته می‌شود (یک نسخه‌ی پشتیبان از بانک فعلی در پوشه‌ی backups ذخیره می‌شود).',
+      appendText: 'ردیف‌های تازه اضافه و آزمایش‌ها/ماه‌های تکراری با فایل به‌روز می‌شوند؛ بقیه‌ی اطلاعات فعلی می‌ماند.',
+      preferred: 'append'
+    });
+    if (!mode) { input.value = ''; return; }
     var form = new FormData();
+    form.append('mode', mode);
     Array.prototype.forEach.call(input.files, function (f) { form.append('files', f); });
     var box = A.qs('#rd-import-result');
     box.innerHTML = '<div class="loading">در حال خواندن فایل‌ها… (فایل‌های بزرگ ممکن است چند دقیقه طول بکشد)</div>';
@@ -215,6 +226,10 @@
                     ['merged', 'ردیف تکراری ادغام‌شده']];
       box.innerHTML = '<div class="alert info">' + res.data.results.map(function (r) {
         if (r.error) return '⛔ ' + A.esc(r.file) + ': ' + A.esc(r.error);
+        if (r.cleared !== undefined) {
+          return '♻ جایگزینی کامل: ' + fa(r.cleared) + ' ردیف قبلی پاک شد'
+            + (r.backup ? ' (پشتیبان: backups/' + A.esc(r.backup) + ')' : '') + '.';
+        }
         if (r.duplicate) return 'ℹ ' + A.esc(r.file) + ': قبلاً وارد شده است.';
         var skipped = (r.skipped_files || []).length
           ? '<br>⏭ خوانده نشد (فایل اکسل نیست): ' + r.skipped_files.map(A.esc).join('، ') : '';

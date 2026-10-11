@@ -390,6 +390,56 @@ def _zip_members(data, depth=0):
             yield inner, z.read(info)
 
 
+# what «جایگزینی کامل» empties, children first
+CLEAR = {"flowtest": (FlowPoint, FlowTest, FlowSource), "production": (ProdMonth, ProdWell, ProdSource),
+         "videometry": (VideoInspection, VideoSource), "flowrec": (FrRecord, FrSource)}
+
+
+def _replace_bank(source) -> dict:
+    """Empty one bank before the files that replace it are read — after a
+    copy of its file is put in backups/ («refdata_<bank>_before_replace_…»)."""
+    import sqlite3
+    from datetime import datetime
+    from ..paths import backups_dir
+    src = bind_path(current_app, source)
+    kept = None
+    if os.path.exists(src):
+        kept = backups_dir() / (f"refdata_{os.path.splitext(os.path.basename(src))[0]}"
+                                f"_before_replace_{datetime.now():%Y%m%d-%H%M%S}.db")
+        db.session.commit()
+        a, b = sqlite3.connect(src), sqlite3.connect(str(kept))
+        try:
+            a.backup(b)
+        finally:
+            b.close()
+            a.close()
+    removed = 0
+    for model in CLEAR[source]:
+        removed += model.query.delete()
+    db.session.commit()
+    return {"removed": removed, "backup": kept.name if kept else None}
+
+
+def _restore_bank(source, backup_name) -> bool:
+    """Put back the copy ``_replace_bank`` kept, when no file replaced it."""
+    import sqlite3
+    from ..paths import backups_dir
+    if not backup_name:
+        return False
+    kept = backups_dir() / backup_name
+    if not kept.exists():
+        return False
+    db.session.commit()
+    a, b = sqlite3.connect(str(kept)), sqlite3.connect(bind_path(current_app, source))
+    try:
+        a.backup(b)
+    finally:
+        b.close()
+        a.close()
+    db.session.expire_all()
+    return True
+
+
 @bp.post("/<source>/import")
 @permission_required("refdata.manage")
 def import_files(source):
@@ -399,9 +449,17 @@ def import_files(source):
     if not files:
         return fail("فایلی انتخاب نشده است.", 422)
     force = request.form.get("force") in ("1", "true")
+    mode = "replace" if request.form.get("mode") == "replace" else "append"
     from ..refdata.matching import WellIndex
     index = WellIndex()
     results = []
+    if mode == "replace":
+        if not any(os.path.basename(f.filename or "").lower().endswith(ACCEPT[source]) for f in files):
+            return fail("هیچ‌یک از فایل‌ها برای این بانک پذیرفته نیست؛ بانک خالی نشد.", 422)
+        cleared = _replace_bank(source)
+        force = True                       # the files were read before: read them again
+        results.append({"file": "جایگزینی کامل", "cleared": cleared["removed"],
+                        "backup": cleared["backup"]})
     for f in files:
         name = os.path.basename(f.filename or "file")
         if not name.lower().endswith(ACCEPT[source]):
@@ -426,8 +484,19 @@ def import_files(source):
                 results.append({"file": label, "error": str(exc)[:300]})
         if skipped:
             results.append({"file": name, "skipped_files": skipped})
+    def _read_any(r):
+        return "error" not in r and any(isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0
+                                        for k, v in r.items()
+                                        if k not in ("cleared", "backup", "restored", "year", "files",
+                                                     "sheets", "duplicates", "unmatched", "errors"))
+    if mode == "replace" and not any(_read_any(r) for r in results if "cleared" not in r):
+        # nothing was read: the bank goes back to what it was
+        restored = _restore_bank(source, cleared["backup"])
+        results.append({"file": "جایگزینی کامل", "restored": restored,
+                        "error": "هیچ‌یک از فایل‌ها خوانده نشد؛ بانک به حالت پیش از جایگزینی برگردانده شد."})
     record_audit("import", "refdata", None,
-                 summary=f"ورود {len(files)} فایل به بانک «{SOURCES[source][0]}»", commit=True)
+                 summary=f"ورود {len(files)} فایل به بانک «{SOURCES[source][0]}»"
+                         + (" (جایگزینی کامل)" if mode == "replace" else " (افزودن)"), commit=True)
     from ..analytics.catalogue import bump_data_version
     bump_data_version()
     return ok({"results": results}, message="ورود اطلاعات انجام شد.")

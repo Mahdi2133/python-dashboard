@@ -201,6 +201,7 @@ def create_section():
         repeat_group=(normalize_text(payload.get("repeat_group")) or None),
         layout=("grid" if payload.get("layout") == "grid" else None),
         grid_label=(normalize_text(payload.get("grid_label")) or None),
+        grid_import=payload.get("grid_import") in (True, "true", "1", 1),
     )
     db.session.add(section)
     db.session.flush()
@@ -224,12 +225,55 @@ def update_section(section_id):
     for attr in ("columns", "sort_order"):
         if attr in payload:
             setattr(section, attr, int(payload[attr] or 0))
-    for attr in ("full_width", "is_active", "show_on_entry", "collapse_formulas"):
+    for attr in ("full_width", "is_active", "show_on_entry", "collapse_formulas", "grid_import"):
         if attr in payload:
             setattr(section, attr, payload[attr] in (True, "true", "1", 1))
     record_audit("update", "form_section", section.id, summary=f"ویرایش بخش «{section.title}»")
     db.session.commit()
     return ok(section.to_dict(), message="بخش به‌روزرسانی شد.")
+
+
+# ── «ورود از اکسل» of a «جدول ردیفی» (anyone who fills the form) ──────────
+def _grid_section(code):
+    from ..services.gridlayout import is_grid
+    section = FormSection.query.filter_by(code=code).first()
+    if section is None or not is_grid(section):
+        return None
+    return section
+
+
+@bp.get("/sections/<code>/grid-template.xlsx")
+@permission_required_any(*FORM_READERS)
+def grid_template(code):
+    import io
+    from flask import send_file
+    from ..services.gridlayout import grid_template as make
+    section = _grid_section(code)
+    if section is None:
+        return fail("این بخش جدول ردیفی نیست.", 404)
+    return send_file(io.BytesIO(make(section)), as_attachment=True,
+                     download_name=f"{code}_template.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@bp.post("/sections/<code>/grid-import")
+@permission_required_any(*FORM_READERS)
+def grid_import(code):
+    from flask import request
+    from ..services.gridlayout import grid_read
+    section = _grid_section(code)
+    if section is None:
+        return fail("این بخش جدول ردیفی نیست.", 404)
+    f = request.files.get("file")
+    if f is None:
+        return fail("فایلی انتخاب نشده است.", 422)
+    try:
+        res = grid_read(section, f.read())
+    except ValueError as exc:
+        return fail(str(exc), 422)
+    except Exception as exc:  # noqa: BLE001 — a file that is not a workbook
+        return fail(f"فایل اکسل خوانده نشد: {str(exc)[:200]}", 422)
+    return ok(res, message=f"{len(res['values'])} مقدار از {res['rows']} ردیف فایل خوانده شد.")
 
 
 @bp.delete("/sections/<int:section_id>")
@@ -335,13 +379,17 @@ def _warehouse_settings(field, payload):
     except ValueError:
         before = {}
     before = before if isinstance(before, dict) else {}
+    if (raw.get("mode") or before.get("mode")) == "mark":
+        # a mark moves nothing: it is said of equipment in the equipment warehouse
+        raw.setdefault("warehouse", "equipment")
+        raw.setdefault("direction", "in")
     if raw.get("warehouse") not in WAREHOUSES:
         return "برای «اقلام انبار» انبار (تجهیزات یا قطعات) را انتخاب کنید."
     if raw.get("direction") not in ("in", "out"):
         return "برای «اقلام انبار» مشخص کنید ورود است یا خروج."
     mode = raw.get("mode", before.get("mode")) or "rows"
     cfg = {
-        "mode": "parts" if mode == "parts" else "rows",
+        "mode": mode if mode in ("parts", "mark") else "rows",
         "warehouse": raw["warehouse"], "direction": raw["direction"],
         "reason": raw.get("reason") if raw.get("reason") in REASONS else "manual",
         "kinds": [k for k in raw.get("kinds") or [] if k in ("equipment", "part")],
@@ -377,6 +425,25 @@ def _warehouse_settings(field, payload):
         cfg["join_into"] = str(keep("join_into") or "").strip() or None
         if normalize_text(keep("preset_hint")):
             cfg["preset_hint"] = normalize_text(keep("preset_hint"))
+        # «انتخاب تک‌به‌تک از موجودی»: the equipment taken out picked by its
+        # plaque; with «فقط با تأیید» only the ones that carry it (an
+        # electropump goes out for install once its pumping test is done)
+        from ..warehouse.models import UNIT_MARKS
+        cfg["units"] = bool(keep("units", False))
+        cfg["require_mark"] = keep("require_mark") if keep("require_mark") in UNIT_MARKS else None
+        if normalize_text(keep("empty_hint")):
+            cfg["empty_hint"] = normalize_text(keep("empty_hint"))
+    if cfg["mode"] == "mark":
+        # «تأیید روی تجهیز»: one piece of equipment picked from stock gets a
+        # mark when the stage is done («آزمایش پمپاژ انجام شده»)
+        from ..warehouse.models import UNIT_MARKS
+        pick = lambda k: (str(raw.get(k, before.get(k)) or "").strip() or None)  # noqa: E731
+        cfg.update({"mark": keep("mark") if keep("mark") in UNIT_MARKS else "tested",
+                    "item_code": pick("item_code") or "EQ-03", "variant_field": pick("variant_field"),
+                    "required": bool(keep("required", True))})
+        for key in ("pick_hint", "empty_hint"):
+            if normalize_text(keep(key)):
+                cfg[key] = normalize_text(keep(key))
     if cfg["mode"] == "parts":
         # «فرم قطعات»: the equipment whose parts are listed, the counted
         # columns, and the fields of the same form that name the equipment

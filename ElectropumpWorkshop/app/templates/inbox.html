@@ -35,20 +35,18 @@
 </section>
 
 <!-- «وضعیت چاه‌ها»: the wells that reach my stages, office by office -->
-<details class="card wf-board" id="wf-board" open>
-  <summary>🗺 وضعیت چاه‌ها در مرحله‌های من — به تفکیک اداره <span class="hint" id="wb-totals"></span></summary>
-  <div class="wb-tools">
-    <div class="wb-field hidden"><label for="wb-stage">مرحله</label><select id="wb-stage"><option value="">همه‌ی مرحله‌های من</option></select></div>
-    <div class="wb-field"><label for="wb-days">بازه</label>
-      <select id="wb-days"><option value="30">۳۰ روز اخیر</option><option value="60" selected>۶۰ روز اخیر</option>
-        <option value="180">۶ ماه اخیر</option><option value="365">یک سال اخیر</option><option value="3650">همه</option></select></div>
-    <div class="wb-field"><label for="wb-q">چاه</label><input type="search" id="wb-q" placeholder="جستجوی نام چاه"></div>
-    <div class="wb-legend"><span class="wb-chip wb-todo">در انتظار شما</span><span class="wb-chip wb-returned">برگشت خورده</span>
-      <span class="wb-chip wb-approval">در انتظار تأیید</span><span class="wb-chip wb-waiting">منتظر مرحله‌های قبل</span>
-      <span class="wb-chip wb-done">انجام شد</span></div>
+<div class="card wf-board" id="wf-board">
+  <div class="wb-line">
+    <span class="wb-title">🗺 چاه‌های مرحله‌های من</span>
+    <select id="wb-stage" class="hidden" title="مرحله"><option value="">همه‌ی مرحله‌های من</option></select>
+    <select id="wb-days" title="بازه"><option value="30">۳۰ روز اخیر</option><option value="60" selected>۶۰ روز اخیر</option>
+      <option value="180">۶ ماه اخیر</option><option value="365">یک سال اخیر</option><option value="3650">همه</option></select>
+    <input type="search" id="wb-q" placeholder="🔍 نام چاه یا اداره">
+    <select id="wb-pick" class="wb-pick" title="با انتخاب چاه، کارتابل همان چاه باز می‌شود">
+      <option value="">— در حال بارگذاری —</option></select>
+    <span class="hint" id="wb-totals"></span>
   </div>
-  <div class="wb-grid" id="wb-body"><div class="loading">در حال بارگذاری</div></div>
-</details>
+</div>
 
 <div class="wf-layout">
   <aside class="wf-list card">

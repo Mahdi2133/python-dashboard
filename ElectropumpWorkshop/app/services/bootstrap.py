@@ -369,6 +369,15 @@ def ensure_database(app) -> dict:
     url = db.engine.url
     stale = set_aside_foreign_wal(url.database if url.get_backend_name() == "sqlite"
                                   and url.database and url.database != ":memory:" else path)
+    # The same for every file in refdata/: a release that ships its own
+    # warehouse.db over an old folder leaves the old warehouse.db-wal behind,
+    # and replaying it made the parts list and the register disappear.
+    try:
+        from ..refdata import BIND_FILES, bind_path
+        for key in BIND_FILES:
+            stale += set_aside_foreign_wal(bind_path(app, key))
+    except Exception:  # noqa: BLE001 — a reference file must never stop the app starting
+        log.exception("Checking the reference databases for leftover WAL files failed")
     existed = path.exists() and path.stat().st_size > 0
     status = {"path": str(path), "existed": existed, "created": False, "seeded": False,
               "stale_wal_moved": stale}
@@ -434,6 +443,12 @@ def ensure_database(app) -> dict:
     except Exception:  # noqa: BLE001 — a form change must never stop the app starting
         db.session.rollback()
         log.exception("Applying the R15 changes failed")
+    try:
+        from .upgrade_r16 import apply_r16
+        status["workshop_r16"] = apply_r16()
+    except Exception:  # noqa: BLE001 — a form change must never stop the app starting
+        db.session.rollback()
+        log.exception("Applying the R16 changes failed")
 
     with db.engine.connect() as conn:
         status["journal_mode"] = conn.execute(text("PRAGMA journal_mode")).scalar()

@@ -183,3 +183,39 @@ class WhPartAction(db.Model):
     well_id = db.Column(db.Integer)
     well_name = db.Column(db.String(160))
     user_name = db.Column(db.String(120))
+
+
+UNIT_MARKS = {"tested": "آزمایش پمپاژ انجام شده"}
+
+
+class WhUnitMark(db.Model):
+    """A fact about one piece of equipment in stock, by its plaque/serial —
+    «آزمایش پمپاژ انجام شده» on an assembled electropump, which is what lets
+    the install stage take it out of the equipment warehouse. Written by the
+    stage that established it (replaced when that stage is sent again)."""
+    __bind_key__ = "warehouse"
+    __tablename__ = "wh_unit_marks"
+
+    id = db.Column(db.Integer, primary_key=True)
+    serial = db.Column(db.String(160), nullable=False, index=True)
+    item_id = db.Column(db.Integer, index=True)
+    variant = db.Column(db.String(60))
+    mark = db.Column(db.String(20), nullable=False, default="tested", index=True)
+    jdate = db.Column(db.String(10))
+    source = db.Column(db.String(20), nullable=False, default="process")   # process | opening
+    instance_id = db.Column(db.Integer, index=True)
+    stage_number = db.Column(db.Integer)
+    stage_title = db.Column(db.String(160))
+    field_name = db.Column(db.String(80))
+    well_name = db.Column(db.String(160))
+    user_name = db.Column(db.String(120))
+    note = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=local_now)
+
+    def to_dict(self):
+        return {"id": self.id, "serial": self.serial, "item_id": self.item_id,
+                "variant": self.variant, "mark": self.mark,
+                "mark_label": UNIT_MARKS.get(self.mark, self.mark), "jdate": self.jdate,
+                "source": self.source, "instance_id": self.instance_id,
+                "stage_number": self.stage_number, "stage_title": self.stage_title,
+                "well_name": self.well_name, "user_name": self.user_name, "note": self.note}

@@ -213,33 +213,59 @@
     var add = A.qs('#it-add'); if (add) add.addEventListener('click', function () { editItem(null); });
     var imp = A.qs('#it-import');
     if (imp) imp.addEventListener('change', async function () {
-      if (!this.files[0]) return;
-      var form = new FormData(); form.append('file', this.files[0]);
+      var input = this;
+      if (!input.files[0]) return;
+      var mode = await A.chooseImportMode({
+        title: 'ورود فهرست اقلام / قطعات',
+        replaceText: 'فهرست با فایل جایگزین می‌شود: قطعه‌هایی که در فایل نیستند غیرفعال می‌شوند (حذف نمی‌شوند؛ سوابق آن‌ها می‌ماند).',
+        appendText: 'اقلام تازه اضافه و اقلام موجود با فایل به‌روز می‌شوند؛ بقیه دست نمی‌خورند.',
+        preferred: 'append'
+      });
+      if (!mode) { input.value = ''; return; }
+      var form = new FormData(); form.append('file', input.files[0]); form.append('mode', mode);
       try {
         var res = await A.api.upload('/api/warehouse/items/import', form);
-        A.toast('اقلام: ' + fa(res.data.added) + ' جدید، ' + fa(res.data.updated) + ' به‌روز', 'success');
+        A.toast('اقلام: ' + fa(res.data.added) + ' جدید، ' + fa(res.data.updated) + ' به‌روز'
+                + (res.data.removed ? '، ' + fa(res.data.removed) + ' غیرفعال' : ''), 'success');
         await loadCat(); loadItems();
       } catch (err) { A.toast(err.message, 'error'); }
-      this.value = '';
+      input.value = '';
     });
-    var upload = function (sel, url, done) {
+    /* every file asks first: replace what is there, or add to it */
+    var upload = function (sel, url, ask, done) {
       var inp = A.qs(sel);
       if (!inp) return;
       inp.addEventListener('change', async function () {
-        if (!this.files[0]) return;
-        var form = new FormData(); form.append('file', this.files[0]);
+        var input = this;
+        if (!input.files[0]) return;
+        var mode = await A.chooseImportMode(ask);
+        if (!mode) { input.value = ''; return; }
+        var form = new FormData(); form.append('file', input.files[0]); form.append('mode', mode);
         try { done(await A.api.upload(url, form)); }
         catch (err) { A.toast(err.message, 'error'); }
-        this.value = '';
+        input.value = '';
       });
     };
-    upload('#op-import', '/api/warehouse/opening/import', function (res) {
-      A.qs('#op-result').innerHTML = '<div class="alert info">' + A.esc(res.message) + ' ' + fa(res.data.rows) + ' ردیف.'
+    upload('#op-import', '/api/warehouse/opening/import', {
+      title: 'ورود انبارگردانی (موجودی اول دوره)',
+      replaceText: 'موجودی اول دوره‌ی فعلی (از جمله انبارگردانی نمونه) پاک و فقط ردیف‌های این فایل ثبت می‌شود. ورود و خروج‌های فرایندها دست نمی‌خورد.',
+      appendText: 'ردیف‌های این فایل به موجودی اول دوره‌ی فعلی اضافه می‌شود.',
+      preferred: 'replace'
+    }, function (res) {
+      A.qs('#op-result').innerHTML = '<div class="alert info">' + A.esc(res.message) + ' ' + fa(res.data.rows) + ' ردیف'
+        + (res.data.tested ? '، ' + fa(res.data.tested) + ' الکتروپمپ با آزمایش پمپاژ انجام‌شده' : '') + '.'
         + (res.data.unknown_count ? '<br>⚠ ' + fa(res.data.unknown_count) + ' کالا در فهرست اقلام پیدا نشد: '
           + res.data.unknown.map(A.esc).join('، ') : '') + '</div>';
+      refresh();
     });
-    upload('#rg-import', '/api/warehouse/register/import', function (res) {
-      A.toast('شناسنامه: ' + fa(res.data.added) + ' جدید، ' + fa(res.data.updated) + ' به‌روز', 'success');
+    upload('#rg-import', '/api/warehouse/register/import', {
+      title: 'ورود شناسنامه‌ی تجهیزات',
+      replaceText: 'شناسنامه‌ی فعلی (از جمله نمونه) کامل پاک و فقط تجهیزهای این فایل نگه داشته می‌شود.',
+      appendText: 'کدهای تازه اضافه و کدهای موجود با اطلاعات فایل به‌روز می‌شوند؛ بقیه می‌مانند.',
+      preferred: 'replace'
+    }, function (res) {
+      A.toast((res.data.mode === 'replace' ? 'شناسنامه جایگزین شد: ' : 'شناسنامه: ') + fa(res.data.added) + ' جدید، '
+              + fa(res.data.updated) + ' به‌روز', 'success');
       loadRegister();
     });
     A.qs('#rg-q').addEventListener('input', A.debounce(loadRegister, 350));

@@ -94,6 +94,40 @@
     });
   }
 
+  /* «جایگزین کنم یا اضافه؟» before a file goes into a data bank: resolves to
+     'replace', 'append', or null when the person cancels. ``opts``: title,
+     message, replaceText/appendText (what each choice does to this bank),
+     preferred ('replace' | 'append' — the highlighted one). */
+  function chooseImportMode(opts) {
+    opts = opts || {};
+    return new Promise(function (resolve) {
+      var old = document.getElementById('import-mode-modal');
+      if (old) old.remove();
+      var box = document.createElement('div');
+      box.className = 'modal-overlay show';
+      box.id = 'import-mode-modal';
+      var pick = function (mode, cls, title, text) {
+        return '<button type="button" class="im-choice ' + cls + (opts.preferred === mode ? ' im-preferred' : '')
+          + '" data-mode="' + mode + '"><b>' + esc(title) + '</b><span>' + esc(text) + '</span></button>';
+      };
+      box.innerHTML = '<div class="modal im-modal"><h3>' + esc(opts.title || 'ورود فایل به بانک اطلاعاتی') + '</h3>'
+        + '<p>' + esc(opts.message || 'اطلاعات این فایل جایگزین اطلاعات فعلی شود یا به آن اضافه شود؟') + '</p>'
+        + '<div class="im-choices">'
+        + pick('replace', 'im-replace', '♻ جایگزینی کامل',
+               opts.replaceText || 'همه‌ی ردیف‌های فعلی این بانک پاک و فقط ردیف‌های فایل نگه داشته می‌شود.')
+        + pick('append', 'im-append', '➕ افزودن / به‌روزرسانی',
+               opts.appendText || 'ردیف‌های تازه اضافه و ردیف‌های تکراری با فایل به‌روز می‌شوند؛ بقیه می‌مانند.')
+        + '</div><div class="modal-actions"><button type="button" class="btn-secondary" data-mode="">انصراف</button></div></div>';
+      document.body.appendChild(box);
+      box.addEventListener('click', function (ev) {
+        var b = ev.target.closest('[data-mode]');
+        if (!b && ev.target !== box) return;
+        box.remove();
+        resolve(b && b.dataset.mode ? b.dataset.mode : null);
+      });
+    });
+  }
+
   function openModal(id) { document.getElementById(id).classList.add('show'); }
   function closeModal(id) {
     var el = document.getElementById(id);
@@ -111,7 +145,7 @@
      hanging. */
   function closableModal(el) {
     return el && el.classList.contains('modal-overlay')
-      && el.id !== 'confirm-modal';
+      && el.id !== 'confirm-modal' && el.id !== 'import-mode-modal';
   }
   document.addEventListener('click', function (ev) {
     var closer = ev.target.closest('[data-close]');
@@ -337,6 +371,7 @@
 
   global.App = {
     api: api, request: request, toast: toast, confirmDialog: confirmDialog,
+    chooseImportMode: chooseImportMode,
     openModal: openModal, closeModal: closeModal, esc: esc, el: el, qs: qs, qsa: qsa,
     debounce: debounce, serializeQuery: serializeQuery, renderBarChart: renderBarChart,
     download: download, downloadPost: downloadPost, fmtNumber: fmtNumber,

@@ -87,20 +87,21 @@
     }).join('');
   }
 
-  /* The production trend: every month on record, opened on the last three
-     years. Zoom with the wheel or the ＋/－ buttons, drag the slider, or pick
-     a stretch of months by dragging across the chart («انتخاب بازه»).
+  /* The production trend: every month on record, all of it at first. Zoom
+     with the wheel or the ＋/－ buttons, drag the slider's ends, or pick a
+     stretch of months by dragging across the chart («انتخاب بازه»).
      Pressure stays in atmospheres here, as the register keeps it. */
   function drawProduction(box, months) {
     if (!box || !months || !months.length || !window.FormEngine) return;
     var cats = months.map(function (m) { return m.year + '/' + (m.month < 10 ? '0' : '') + m.month; });
-    var startPct = months.length > 36 ? Math.round((1 - 36 / months.length) * 100) : 0;
+    var startPct = 0;              // every month first; zoom in from there
     var bar = document.createElement('div');
     bar.className = 'rp-zoom';
     bar.innerHTML = '<button type="button" class="btn-sm btn-ghost" data-z="in" title="بزرگ‌نمایی">＋</button>'
       + '<button type="button" class="btn-sm btn-ghost" data-z="out" title="کوچک‌نمایی">－</button>'
       + '<button type="button" class="btn-sm btn-ghost" data-z="all" title="همه‌ی ماه‌ها">همه</button>'
-      + '<span class="hint">چرخ موس: بزرگ/کوچک‌نمایی · نوار پایین را بکشید · با «انتخاب بازه» (بالای نمودار) روی نمودار بکشید</span>';
+      + '<span class="hint">کل دوره نمایش داده می‌شود؛ برای زوم: چرخ موس روی نمودار، دکمه‌های ＋/－، کشیدن دو سر نوار پایین، '
+      + 'یا «انتخاب بازه» (آیکون بالای نمودار) و کشیدن روی بازه‌ی موردنظر</span>';
     if (!box.previousElementSibling || !box.previousElementSibling.classList.contains('rp-zoom')) {
       box.parentNode.insertBefore(bar, box);
     } else {
@@ -166,15 +167,17 @@
                 'pr.last_flow_month', 'pr.avg_flow_12', 'ft.test_date', 'ft.source', 'ft.net_flow', 'ft.net_pressure',
                 'ft.design_flow', 'ft.discharge_pipe', 'ft.casing', 'ft.well_type', 'ft.starter',
                 'ft.efficiency', 'vm.date', 'vm.screen_start'];
+    /* each part in a box of its own, side by side only where both fit —
+       a table never runs into the list beside it */
     var html = '<div class="rp-sources">' + chips(p.sources) + '</div>'
       + '<div class="rp-grid">'
-      + '<div><div class="rp-h">خلاصه (مقادیری که فرم‌ها پیش‌پر می‌کنند)</div>' + valuesGrid(data.labelled, best) + '</div>'
-      + (recLatest ? '<div><div class="rp-h">آخرین سنجش دبی (سوابق سنجش دبی) — ' + A.esc(rec.test_date || '') + '</div>'
-        + recordsList([rec]) + (rec.notes ? '<div class="hint mt-1">توضیحات: ' + A.esc(rec.notes) + '</div>' : '') + '</div>'
-        : latest ? '<div><div class="rp-h">آخرین دبی‌سنجی — ' + A.esc(latest.test_date || '') + '</div>' + pointsTable(latest)
-        + (latest.expert_opinion ? '<div class="hint mt-1">نظر کارشناس: ' + A.esc(latest.expert_opinion) + '</div>' : '') + '</div>' : '')
+      + '<div class="rp-block"><div class="rp-h">خلاصه (مقادیری که فرم‌ها پیش‌پر می‌کنند)</div>' + valuesGrid(data.labelled, best) + '</div>'
+      + (recLatest ? '<div class="rp-block"><div class="rp-h">آخرین سنجش دبی (سوابق سنجش دبی) — ' + A.esc(rec.test_date || '') + '</div>'
+        + recordsList([rec]) + (rec.notes ? '<div class="rp-note">توضیحات: ' + A.esc(rec.notes) + '</div>' : '') + '</div>'
+        : latest ? '<div class="rp-block"><div class="rp-h">آخرین دبی‌سنجی — ' + A.esc(latest.test_date || '') + '</div>' + pointsTable(latest)
+        + (latest.expert_opinion ? '<div class="rp-note">نظر کارشناس: ' + A.esc(latest.expert_opinion) + '</div>' : '') + '</div>' : '')
       + '</div>';
-    if ((data.months || []).length) html += '<div class="rp-h mt-2">روند تولید (همه‌ی ماه‌ها؛ نمایش از ۳۶ ماه اخیر)</div><div class="rp-chart"></div>';
+    if ((data.months || []).length) html += '<div class="rp-block rp-block-wide mt-2"><div class="rp-h">روند دبی و فشار (روند تولید — همه‌ی ماه‌ها)</div><div class="rp-chart"></div></div>';
     if (!opts.compact) {
       if ((data.tests || []).length > (recLatest ? 0 : 1)) html += '<div class="rp-h mt-2">همه‌ی دبی‌سنجی‌ها</div>' + testsList(data.tests);
       if ((data.records || []).length) html += '<div class="rp-h mt-2">سوابق سنجش دبی</div>' + recordsList(data.records);
